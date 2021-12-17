@@ -1,22 +1,27 @@
 % test a Laplace Neumann BVP
 %
-% Hai 05/18/21
+% Hai 05/18/21 updated convergence plot 12/17/21, maybe add more BVP types later
 
 setup()
 
 v = 1;
 s.p = 16; 
+shape = 'star'; % or 'star', or 'star2'. test convergence on different shapes
 
-if 1
+% family of shapes...
+if strcmp(shape,'ellipse')
     lam = 1; ratio = 2; s.Z = @(t) lam*(sin(t) - ratio*1i*cos(t));
-    np = 16;
-else
+    Np = 4:2:24;
+elseif strcmp(shape,'star')
+    a = .3; w = 5; R = @(t) 2*(1 + a*cos(w*t-pi/2)); s.Z = @(t) R(t).*exp(1i*t); s.Z = @(t) s.Z(t-pi/2);
+    Np = 20:2:40;
+elseif strcmp(shape,'star2')
     s.Z = @(t) ((cos(t).^2+9*sin(t).^2).^(1/2)+cos(4*t).^2).*sin(t)...
                 -1/2*1i*((cos(t).^2+9*sin(t).^2).^(1/2)+cos(4*t).^2).*cos(t);
     np = 48;
+    Np = 26:2:50;
 end
-
-tpan = linspace(0,pi,np+1)'; s.tpan = tpan;
+tpan = linspace(0,pi,24+1)'; s.tpan = tpan;
 s = quadr(s,[],'p','G');
 
 % target
@@ -37,34 +42,41 @@ fhom = nan*xx; % exact soln
 Ahom = LapAxiMat(t,y_source);
 fhom(ii(:)) = Ahom*pt_force;
 
+% h refinement, increase num of panels
+err = NaN(size(Np));
+for k=1:numel(Np)
+    
+    % boundary discretization
+    np = Np(k);
+    tpan = linspace(0,pi,np+1)'; s.tpan = tpan;
+    s = quadr(s,[],'p','G');
 
-% us grad SLP to solve a Neumann problem 
-A = LapGradAxiSpecialMat(s,s); % A = (-1/2*I+S')
-rhs = LapGradAxiMat(s,y_source)*pt_force;
-tau = A\rhs;
+    % use grad SLP to solve a Neumann problem 
+    A = LapGradAxiSpecialMat(s,s); % A = (-1/2*I+S')
+    rhs = LapGradAxiMat(s,y_source)*pt_force;
+    tau = A\rhs;
 
-% use SLP to evaluate soln
-u = nan*xx; % soln
-u(ii(:)) = LapAxiSpecialMat(t,s)*tau;
+    % use SLP to evaluate soln
+    u = nan*xx; % soln
+    u(ii(:)) = LapAxiSpecialMat(t,s)*tau;
 
-Err = abs(u-fhom);
-figure(1),clf,imagesc(gx,gy,log10(Err)), 
-axis equal; hold on; plot(s.xlo,'o'); colorbar
+    % plot error
+    figure(1),clf,imagesc(gx,gy,log10(abs(u-fhom))), 
+    colorbar, hold on, fill(real([s.x;s.x(1)]),imag([s.x;s.x(1)]),'w')
+    plot(s.x,'-k'), plot([s.xlo;s.xhi(end)],'.r','MarkerSize',12); caxis([-15 0]), colormap('jet')
+    axis equal tight
 
+    err(k) = max(abs(u(:)-fhom(:)));
+end
+figure(1),clf,imagesc(gx,gy,log10(abs(u-fhom))), 
+colorbar, hold on, fill(real([s.x;s.x(1)]),imag([s.x;s.x(1)]),'w')
+plot(s.x,'-k'), plot([s.xlo;s.xhi(end)],'.r','MarkerSize',12); colormap('jet')
+title('log10 err in |u|'), axis equal tight
+
+figure(2),clf, semilogy(s.p*Np,err,'o-k'), title('BVP conv')
+xlabel('$n_p$','interpreter','latex')
+% fit_order = [log(Np'),ones(numel(Np),1)]\log(err'); 
+% errfit = @(x) err(1)/Np(1)^(-2*s.p+1)*x.^(-2*s.p+1);
+% p4=loglog(Np(:),err(:),'p-k','MarkerFaceColor','k');hold on, loglog(Np(:),errfit(Np(:)),'--k')
 
 keyboard
-
-% s.nx = ones(size(s.nx))+1i*zeros(size(s.nx));
-% Arho = LapGradAxiSpecialMat(s,s); 
-% s.nx = zeros(size(s.nx))+1i*ones(size(s.nx));
-% Az = LapGradAxiSpecialMat(s,s);
-% s = quadrp(s,[],'p','G');
-% A = bsxfun(@times,real(s.nx(:)),Arho) + bsxfun(@times,imag(s.nx(:)),Az);
-% 
-% trho.x = s.x+1e-5;
-% u1 = LapAxiSpecialMat(s,s)*tau;
-% u2 = LapAxiSpecialMat(trho,s)*tau;
-% test1 = (u2-u1)/1e-04;
-% test2 = Arho*tau;
-% diff = test1-test2;
-
