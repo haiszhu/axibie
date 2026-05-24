@@ -5,6 +5,9 @@
 setup()
 
 v = 1;
+lptype = 's';
+% lptype = 'd';
+
 s.p = 16; 
 shape = 'star'; % or 'star', or 'star2'. test convergence on different shapes
 
@@ -52,13 +55,29 @@ for k=1:numel(Np)
     s = quadr(s,[],'p','G');
 
     % use grad SLP to solve a Neumann problem 
-    A = LapGradAxiSpecialMat(s,s); % A = (-1/2*I+S')
-    rhs = LapGradAxiMat(s,y_source)*pt_force;
-    tau = A\rhs;
+    if lptype == 's'
+      A = LapGradAxiSpecialMat(s,s); % A = (-1/2*I+S')
+      rhs = LapGradAxiMat(s,y_source)*pt_force;
+      tau = A\rhs;
 
-    % use SLP to evaluate soln
-    u = nan*xx; % soln
-    u(ii(:)) = LapAxiSpecialMat(t,s)*tau;
+      % use SLP to evaluate soln
+      u = nan*xx; % soln
+      u(ii(:)) = LapAxiSpecialMat(t,s)*tau;
+
+    elseif lptype == 'd'
+      As = LapGradAxiSpecialMat(s,s); % A = (-1/2*I+S')
+      Ad = LapDLPGradAxiSpecialMat(s,s);
+      rhs = LapGradAxiMat(s,y_source)*pt_force;
+      tau = (As+Ad)\rhs;
+
+      % use SLP to evaluate soln
+      us = nan*xx; % soln
+      ud = nan*xx;
+      us(ii(:)) = LapAxiSpecialMat(t,s)*tau;
+      ud(ii(:)) = LapDLPAxiSpecialMat(t,s)*tau;
+      u = us+ud;
+
+    end
 
     % plot error
     figure(1),clf,imagesc(gx,gy,log10(abs(u-fhom))), 
