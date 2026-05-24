@@ -1,8 +1,8 @@
 function alpDLP = AlpertSphereDLPMat(s)
-% traction self eval
-% purely numerical
+% Stokes DLP self
 %
-% Hai 05/07/20
+% Hai 05/24/26
+%
 
 t_in = [s.tlo;s.thi(end)]; 
 
@@ -20,7 +20,7 @@ while t_in(end-1) < s.t(end)
 end
 % aux panel quadr
 p = s.p; s_aux.Z = s.Z; s_aux.p = p; s_aux.tpan = t_in; qtype = 'p'; qntype = 'G';
-s_aux = quadrp(s_aux, [], qtype);
+s_aux = quadr(s_aux, [], qtype);
 
 % alpert
 [stdt, ~] = gauss(p);
