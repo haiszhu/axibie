@@ -1,20 +1,28 @@
 % test both Dirichlet and Neumann BVP for axi symmetric solver
 %
 % Hai 04/25/20
+%
+% add Stokes combined Dirichlet (0th mode, Alpert, no kernel split), pressure not done... 05/24/26 Hai 
+% (certain code from a while ago... no codex/claude... no research project validation... probably fine since this is a BVP standard test...)
+% (not very interesting, but need to figure out "exactly" where and why people claim Stokes DLP has issue... my intuition is not only high frequency, but some derivation or code bug...)
+% (maybe also need to check naming convention using codex/claude)
+%
 
 setup()
 
 v = 1;
 lptype = 's'; % test SLP (Dirichlet) or SLPt (Neumann)
+lptype = 't';
+lptype = 'd'; % pressure is not done for this....
 
 % generating curve 
 % (make sure surface normal direction for Neumann or traction computation)
 if 0
-    lam = 0.95; % 0<lam<1
-    s0.Z = @(t) -(1.5+cos(t)).*(-sin(lam*pi*sin(t)) + 1i*cos(lam*pi*sin(t)))+1i*0.85;
+  lam = 0.95; % 0<lam<1
+  s0.Z = @(t) -(1.5+cos(t)).*(-sin(lam*pi*sin(t)) + 1i*cos(lam*pi*sin(t)))+1i*0.85;
 elseif 0
-    ratio = 1; % if change ratio, need to change stokeslet position accordingly
-    s0.Z = @(t) 1.5*(sin(t) - 1i*ratio*cos(t)); 
+  ratio = 1; % if change ratio, need to change stokeslet position accordingly
+  s0.Z = @(t) 1.5*(sin(t) - 1i*ratio*cos(t)); 
 else 
 	s0.Z = @(t) ((cos(t).^2+9*sin(t).^2).^(1/2)+cos(4*t).^2).*sin(t)...
                 -1/2*1i*((cos(t).^2+9*sin(t).^2).^(1/2)+cos(4*t).^2).*cos(t);
@@ -34,9 +42,9 @@ t.x = zz(ii(:));  % eval pts only on one side
 alpha = linspace(-pi/3,pi/5,5);
 y_force = [];  
 if 1
-    y_force.x = 2/3*(1*exp(1i*alpha).'+0.1+1i*0.3); 
+  y_force.x = 2/3*(1*exp(1i*alpha).'+0.1+1i*0.3); 
 else
-    y_force.x = 0.4*exp(1i*alpha).'+0.1+1i*0.3; 
+  y_force.x = 0.4*exp(1i*alpha).'+0.1+1i*0.3; 
 end
 pt_force = [[1;1;0;1;0];[1;0;-1;0;1]];
 fhom = nan*(1+1i)*zz; % exact soln
@@ -52,13 +60,13 @@ fhompres(ii(:)) = fpres_temp;
 
 % plot the exact soluntion and the point forces
 if v==1
-    figure(3),
-    clf,streamslice(gx,gy,real(fhom),imag(fhom));
-    hold on; plot(s.x,'.r');
-    title('Exact Soln')
-    plot(y_force.x,'.','MarkerSize',10,'LineWidth',10)
-    quiver(real(y_force.x),imag(y_force.x),.2*pt_force(1:end/2),.2*pt_force(end/2+1:end))
-    axis equal tight
+  figure(3),
+  clf,streamslice(gx,gy,real(fhom),imag(fhom));
+  hold on; plot(s.x,'.r');
+  title('Exact Soln')
+  plot(y_force.x,'.','MarkerSize',10,'LineWidth',10)
+  quiver(real(y_force.x),imag(y_force.x),.2*pt_force(1:end/2),.2*pt_force(end/2+1:end))
+  axis equal tight
 end
 
 N = 10*p*8;
@@ -68,13 +76,19 @@ s = half_quadr(s);
 % solve for tau using self close evaluation matrix
 warning('off','MATLAB:nearlySingularMatrix')
 if lptype == 's'    % Dirichlet
-    f = AxiStokeslet(y_force,s)*pt_force;   % rhs
-    A = AlpertSphereSLPMat(s);              % self eval matrix
-    tau =  A\f;                             % density
-else    % Neumann
-    fp = AxiStokesletT(y_force,s)*pt_force;
-    T = AlpertSphereSLPMatT(s);
-    tau = (-eye(size(T))/2 + T)\fp;
+  f = AxiStokeslet(y_force,s)*pt_force;   % rhs
+  A = AlpertSphereSLPMat(s);              % self eval matrix
+  tau =  A\f;                             % density
+elseif lptype == 't'    % Neumann
+  fp = AxiStokesletT(y_force,s)*pt_force;
+  T = AlpertSphereSLPMatT(s);
+  tau = (-eye(size(T))/2 + T)\fp;
+else
+  f = AxiStokeslet(y_force,s)*pt_force;   % rhs
+  Ad = AlpertSphereDLPMat(s);
+  As = AlpertSphereSLPMat(s); 
+  A = (eye(size(Ad))/2 + Ad)+As;
+  tau =  A\f;  
 end
 
 fpres = AxiStokesletP(y_force,s)*pt_force;
@@ -82,12 +96,21 @@ Pres = SphereSLPMatP(s)*tau;
 
 % evaluate velocity field
 u = nan*(1+1i)*zz;
-temp = SphereQuadtp(s,t)*tau;
+if lptype == 's' || lptype == 't' 
+  temp = SphereQuadtp(s,t)*tau;
+elseif lptype == 'd'
+  temp = (SphereQuadtp(s,t)+SphereQuadKtp(s,t))*tau;
+end
 u(ii) = temp(1:end/2) + 1i*temp(end/2+1:end);
 
  % evaluate pressure field
 pres = nan*zz;
-temp = SphereQuadtpP(s,t)*tau;
+if lptype == 's' || lptype == 't' 
+  temp = SphereQuadtpP(s,t)*tau;
+elseif lptype == 'd'
+  temp = zeros(size(t.x));
+  fprintf('DLP pressure not done yet \n');
+end
 pres(ii) = temp;
 
 % 
@@ -100,10 +123,11 @@ figure(1),clf,imagesc(gx,gy,log10(abs(u-fhom))), axis equal
 colorbar, hold on, plot(s.xlo,'or'), hold off, caxis([-12 0])    
 title('log10 err in |u|')
 
-figure(2),clf,imagesc(gx,gy,log10(abs(pres-fhompres))), axis equal
-colorbar, hold on, plot(s.xlo,'or'), hold off, caxis([-12 0])    
-title('log10 err in pressure')
-
+if lptype == 's' || lptype == 't' 
+  figure(2),clf,imagesc(gx,gy,log10(abs(pres-fhompres))), axis equal
+  colorbar, hold on, plot(s.xlo,'or'), hold off, caxis([-12 0])    
+  title('log10 err in pressure')
+end
 
 keyboard
 
