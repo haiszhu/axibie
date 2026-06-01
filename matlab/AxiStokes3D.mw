@@ -1,0 +1,79 @@
+% AxiStokes3D.mw
+% mwrap interface definitions.
+%
+% Build flags: mwrap -c99complex -i8 -mex
+% After generation: perl -pi -e 's/_{2,}/_/g' AxiStokes3D_mex.c
+%
+% ============================================================
+% mwrap syntax:
+%
+%   @function [inout1, inout2] = SubroutineName_mex(in1, in2, inout1, inout2)
+%   % optional MATLAB pre-processing (reshape, double, defaults)
+%   # FORTRAN SubroutineName(type[dims] in1, type[dims] in2, inout type[dims] inout1, inout type[dims] inout2);
+%   end
+%
+% Convention: inout variables appear on BOTH sides of the MATLAB call.
+% type keywords: int, double, dcomplex ; dims: [1] scalar, [n] vector, [3,n] array (col-major)
+%
+% Prefix <pp><m>_ on every @function: ax + module letter.
+%   axa_  = axissymstok_kernelsplit_mod
+%   axm_  = axissymstok_specialquad_mod
+% ============================================================
+% (gauss is an internal Fortran primitive in axistokes3d_mod, no mex.)
+% --------------------------------------------------------------------------
+% SLP split coefficients.  C1..C5 each (M+1) x (9 nt nq); reshape to (M+1,3nt,3nq) on return.
+@function [C1,C2,C3,C4,C5] = axa_coef_slp_mex(nt, nq, M, mu, zr, zi, yr, yi, C1, C2, C3, C4, C5)
+nt=double(nt); nq=double(nq); M=double(M); mu=double(mu);
+zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:));
+Mp1=M+1; NN=9*nt*nq;
+C1=zeros(Mp1,NN); C2=zeros(Mp1,NN); C3=zeros(Mp1,NN); C4=zeros(Mp1,NN); C5=zeros(Mp1,NN);
+# FORTRAN axa_coef_slp_r64(int[1] nt, int[1] nq, int[1] M, double[1] mu, double[nt] zr, double[nt] zi, double[nq] yr, double[nq] yi, inout double[Mp1,NN] C1, inout double[Mp1,NN] C2, inout double[Mp1,NN] C3, inout double[Mp1,NN] C4, inout double[Mp1,NN] C5);
+end
+
+% DLP split coefficients.  C1,C2 real; C3,C4,C5 complex.  Each (M+1)x(9 nt nq); reshape to (M+1,3nt,3nq).
+@function [C1,C2,C3,C4,C5] = axa_coef_dlp_mex(nt, nq, M, mu, zr, zi, yr, yi, nvr, nvi, C1, C2, C3, C4, C5)
+nt=double(nt); nq=double(nq); M=double(M); mu=double(mu);
+zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:)); nvr=double(nvr(:)); nvi=double(nvi(:));
+Mp1=M+1; NN=9*nt*nq;
+C1=zeros(Mp1,NN); C2=zeros(Mp1,NN); C3=zeros(Mp1,NN); C4=zeros(Mp1,NN); C5=zeros(Mp1,NN);
+# FORTRAN axa_coef_dlp_r64(int[1] nt, int[1] nq, int[1] M, double[1] mu, double[nt] zr, double[nt] zi, double[nq] yr, double[nq] yi, double[nq] nvr, double[nq] nvi, inout double[Mp1,NN] C1, inout double[Mp1,NN] C2, inout dcomplex[Mp1,NN] C3, inout dcomplex[Mp1,NN] C4, inout dcomplex[Mp1,NN] C5);
+end
+
+% DLP close-eval operator block (port of StokDLPAxiModalSpecialquad).  Complex inputs split
+% real/imag; host supplies upsampled weights gw (q=2p) and the q->p Legendre projection P (q x p).
+% W is (M+1)x(9 nt p); reshape to (M+1,3nt,3p) on return.
+@function W = axm_specialquad_dlp_mex(nt, p, M, mu, hm, iside, zr, zi, yr, yi, ypr, ypi, zar, zai, zbr, zbi, gw, Pmat, W)
+nt=double(nt); p=double(p); M=double(M); mu=double(mu); hm=double(hm); iside=double(iside);
+zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:)); ypr=double(ypr(:)); ypi=double(ypi(:));
+zar=double(zar); zai=double(zai); zbr=double(zbr); zbi=double(zbi); gw=double(gw(:)); Pmat=double(Pmat);
+q=2*p; Mp1=M+1; NN=9*nt*p;
+W=zeros(Mp1,NN);
+# FORTRAN axm_specialquad_dlp_r64(int[1] nt, int[1] p, int[1] M, double[1] mu, double[1] hm, int[1] iside, double[nt] zr, double[nt] zi, double[q] yr, double[q] yi, double[q] ypr, double[q] ypi, double[1] zar, double[1] zai, double[1] zbr, double[1] zbi, double[q] gw, double[q,p] Pmat, inout double[Mp1,NN] W);
+end
+
+% SLP close-eval operator block (port of StokAxiModalSpecialquad).  Same I/O shape as the DLP.
+@function W = axm_specialquad_slp_mex(nt, p, M, mu, hm, iside, zr, zi, yr, yi, ypr, ypi, zar, zai, zbr, zbi, gw, Pmat, W)
+nt=double(nt); p=double(p); M=double(M); mu=double(mu); hm=double(hm); iside=double(iside);
+zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:)); ypr=double(ypr(:)); ypi=double(ypi(:));
+zar=double(zar); zai=double(zai); zbr=double(zbr); zbi=double(zbi); gw=double(gw(:)); Pmat=double(Pmat);
+q=2*p; Mp1=M+1; NN=9*nt*p;
+W=zeros(Mp1,NN);
+# FORTRAN axm_specialquad_slp_r64(int[1] nt, int[1] p, int[1] M, double[1] mu, double[1] hm, int[1] iside, double[nt] zr, double[nt] zi, double[q] yr, double[q] yi, double[q] ypr, double[q] ypi, double[1] zar, double[1] zai, double[1] zbr, double[1] zbi, double[q] gw, double[q,p] Pmat, inout double[Mp1,NN] W);
+end
+
+% Naive modal SLP kernel (port of axissymstok_kernel.m).  K = 3nt x 3ns real block, mode m.
+@function K = axa_kernel_slp_mex(nt, ns, srcr, srcz, tgtr, tgtz, m, mu, K)
+nt=double(nt); ns=double(ns); m=double(m); mu=double(mu);
+srcr=double(srcr(:)); srcz=double(srcz(:)); tgtr=double(tgtr(:)); tgtz=double(tgtz(:));
+n3t=3*nt; n3s=3*ns; K=zeros(n3t,n3s);
+# FORTRAN axa_kernel_slp_r64(int[1] nt, int[1] ns, double[ns] srcr, double[ns] srcz, double[nt] tgtr, double[nt] tgtz, int[1] m, double[1] mu, inout double[n3t,n3s] K);
+end
+
+% Naive modal DLP kernel (port of axissymstok_kernel_dlp.m).  Needs source normals srcnr,srcnz.
+@function K = axa_kernel_dlp_mex(nt, ns, srcr, srcz, srcnr, srcnz, tgtr, tgtz, m, mu, K)
+nt=double(nt); ns=double(ns); m=double(m); mu=double(mu);
+srcr=double(srcr(:)); srcz=double(srcz(:)); srcnr=double(srcnr(:)); srcnz=double(srcnz(:));
+tgtr=double(tgtr(:)); tgtz=double(tgtz(:));
+n3t=3*nt; n3s=3*ns; K=zeros(n3t,n3s);
+# FORTRAN axa_kernel_dlp_r64(int[1] nt, int[1] ns, double[ns] srcr, double[ns] srcz, double[ns] srcnr, double[ns] srcnz, double[nt] tgtr, double[nt] tgtz, int[1] m, double[1] mu, inout double[n3t,n3s] K);
+end
