@@ -7,6 +7,5 @@ mex_id_ = 'axa_coef_dlp_r64(c i int64_t[x], c i int64_t[x], c i int64_t[x], c i 
 [C1, C2, C3, C4, C5] = AxiStokes3D_mex(mex_id_, nt, nq, M, mu, zr, zi, yr, yi, nvr, nvi, C1, C2, C3, C4, C5, 1, 1, 1, 1, nt, nt, nq, nq, nq, nq, Mp1, NN, Mp1, NN, Mp1, NN, Mp1, NN, Mp1, NN);
 end
 
-% DLP close-eval operator block (port of StokDLPAxiModalSpecialquad).  Complex inputs split
-% real/imag; host supplies upsampled weights gw (q=2p) and the q->p Legendre projection P (q x p).
-% W is (M+1)x(9 nt p); reshape to (M+1,3nt,3p) on return.
+% SLPn split coefficients (MER + SWIRL).  TARGET normal nxr,nxi.  MER: C1,C2 real, C3,C4 cplx.
+% SWIRL (unit n_theta): C1s,C2s real, C3s cplx (C4s=0).  Each (M+1)x(9 nt nq); reshape (M+1,3nt,3nq).
