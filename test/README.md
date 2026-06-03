@@ -39,9 +39,31 @@ full 3D interior meshgrid.
 Left: boundary data `u` on the surface (color `|u|`, arrows, red ▲ = sources). Right:
 `log10 ||u_h − u_exact||` at interior targets (colorbar `[-16,-8]`).
 
+## `test_axissymstok_dirichlet_slpn.m` — SLP interior Dirichlet solve + SLPn traction
+
+Single-layer representation `u = V^S[σ]`, solved per mode `V^S_m σ_m = f_m` (same manufactured
+exterior-Stokeslet data). Since `V^S[σ] = u^ex` inside, the single-layer traction recovers the exact
+Stokeslet traction, evaluated on the same interior meshgrid with the SLPn mex
+(`axm_specialquad_slpn_mex` near, `axa_kernel_slpn_mex` far). Target normal: one fixed cartesian
+`n_0 = [1,-2,2]/3` (so `n_θ ≠ 0`, exercising the swirl block).
+
+```
+  interior 3D grid: 2760 targets, max ||u-u_exact|| = 4.7e-13
+  interior SLPn traction: raw max 2.3e-02 | gauge-removed max 1.5e-11
+```
+
+The raw `~2e-2` is the single-layer pressure gauge (one constant vector, since `n_0` is fixed);
+removing it (subtract one target) recovers the close-eval floor.
+
+![SLP Dirichlet + SLPn traction](dirichlet_slpn_fortran_mex.png)
+
+Top: boundary data, SLP velocity error. Bottom: gauge-removed `log10 ||S'σ − t_exact||` and the
+reconstructed traction `S'σ` (arrows, color `|t|`).
+
 ## Running
 
 ```matlab
 test_axissymstok_GRF
 test_axissymstok_dirichlet
+test_axissymstok_dirichlet_slpn
 ```

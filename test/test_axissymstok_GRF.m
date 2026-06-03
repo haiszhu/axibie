@@ -4,7 +4,7 @@ function test_axissymstok_GRF
 clearvars; close all;
 here=fileparts(mfilename('fullpath'));
 addpath('/Users/hzhu/Documents/Github/chunkie/chunkie');     % +lege (lege.exps/pols, panel setup)
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/matlab');  % Fortran mex (axm_specialquad_*, axa_kernel_*)
+addpath('/Users/hzhu/Documents/Github/axibie/matlab');  % Fortran mex (axm_specialquad_*, axa_kernel_*)
 
 % ---- geometry: torus tube = circle of radius R about (rc,0) ----
 rc=3; R=1; mu=1.0;

@@ -1,5 +1,5 @@
-function test_axissymstok_dirichlet
-% Stokes dirichlet, MULTI-MODE -- combined-field (SLP+DLP) interior BVP.
+function test_axissymstok_dirichlet_slpn
+% Stokes dirichlet, MULTI-MODE -- SLP interior BVP.
 %
 clearvars; close all;
 here=fileparts(mfilename('fullpath'));
@@ -40,22 +40,21 @@ be=2; q=be*p; [gx2,gw2]=lege.exps(q); [~,~,uk]=lege.exps(p); Pmat=(lege.pols(gx2
 even_mask=[1 0 1;0 1 0;1 0 1]; odd_mask=[0 1 0;1 0 1;0 1 0];
 zt_surf=(rs+1i*zs).';
 
-% build the combined operator A_m = -I/2 + V^S_m + V^D_m, then solve A_m mu_m = f_m
+% build the operator A_m = V^S_m, then solve A_m mu_m = f_m
 A=cell(n_modes,1); for i=1:n_modes, A{i}=zeros(3*ns,3*ns); end
 tic
 for kc=1:Npan
   a0=edges(kc); b0=edges(kc+1); hm=(b0-a0)/2; mid=(a0+b0)/2; tt=mid+hm*gx;
   yp=Zp(tt); tau=yp./abs(yp); nv=-1i*tau; panlen=sum(abs(yp).*gw)*hm; pc=Z(mid); wlp=abs(yp).*gw*hm;
   cols=(kc-1)*p+(1:p); idx3=reshape(3*(cols-1)+(1:3).',[],1); w3p=reshape(repmat(wlp(:).',3,1),1,[]);
-  sr=[real(Z(tt)).';imag(Z(tt)).']; sn=[real(nv).';imag(nv).'];
+  sr=[real(Z(tt)).';imag(Z(tt)).'];
   yU=Z(mid+hm*gx2); ypU=Zp(mid+hm*gx2); za=Z(a0); zb=Z(b0);
   dpc=sqrt((rs-real(pc)).^2+(zs-imag(pc)).^2); nb=dpc<1.5*panlen; ni=find(nb); fi=find(~nb);
   if ~isempty(ni)
     nn=numel(ni); zn=zt_surf(ni); rows=reshape(3*(ni(:).'-1)+(1:3).',[],1);
     WS=reshape(axm_specialquad_slp_mex(nn,p,Mtrunc,mu,hm,0, real(zn),imag(zn), real(yU),imag(yU), real(ypU),imag(ypU), real(za),imag(za), real(zb),imag(zb), gw2, Pmat, []), Mtrunc+1,3*nn,3*p);
-    WD=reshape(axm_specialquad_dlp_mex(nn,p,Mtrunc,mu,hm,0, real(zn),imag(zn), real(yU),imag(yU), real(ypU),imag(ypU), real(za),imag(za), real(zb),imag(zb), gw2, Pmat, []), Mtrunc+1,3*nn,3*p);
     for i=1:n_modes
-      A{i}(rows,idx3)=squeeze(WS(abs(modes(i))+1,:,:))+squeeze(WD(abs(modes(i))+1,:,:));
+      A{i}(rows,idx3)=squeeze(WS(abs(modes(i))+1,:,:));
     end
   end
   if ~isempty(fi)
@@ -63,8 +62,7 @@ for kc=1:Npan
     for i=1:n_modes
       m=abs(modes(i));
       KS=axa_kernel_slp_mex(nf,p,sr(1,:),sr(2,:),tgr,tgz,m,mu,[]).*repmat(w3p,3*nf,1);
-      KD=axa_kernel_dlp_mex(nf,p,sr(1,:),sr(2,:),sn(1,:),sn(2,:),tgr,tgz,m,mu,[]).*repmat(w3p,3*nf,1);
-      A{i}(rows,idx3)=KS+KD;
+      A{i}(rows,idx3)=KS;
     end
   end
 end
@@ -74,11 +72,7 @@ end
 %   S.eval = @(s,t) axa_kernel_slp_mex(size(t.r,2), size(s.r,2), ...
 %                      s.r(1,:), s.r(2,:), t.r(1,:), t.r(2,:), m, mu, []);
 %   S.opdims = [3,3]; S.sing = 'log';
-%   D = kernel();
-%   D.eval = @(s,t) axa_kernel_dlp_mex(size(t.r,2), size(s.r,2), ...
-%                      s.r(1,:), s.r(2,:), t.r(1,:), t.r(2,:), m, mu, []);
-%   D.opdims = [3,3]; D.sing = 'pv'; % is this true?
-%   A{i} = chunkermat(chnkr, S, opts) + chunkermat(chnkr, D, opts);
+%   A{i} = chunkermat(chnkr, S, opts);
 % end
 mu_m=zeros(n_modes,3*ns);
 for i=1:n_modes
@@ -87,33 +81,42 @@ for i=1:n_modes
   Ai=A{i}.*kron(ones(ns,ns),mask);
   mu_m(i,:)=gmres(Ai,f_m(i,:).',[],1e-12,3*ns).';
 end
-fprintf('\n test_axissymstok_dirichlet (combined SLP+DLP, Fortran close-eval mex, modes 0..%d)\n',Mtrunc);
+fprintf('\n test_axissymstok_dirichlet_slpn (SLP, Fortran close-eval mex, modes 0..%d)\n',Mtrunc);
 fprintf('  operator build + solve: '); toc
 
-% interior evaluation:  u = (V^S + V^D)[mu]  on a full 3D meshgrid inside the tube
+% interior evaluation:  u = V^S[mu]  on a full 3D meshgrid inside the tube
 xg=linspace(-4.5,4.5,31); yg=linspace(-4.5,4.5,31); zg=linspace(-1.2,1.2,11);
 [Xg,Yg,Zg]=meshgrid(xg,yg,zg); xt=Xg(:).'; yt=Yg(:).'; zt3=Zg(:).';
 rt=hypot(xt,yt); tht=atan2(yt,xt);
 inside=((rt-rc).^2+zt3.^2)<R^2; gi=find(inside); Ng=numel(gi);
 trg=rt(gi); tzg=zt3(gi); thg=tht(gi); ztg=(trg+1i*tzg).';   % meridian (rho,z) + azimuth per interior target
 
-UE=cell(n_modes,1); UO=cell(n_modes,1);
-for i=1:n_modes, UE{i}=zeros(3,Ng); UO{i}=zeros(3,Ng); end
+n0=[1;-2;2]/3; NX=repmat(n0,1,Ng);
+nrho_c=NX(1,:).*cos(thg)+NX(2,:).*sin(thg);
+ntheta_c=-NX(1,:).*sin(thg)+NX(2,:).*cos(thg);
+nzeta_c=NX(3,:);
+UE=cell(n_modes,1); UO=cell(n_modes,1); TE=cell(n_modes,1); TO=cell(n_modes,1);
+for i=1:n_modes, UE{i}=zeros(3,Ng); UO{i}=zeros(3,Ng); TE{i}=zeros(3,Ng); TO{i}=zeros(3,Ng); end
 for kc=1:Npan
   a0=edges(kc); b0=edges(kc+1); hm=(b0-a0)/2; mid=(a0+b0)/2; tt=mid+hm*gx;
   yp=Zp(tt); tau=yp./abs(yp); nv=-1i*tau; panlen=sum(abs(yp).*gw)*hm; pc=Z(mid); wlp=abs(yp).*gw*hm;
   cols=(kc-1)*p+(1:p); idx3=reshape(3*(cols-1)+(1:3).',[],1); w3p=reshape(repmat(wlp(:).',3,1),1,[]);
-  sr=[real(Z(tt)).';imag(Z(tt)).']; sn=[real(nv).';imag(nv).'];
+  sr=[real(Z(tt)).';imag(Z(tt)).'];
   yU=Z(mid+hm*gx2); ypU=Zp(mid+hm*gx2); za=Z(a0); zb=Z(b0);
   dpc=abs(ztg-pc).'; nb=dpc<1.5*panlen; ni=find(nb); fi=find(~nb);
   if ~isempty(ni)
     nn=numel(ni); zn=ztg(ni); EVn=kron(ones(nn,p),even_mask); ODn=kron(ones(nn,p),odd_mask);
     WS=reshape(axm_specialquad_slp_mex(nn,p,Mtrunc,mu,hm,0, real(zn),imag(zn), real(yU),imag(yU), real(ypU),imag(ypU), real(za),imag(za), real(zb),imag(zb), gw2, Pmat, []), Mtrunc+1,3*nn,3*p);
-    WD=reshape(axm_specialquad_dlp_mex(nn,p,Mtrunc,mu,hm,0, real(zn),imag(zn), real(yU),imag(yU), real(ypU),imag(ypU), real(za),imag(za), real(zb),imag(zb), gw2, Pmat, []), Mtrunc+1,3*nn,3*p);
+    nxn=(nrho_c(ni)+1i*nzeta_c(ni)).'; ntil=reshape(repmat(ntheta_c(ni),3,1),[],1);
+    [Wfv,Wfswv]=axm_specialquad_slpn_mex(nn,p,Mtrunc,mu,hm,0, real(zn),imag(zn), real(nxn),imag(nxn), real(yU),imag(yU), real(ypU),imag(ypU), real(za),imag(za), real(zb),imag(zb), gw2, Pmat, [], []);
+    Wfn=reshape(Wfv,Mtrunc+1,3*nn,3*p); Wfswn=reshape(Wfswv,Mtrunc+1,3*nn,3*p);
     for i=1:n_modes
-      blk=squeeze(WS(abs(modes(i))+1,:,:))+squeeze(WD(abs(modes(i))+1,:,:)); dmu=mu_m(i,idx3).';
+      blk=squeeze(WS(abs(modes(i))+1,:,:)); dmu=mu_m(i,idx3).';
       UE{i}(:,ni)=UE{i}(:,ni)+reshape((blk.*EVn)*dmu,3,nn);
       UO{i}(:,ni)=UO{i}(:,ni)+reshape((blk.*ODn)*dmu,3,nn);
+      bm=squeeze(Wfn(abs(modes(i))+1,:,:)); bs=squeeze(Wfswn(abs(modes(i))+1,:,:)).*ntil;
+      TE{i}(:,ni)=TE{i}(:,ni)+reshape((bm.*EVn+bs.*ODn)*dmu,3,nn);
+      TO{i}(:,ni)=TO{i}(:,ni)+reshape((bm.*ODn+bs.*EVn)*dmu,3,nn);
     end
   end
   if ~isempty(fi)
@@ -121,10 +124,13 @@ for kc=1:Npan
     for i=1:n_modes
       m=abs(modes(i));
       KS=axa_kernel_slp_mex(nf,p,sr(1,:),sr(2,:),tgr,tgz,m,mu,[]).*repmat(w3p,3*nf,1);
-      KD=axa_kernel_dlp_mex(nf,p,sr(1,:),sr(2,:),sn(1,:),sn(2,:),tgr,tgz,m,mu,[]).*repmat(w3p,3*nf,1);
-      blk=KS+KD; dmu=mu_m(i,idx3).';
+      blk=KS; dmu=mu_m(i,idx3).';
       UE{i}(:,fi)=UE{i}(:,fi)+reshape((blk.*EVf)*dmu,3,nf);
       UO{i}(:,fi)=UO{i}(:,fi)+reshape((blk.*ODf)*dmu,3,nf);
+      [Km,Ks]=axa_kernel_slpn_mex(nf,p,sr(1,:),sr(2,:),tgr,tgz, nrho_c(fi),nzeta_c(fi),ntheta_c(fi), m, mu, [],[]);
+      Km=Km.*repmat(w3p,3*nf,1); Ks=Ks.*repmat(w3p,3*nf,1);
+      TE{i}(:,fi)=TE{i}(:,fi)+reshape((Km.*EVf+Ks.*ODf)*dmu,3,nf);
+      TO{i}(:,fi)=TO{i}(:,fi)+reshape((Km.*ODf+Ks.*EVf)*dmu,3,nf);
     end
   end
 end
@@ -143,12 +149,25 @@ dsurf=abs(sqrt((trg-rc).^2+tzg.^2)-R);
 fprintf('  interior 3D grid: %d targets, max ||u-u_exact|| = %.3e\n', Ng, max(errg));
 fprintf('    near-surface band (dist<0.05): max err = %.3e\n', max(errg(dsurf<0.05)));
 
+ut_cyl=zeros(3,Ng);
+for i=1:n_modes
+  sgn=sign(modes(i)); if sgn==0, sgn=1; end
+  ut_cyl=ut_cyl+real((TE{i}+1i*sgn*TO{i}).*exp(1i*modes(i)*thg));
+end
+ut_sol=[ut_cyl(1,:).*cos(thg)-ut_cyl(2,:).*sin(thg);
+        ut_cyl(1,:).*sin(thg)+ut_cyl(2,:).*cos(thg);
+        ut_cyl(3,:)];
+t_true=stokeslet_traction([xt(gi); yt(gi); zt3(gi)], NX, src_pts, src_frc);
+e_t=ut_sol-t_true; e_g=e_t-e_t(:,1);
+fprintf('  interior SLPn traction: raw max %.3e | gauge-removed max %.3e median %.3e\n', ...
+        max(vecnorm(e_t,2,1)), max(vecnorm(e_g,2,1)), median(vecnorm(e_g,2,1)));
+
 % ---- figure: (1) Dirichlet boundary data on the torus surface, (2) interior log10 error ----
 th_all=(0:n_angles-1)*2*pi/n_angles;
 Sx=[reshape(rs(:)*cos(th_all),1,[]); reshape(rs(:)*sin(th_all),1,[]); reshape(repmat(zs(:),1,n_angles),1,[])];
 u_surf=uex(Sx); spd=vecnorm(u_surf,2,1); sk=1:15:size(Sx,2);
-figure('Position',[50 60 1340 660]);
-ax1=subplot(1,2,1);
+figure('Position',[40 40 1320 980]);
+ax1=subplot(2,2,1);
 scatter3(Sx(1,:),Sx(2,:),Sx(3,:),16,spd,'filled'); hold on
 quiver3(Sx(1,sk),Sx(2,sk),Sx(3,sk), u_surf(1,sk),u_surf(2,sk),u_surf(3,sk), 3,'k','LineWidth',0.4);
 plot3(src_pts(1,:),src_pts(2,:),src_pts(3,:),'r^','MarkerFaceColor','r','MarkerSize',10);
@@ -156,12 +175,23 @@ axis equal; grid on; box on; view(35,20); colorbar; colormap(ax1,parula);
 xlabel('x'); ylabel('y'); zlabel('z');
 title('Dirichlet boundary data:  u on the torus surface   (color = |u|, arrows = u)');
 legend({'surface nodes (|u|)','u (subsampled)','exterior Stokeslets'},'Location','northeast');
-ax2=subplot(1,2,2);
+ax2=subplot(2,2,2);
 scatter3(xt(gi),yt(gi),zt3(gi),26,log10(errg+1e-16),'filled');
 axis equal; grid on; box on; view(35,20); colorbar; colormap(ax2,jet); caxis(ax2,[-16 -8]);
 xlabel('x'); ylabel('y'); zlabel('z');
-title(sprintf('log_{10} ||u_h - u_{exact}||   interior (combined SLP+DLP, modes 0..%d)',Mtrunc));
-outpng=fullfile(here,'dirichlet_combined_fortran_mex.png');
+title(sprintf('log_{10} ||u_h - u_{exact}||   interior (SLP, modes 0..%d)',Mtrunc));
+ax3=subplot(2,2,3);
+scatter3(xt(gi),yt(gi),zt3(gi),30,log10(vecnorm(e_g,2,1)+1e-16),'filled');
+axis equal; grid on; box on; view(35,20); colorbar; colormap(ax3,jet); caxis(ax3,[-16 -8]);
+xlabel('x'); ylabel('y'); zlabel('z');
+title(sprintf('log_{10} ||S''\\sigma - t_{exact}|| (gauge-removed)   interior (SLPn, modes 0..%d)',Mtrunc));
+ax4=subplot(2,2,4);
+quiver3(xt(gi),yt(gi),zt3(gi), ut_sol(1,:),ut_sol(2,:),ut_sol(3,:), 2,'k','LineWidth',0.4); hold on
+scatter3(xt(gi),yt(gi),zt3(gi),20,vecnorm(ut_sol,2,1),'filled');
+axis equal; grid on; box on; view(35,20); colorbar; colormap(ax4,parula);
+xlabel('x'); ylabel('y'); zlabel('z');
+title('reconstructed SLPn traction  S''\sigma  (arrows), color = |t|');
+outpng=fullfile(here,'dirichlet_slpn_fortran_mex.png');
 saveas(gcf,outpng); fprintf('  saved -> %s\n',outpng);
 end
 
@@ -169,6 +199,16 @@ end
 function u = stokeslet_field(X, pts, frc)
 u=zeros(size(X));
 for k=1:size(pts,2), u=u+stokeslet_velocity(X, pts(:,k), frc(:,k)); end
+end
+
+% ===========================================================================
+function t = stokeslet_traction(X, n, pts, frc)
+t=zeros(size(X));
+for k=1:size(pts,2)
+  d=X-pts(:,k); r=sqrt(sum(d.^2,1)); fk=frc(:,k);
+  df=fk(1)*d(1,:)+fk(2)*d(2,:)+fk(3)*d(3,:); dn=sum(d.*n,1);
+  t=t-(3/(4*pi))*(df.*dn./r.^5).*d;
+end
 end
 
 % ===========================================================================
