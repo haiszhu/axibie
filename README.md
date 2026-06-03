@@ -26,5 +26,6 @@ This project is in a very early state. It contains functions from Alex Barnett's
 
 * (prototype done...) Implement high order Fourier modes to enable nonsymmetric potential and flow simulation
 * (do we need this...) Implement multiple partciles + possible interaction with confined geometry
+* (3d) Is complexification & kernel-split doable here? worth investigation... exact split formula stay private for now 
 * (3d probably) Accelerate via FMM?
 
