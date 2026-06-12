@@ -114,9 +114,7 @@ end
 pres(ii) = temp;
 
 % 
-Nn = [Nn;numel(s.x)];
 err = u(2*end/2:end,2*end/2:end)-fhom(2*end/2:end,2*end/2:end);
-Err = [Err;max(abs(err(:)))];
 
 % plot
 figure(1),clf,imagesc(gx,gy,log10(abs(u-fhom))), axis equal
