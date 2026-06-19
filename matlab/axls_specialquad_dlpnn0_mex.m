@@ -8,3 +8,6 @@ W=zeros(nt,p);
 mex_id_ = 'axls_specialquad_dlpnn0_r64(c i int64_t[x], c i int64_t[x], c i double[x], c i int64_t[x], c i double[x], c i double[x], c i double[x], c i double[x], c i double[x], c i double[x], c i double[x], c i double[x], c i double[x], c i double[x], c i double[x], c i double[x], c i double[x], c i double[xx], c io double[xx])';
 [W] = AxiStokes3D_mex(mex_id_, nt, p, hm, iside, zr, zi, nxr, nxi, yr, yi, ypr, ypi, zar, zai, zbr, zbi, gw, Pmat, W, 1, 1, 1, 1, nt, nt, nt, nt, q, q, q, q, 1, 1, 1, 1, q, q, p, nt, p);
 end
+
+% Full mode-n DLP (3x3) block (Fortran StoDLPAxiBlockMat_nmode).  Coarse positions (xcr,xci: p x np),
+% breakpoints tpan (np+1), targets (zr,zi).  SOURCE normal internal.  A = complex 3nt x 3(np*p).

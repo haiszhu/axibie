@@ -129,4 +129,130 @@ contains
 
   end subroutine gauss_r128
 
+  ! ------------------------------------------------------------------
+  ! ellipke_mc
+  ! Complete elliptic K(m), E(m) and K-E via AGM, in the complementary
+  ! parameter mc = 1 - m (cancellation-free as mc -> 0).  Shared by the
+  ! axisym close-eval coef builders (directly or through carrier).
+  ! ------------------------------------------------------------------
+  subroutine ellipke_mc_r64(mc, K, E, KmE)
+    real(r64), intent(in)    :: mc
+    real(r64), intent(inout) :: K, E, KmE
+    real(r64)  :: a, b, c0, s, p2, an, bn, cn, pi
+    integer(8) :: it
+    pi = acos(-1.0_r64)
+    a = 1.0_r64; b = sqrt(mc); c0 = sqrt(1.0_r64 - mc); s = 0.5_r64*c0*c0; p2 = 1.0_r64
+    do it = 1, 60
+      an = (a + b)/2.0_r64; bn = sqrt(a*b); cn = (a - b)/2.0_r64
+      a = an; b = bn; s = s + p2*cn*cn; p2 = p2*2.0_r64
+      if (abs(cn) < 1.0e-17_r64) exit
+    end do
+    K = pi/(2.0_r64*a); E = K*(1.0_r64 - s); KmE = K*s
+  end subroutine ellipke_mc_r64
+
+  ! ------------------------------------------------------------------
+  ! carrier
+  ! Half-integer Legendre carriers for the mode-n axisym close-eval split:
+  !   vk = Q_{n-1/2}(chi),  ve = (2n+1)(chi Q_{n-1/2} - Q_{n+1/2})/(chi+1),
+  !   Fn = P_{n-1/2}(chi),  An = (2n+1)(chi P_{n-1/2} - P_{n+1/2})/(chi+1),
+  !   dFn = dP_{n-1/2}/dchi.
+  ! Q-side (vk,ve): ellipke_mc at mc=(chi-1)/(chi+1), forward recurrence with
+  ! scaled-Miller backward fallback (decaying-Q unstable for high n).  P-side
+  ! (Fn,An,dFn): ellipke_mc at mc=2/(chi+1) (the complementary modulus); An,dFn
+  ! are F-differences cancelling as chi->1, taken cancellation-free via K-E.
+  ! Merge of carrier_vn + carrier_fn.
+  ! ------------------------------------------------------------------
+  subroutine carrier_r64(chi, n, vk, ve, Fn, An, dFn)
+    real(r64),  intent(in)    :: chi
+    integer(8), intent(in)    :: n
+    real(r64),  intent(inout) :: vk, ve, Fn, An, dFn
+    real(r64)  :: Kel, Eel, KmE, sm, Qm12, Q12, lam, vkF, QnpF, vkM, QnpM
+    real(r64)  :: Qhi, Qlo, Qkm1, sc, sf, rk, twon1, mfac, mc, KmEmc, twopiinv
+    real(r64)  :: Qf(0:n+1), F(0:n+1), dF(0:n+1)
+    integer(8) :: k, M
+    ! ---- vk = Q_{n-1/2}, ve ----
+    sm = sqrt(2.0_r64/(chi+1.0_r64))
+    call ellipke_mc_r64((chi-1.0_r64)/(chi+1.0_r64), Kel, Eel, KmE)
+    Qm12 = sm*Kel; Q12 = chi*Qm12 - (chi+1.0_r64)*sm*Eel
+    if (n == 0_8) then
+      vk = Qm12; ve = (chi*Qm12 - Q12)/(chi+1.0_r64)
+    else
+      twon1 = 2.0_r64*real(n,r64) + 1.0_r64
+      Qf(0) = Qm12; Qf(1) = Q12
+      do k = 1, n
+        rk = real(k,r64)
+        Qf(k+1) = (2.0_r64*rk*chi*Qf(k) - (rk-0.5_r64)*Qf(k-1))/(rk+0.5_r64)
+      end do
+      vkF = Qf(n); QnpF = Qf(n+1)
+      M = n + max(6_8*n, 80_8); sf = 2.0_r64**(-512)
+      Qhi = 0.0_r64; Qlo = 1.0_r64; vkM = 0.0_r64; QnpM = 0.0_r64
+      do k = M, 1, -1
+        rk = real(k,r64)
+        Qkm1 = (2.0_r64*rk*chi*Qlo - (rk+0.5_r64)*Qhi)/(rk-0.5_r64)
+        if (k == n+1) QnpM = Qlo
+        if (k == n)   vkM  = Qlo
+        Qhi = Qlo; Qlo = Qkm1
+        if (abs(Qlo) > 1.0e150_r64) then
+          Qhi = Qhi*sf; Qlo = Qlo*sf; vkM = vkM*sf; QnpM = QnpM*sf
+        end if
+      end do
+      sc = Qm12/Qlo; vkM = sc*vkM; QnpM = sc*QnpM
+      lam = chi + sqrt(chi*chi - 1.0_r64)
+      if (lam**(2.0_r64*real(n,r64)) < 1.0e6_r64) then
+        vk = vkF; ve = twon1*(chi*vkF - QnpF)/(chi+1.0_r64)
+      else
+        vk = vkM; ve = twon1*(chi*vkM - QnpM)/(chi+1.0_r64)
+      end if
+    end if
+    ! ---- Fn = P_{n-1/2}, An, dFn ----
+    twopiinv = 2.0_r64/acos(-1.0_r64)
+    mfac = 2.0_r64/(chi+1.0_r64); sm = sqrt(mfac); mc = (chi-1.0_r64)/(chi+1.0_r64)
+    call ellipke_mc_r64(mfac, Kel, Eel, KmE)
+    if (abs(mc) < 1.0e-300_r64) then
+      KmEmc = acos(-1.0_r64)/4.0_r64
+    else
+      KmEmc = KmE/mc
+    end if
+    F(0) = sm*twopiinv*Kel
+    F(1) = sm*twopiinv*((chi+1.0_r64)*Eel - Kel)
+    do k = 1, n
+      rk = real(k,r64)
+      F(k+1) = (2.0_r64*rk*chi*F(k) - (rk-0.5_r64)*F(k-1))/(rk+0.5_r64)
+    end do
+    dF(0) = -sm*twopiinv*KmEmc/(2.0_r64*(chi+1.0_r64))
+    dF(1) =  0.5_r64*sm*twopiinv*(-KmEmc/(chi+1.0_r64) + Eel)
+    do k = 1, n
+      rk = real(k,r64)
+      dF(k+1) = (2.0_r64*rk*F(k) + 2.0_r64*rk*chi*dF(k) - (rk-0.5_r64)*dF(k-1))/(rk+0.5_r64)
+    end do
+    Fn = F(n); dFn = dF(n); An = -2.0_r64*(chi-1.0_r64)*dFn
+  end subroutine carrier_r64
+
+  ! ------------------------------------------------------------------
+  ! lagrange_interp
+  ! 1D Lagrange interpolation matrix M(nt,ns): values at the source nodes
+  ! xs(ns) -> values at the target nodes xt(nt), M(i,j) = prod_{k/=j} (xt_i-xs_k)/(xs_j-xs_k).
+  ! Shared by the block builders for panel refinement, the p->2p close-eval
+  ! upsample, and the refined->original fold-back projection.
+  ! ------------------------------------------------------------------
+  subroutine lagrange_interp_r64(ns, xs, nt, xt, M)
+    integer(8), intent(in)    :: ns, nt
+    real(r64),  intent(in)    :: xs(ns), xt(nt)
+    real(r64),  intent(inout) :: M(nt,ns)
+    integer(8) :: i, jj, kk
+    real(r64)  :: num, den
+    do i = 1, nt
+      do jj = 1, ns
+        num = 1.0_r64; den = 1.0_r64
+        do kk = 1, ns
+          if (kk /= jj) then
+            num = num * (xt(i) - xs(kk))
+            den = den * (xs(jj) - xs(kk))
+          end if
+        end do
+        M(i,jj) = num/den
+      end do
+    end do
+  end subroutine lagrange_interp_r64
+
 end module axistokes3d_mod

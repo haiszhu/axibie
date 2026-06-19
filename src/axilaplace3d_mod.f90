@@ -11,7 +11,7 @@ module axilaplace3d_mod
   ! Single source of truth -- the actual definitions live in axistokes3d_mod;
   ! this module adds no new definitions, only the Laplace-named handle.
   ! ------------------------------------------------------------------
-  use axistokes3d_mod, only: r64, r128, c64, c128, gauss_r64, gauss_r128
+  use axistokes3d_mod, only: r64, r128, c64, c128, gauss_r64, gauss_r128, ellipke_mc_r64, carrier_r64, lagrange_interp_r64
   implicit none
-  public :: r64, r128, c64, c128, gauss_r64, gauss_r128
+  public :: r64, r128, c64, c128, gauss_r64, gauss_r128, ellipke_mc_r64, carrier_r64, lagrange_interp_r64
 end module axilaplace3d_mod

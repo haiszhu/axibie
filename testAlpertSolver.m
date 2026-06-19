@@ -20,7 +20,7 @@ lptype = 'd'; % pressure is not done for this....
 if 0
   lam = 0.95; % 0<lam<1
   s0.Z = @(t) -(1.5+cos(t)).*(-sin(lam*pi*sin(t)) + 1i*cos(lam*pi*sin(t)))+1i*0.85;
-elseif 0
+elseif 1
   ratio = 1; % if change ratio, need to change stokeslet position accordingly
   s0.Z = @(t) 1.5*(sin(t) - 1i*ratio*cos(t)); 
 else 
@@ -71,7 +71,7 @@ end
 
 N = 10*p*8;
 [s,~] = quadr(s0, N, qtype, qntype); 
-s = half_quadr(s);
+% s = half_quadr(s);
 
 % solve for tau using self close evaluation matrix
 warning('off','MATLAB:nearlySingularMatrix')

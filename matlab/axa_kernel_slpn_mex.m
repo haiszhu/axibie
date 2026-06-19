@@ -7,10 +7,10 @@ mex_id_ = 'axa_kernel_slpn_r64(c i int64_t[x], c i int64_t[x], c i double[x], c 
 [K, Ksw] = AxiStokes3D_mex(mex_id_, nt, ns, srcr, srcz, tgtr, tgtz, tgtnr, tgtnz, tgtnth, m, mu, K, Ksw, 1, 1, ns, ns, nt, nt, nt, nt, nt, 1, 1, n3t, n3s, n3t, n3s);
 end
 
-% ============================================================
-% Laplace 0th-mode kernel-split coefficients (axissymlap_kernelsplit_mod).
-% All densities REAL, nt x nq.  The normals nu=t.nx, nu'=s.nx live in the special-quad
-% matrices (Sspecialquad/Dspecialquad), NOT in these coefficients.  Naming follows the
-% Stokes axa_coef_* wrappers with the 0th-mode "0" marker.
 % ------------------------------------------------------------
-% SLP  S : C1 log, C2 smooth.
+% SLP per-panel close-eval drivers (axissymstok_kernelsplit_mod; carrierVn/carrierFn/slp9coef
+% two-carrier pipeline).  Complex inputs split real/imag.  Host supplies the upsampled panel:
+% source nodes y=Z(tt) (nq=2p), source unit normals nv, real GL weights ws, complex speed
+% weights wxp, panel endpoints za=Z(a0)/zb=Z(b0), iside (1=ext,0=int).
+% --------------------------------------------------------------------------
+% n-mode: A is the (nt,nq,9) complex block; returned flat as (nt, nq*9), reshape(A,nt,nq,9).

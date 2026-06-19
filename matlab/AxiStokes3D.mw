@@ -6,218 +6,86 @@
 %
 % ============================================================
 % mwrap syntax:
-%
-%   @function [inout1, inout2] = SubroutineName_mex(in1, in2, inout1, inout2)
-%   % optional MATLAB pre-processing (reshape, double, defaults)
-%   # FORTRAN SubroutineName(type[dims] in1, type[dims] in2, inout type[dims] inout1, inout type[dims] inout2);
+%   @function [inout1] = SubroutineName_mex(in1, ..., inout1)
+%   % MATLAB pre-processing (reshape, double, allocate inout)
+%   # FORTRAN SubroutineName(type[dims] in1, ..., inout type[dims] inout1);
 %   end
 %
-% Convention: inout variables appear on BOTH sides of the MATLAB call.
-% type keywords: int, double, dcomplex ; dims: [1] scalar, [n] vector, [3,n] array (col-major)
+% Convention: inout vars appear on BOTH sides of the MATLAB call (allocated in the body).
+% type keywords: int, double, dcomplex ; dims: [1] scalar, [n] vector, [m,n] array (col-major).
+% Complex args pass as dcomplex (NO real/imag split, -c99complex), so the MATLAB twin, the
+% _mex (@function), and the _r64 (Fortran wrapper) signatures match in name and order.
 %
-% Prefix <pp><m>_ on every @function: ax + module letter.
-%   axa_  = axissymstok_kernelsplit_mod
-%   axm_  = axissymstok_specialquad_mod
-%   axl_  = axissymlap_kernelsplit_mod (0th azimuthal mode)
-%   axls_ = axissymlap_specialquad_mod (0th azimuthal mode close-eval operators)
+% Prefix <pp><m>_ per NAMING.md:
+%   axsk_ = axissymstok_kernelsplit_mod    axss_ = axissymstok_specialquad_mod
+%   axlk_ = axissymlap_kernelsplit_mod     axls_ = axissymlap_specialquad_mod
 % ============================================================
-% (gauss is an internal Fortran primitive in axistokes3d_mod, no mex.)
+%
+% Stokes specialquad block matrices.  Source = coarse panel quadrature
+% (sx,snx,sws,swxp positions/normals/speed-wts/complex-wts; tpan breakpoints; sxlo/sxhi panel
+% endpoints).  0th blocks: real A(2nt, 2 np p) = [Arr Arz; Azr Azz].  n-mode blocks: complex
+% A(3nt, 3 np p, M+1), all modes 0..M, passed as the 2D buffer (3nt, 3 np p (M+1)) and reshaped.
 % --------------------------------------------------------------------------
-% SLP split coefficients.  C1..C5 each (M+1) x (9 nt nq); reshape to (M+1,3nt,3nq) on return.
-@function [C1,C2,C3,C4,C5] = axa_coef_slp_mex(nt, nq, M, mu, zr, zi, yr, yi, C1, C2, C3, C4, C5)
-nt=double(nt); nq=double(nq); M=double(M); mu=double(mu);
-zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:));
-Mp1=M+1; NN=9*nt*nq;
-C1=zeros(Mp1,NN); C2=zeros(Mp1,NN); C3=zeros(Mp1,NN); C4=zeros(Mp1,NN); C5=zeros(Mp1,NN);
-# FORTRAN axa_coef_slp_r64(int[1] nt, int[1] nq, int[1] M, double[1] mu, double[nt] zr, double[nt] zi, double[nq] yr, double[nq] yi, inout double[Mp1,NN] C1, inout double[Mp1,NN] C2, inout double[Mp1,NN] C3, inout double[Mp1,NN] C4, inout double[Mp1,NN] C5);
+
+% SLP 0th  (no normal in the kernel; snx carried only for the unified source group).
+@function A = axss_slp_blockmat_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, mu, A)
+nt=double(nt); p=double(p); np=double(np); iside=double(iside); iclosed=double(iclosed); mu=double(mu);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1; r2t=2*nt; c2=2*nsp;
+A=zeros(r2t,c2);
+# FORTRAN axss_slp_blockmat_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] iside, int[1] iclosed, double[1] mu, inout double[r2t,c2] A);
 end
 
-% DLP split coefficients.  C1,C2 real; C3,C4,C5 complex.  Each (M+1)x(9 nt nq); reshape to (M+1,3nt,3nq).
-@function [C1,C2,C3,C4,C5] = axa_coef_dlp_mex(nt, nq, M, mu, zr, zi, yr, yi, nvr, nvi, C1, C2, C3, C4, C5)
-nt=double(nt); nq=double(nq); M=double(M); mu=double(mu);
-zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:)); nvr=double(nvr(:)); nvi=double(nvi(:));
-Mp1=M+1; NN=9*nt*nq;
-C1=zeros(Mp1,NN); C2=zeros(Mp1,NN); C3=zeros(Mp1,NN); C4=zeros(Mp1,NN); C5=zeros(Mp1,NN);
-# FORTRAN axa_coef_dlp_r64(int[1] nt, int[1] nq, int[1] M, double[1] mu, double[nt] zr, double[nt] zi, double[nq] yr, double[nq] yi, double[nq] nvr, double[nq] nvi, inout double[Mp1,NN] C1, inout double[Mp1,NN] C2, inout dcomplex[Mp1,NN] C3, inout dcomplex[Mp1,NN] C4, inout dcomplex[Mp1,NN] C5);
+% SLP n-mode
+@function A = axss_slp_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
+nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed); mu=double(mu);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1; Mp1=M+1; r3t=3*nt; c3m=3*nsp*Mp1;
+A=zeros(r3t,c3m);
+# FORTRAN axss_slp_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, double[1] mu, inout dcomplex[r3t,c3m] A);
+A=reshape(A, r3t, 3*nsp, Mp1);
 end
 
-% SLPn split coefficients (MER + SWIRL).  TARGET normal nxr,nxi.  MER: C1,C2 real, C3,C4 cplx.
-% SWIRL (unit n_theta): C1s,C2s real, C3s cplx (C4s=0).  Each (M+1)x(9 nt nq); reshape (M+1,3nt,3nq).
-@function [C1,C2,C3,C4,C1s,C2s,C3s] = axa_coef_slpn_mex(nt, nq, M, mu, zr, zi, yr, yi, nxr, nxi, C1, C2, C3, C4, C1s, C2s, C3s)
-nt=double(nt); nq=double(nq); M=double(M); mu=double(mu);
-zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:)); nxr=double(nxr(:)); nxi=double(nxi(:));
-Mp1=M+1; NN=9*nt*nq;
-C1=zeros(Mp1,NN); C2=zeros(Mp1,NN); C3=zeros(Mp1,NN); C4=zeros(Mp1,NN); C1s=zeros(Mp1,NN); C2s=zeros(Mp1,NN); C3s=zeros(Mp1,NN);
-# FORTRAN axa_coef_slpn_r64(int[1] nt, int[1] nq, int[1] M, double[1] mu, double[nt] zr, double[nt] zi, double[nq] yr, double[nq] yi, double[nt] nxr, double[nt] nxi, inout double[Mp1,NN] C1, inout double[Mp1,NN] C2, inout dcomplex[Mp1,NN] C3, inout dcomplex[Mp1,NN] C4, inout double[Mp1,NN] C1s, inout double[Mp1,NN] C2s, inout dcomplex[Mp1,NN] C3s);
+% SLPn 0th  (S', target normal tnx)
+@function A = axss_slpn_blockmat_mex(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, mu, A)
+nt=double(nt); p=double(p); np=double(np); iside=double(iside); iclosed=double(iclosed); mu=double(mu);
+tx=double(tx(:)); tnx=double(tnx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1; r2t=2*nt; c2=2*nsp;
+A=zeros(r2t,c2);
+# FORTRAN axss_slpn_blockmat_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] iside, int[1] iclosed, double[1] mu, inout double[r2t,c2] A);
 end
 
-% DLP close-eval operator block (port of StokDLPAxiModalSpecialquad).  Complex inputs split
-% real/imag; host supplies upsampled weights gw (q=2p) and the q->p Legendre projection P (q x p).
-% W is (M+1)x(9 nt p); reshape to (M+1,3nt,3p) on return.
-@function W = axm_specialquad_dlp_mex(nt, p, M, mu, hm, iside, zr, zi, yr, yi, ypr, ypi, zar, zai, zbr, zbi, gw, Pmat, W)
-nt=double(nt); p=double(p); M=double(M); mu=double(mu); hm=double(hm); iside=double(iside);
-zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:)); ypr=double(ypr(:)); ypi=double(ypi(:));
-zar=double(zar); zai=double(zai); zbr=double(zbr); zbi=double(zbi); gw=double(gw(:)); Pmat=double(Pmat);
-q=2*p; Mp1=M+1; NN=9*nt*p;
-W=zeros(Mp1,NN);
-# FORTRAN axm_specialquad_dlp_r64(int[1] nt, int[1] p, int[1] M, double[1] mu, double[1] hm, int[1] iside, double[nt] zr, double[nt] zi, double[q] yr, double[q] yi, double[q] ypr, double[q] ypi, double[1] zar, double[1] zai, double[1] zbr, double[1] zbi, double[q] gw, double[q,p] Pmat, inout double[Mp1,NN] W);
+% SLPn n-mode
+@function A = axss_slpn_blockmat_nmode_mex(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
+nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed); mu=double(mu);
+tx=double(tx(:)); tnx=double(tnx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1; Mp1=M+1; r3t=3*nt; c3m=3*nsp*Mp1;
+A=zeros(r3t,c3m);
+# FORTRAN axss_slpn_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, double[1] mu, inout dcomplex[r3t,c3m] A);
+A=reshape(A, r3t, 3*nsp, Mp1);
 end
 
-% SLPn close-eval operator block (port of StokSLPnAxiModalSpecialquad_v2).  TARGET normal nx
-% (length nt) split nxr/nxi.  TWO-BLOCK: meridional W and swirl Wsw, each (M+1)x(9 nt p);
-% reshape to (M+1,3nt,3p).  Caller scales Wsw by n_theta + applies the flipped parity mask.
-@function [W,Wsw] = axm_specialquad_slpn_mex(nt, p, M, mu, hm, iside, zr, zi, nxr, nxi, yr, yi, ypr, ypi, zar, zai, zbr, zbi, gw, Pmat, W, Wsw)
-nt=double(nt); p=double(p); M=double(M); mu=double(mu); hm=double(hm); iside=double(iside);
-zr=double(zr(:)); zi=double(zi(:)); nxr=double(nxr(:)); nxi=double(nxi(:));
-yr=double(yr(:)); yi=double(yi(:)); ypr=double(ypr(:)); ypi=double(ypi(:));
-zar=double(zar); zai=double(zai); zbr=double(zbr); zbi=double(zbi); gw=double(gw(:)); Pmat=double(Pmat);
-q=2*p; Mp1=M+1; NN=9*nt*p;
-W=zeros(Mp1,NN); Wsw=zeros(Mp1,NN);
-# FORTRAN axm_specialquad_slpn_r64(int[1] nt, int[1] p, int[1] M, double[1] mu, double[1] hm, int[1] iside, double[nt] zr, double[nt] zi, double[nt] nxr, double[nt] nxi, double[q] yr, double[q] yi, double[q] ypr, double[q] ypi, double[1] zar, double[1] zai, double[1] zbr, double[1] zbi, double[q] gw, double[q,p] Pmat, inout double[Mp1,NN] W, inout double[Mp1,NN] Wsw);
+% DLP 0th  (source normal snx in the source group)
+@function A = axss_dlp_blockmat_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, mu, A)
+nt=double(nt); p=double(p); np=double(np); iside=double(iside); iclosed=double(iclosed); mu=double(mu);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1; r2t=2*nt; c2=2*nsp;
+A=zeros(r2t,c2);
+# FORTRAN axss_dlp_blockmat_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] iside, int[1] iclosed, double[1] mu, inout double[r2t,c2] A);
 end
 
-% SLP close-eval operator block (port of StokAxiModalSpecialquad).  Same I/O shape as the DLP.
-@function W = axm_specialquad_slp_mex(nt, p, M, mu, hm, iside, zr, zi, yr, yi, ypr, ypi, zar, zai, zbr, zbi, gw, Pmat, W)
-nt=double(nt); p=double(p); M=double(M); mu=double(mu); hm=double(hm); iside=double(iside);
-zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:)); ypr=double(ypr(:)); ypi=double(ypi(:));
-zar=double(zar); zai=double(zai); zbr=double(zbr); zbi=double(zbi); gw=double(gw(:)); Pmat=double(Pmat);
-q=2*p; Mp1=M+1; NN=9*nt*p;
-W=zeros(Mp1,NN);
-# FORTRAN axm_specialquad_slp_r64(int[1] nt, int[1] p, int[1] M, double[1] mu, double[1] hm, int[1] iside, double[nt] zr, double[nt] zi, double[q] yr, double[q] yi, double[q] ypr, double[q] ypi, double[1] zar, double[1] zai, double[1] zbr, double[1] zbi, double[q] gw, double[q,p] Pmat, inout double[Mp1,NN] W);
-end
-
-% Naive modal SLP kernel (port of axissymstok_kernel.m).  K = 3nt x 3ns real block, mode m.
-@function K = axa_kernel_slp_mex(nt, ns, srcr, srcz, tgtr, tgtz, m, mu, K)
-nt=double(nt); ns=double(ns); m=double(m); mu=double(mu);
-srcr=double(srcr(:)); srcz=double(srcz(:)); tgtr=double(tgtr(:)); tgtz=double(tgtz(:));
-n3t=3*nt; n3s=3*ns; K=zeros(n3t,n3s);
-# FORTRAN axa_kernel_slp_r64(int[1] nt, int[1] ns, double[ns] srcr, double[ns] srcz, double[nt] tgtr, double[nt] tgtz, int[1] m, double[1] mu, inout double[n3t,n3s] K);
-end
-
-% Naive modal DLP kernel (port of axissymstok_kernel_dlp.m).  Needs source normals srcnr,srcnz.
-@function K = axa_kernel_dlp_mex(nt, ns, srcr, srcz, srcnr, srcnz, tgtr, tgtz, m, mu, K)
-nt=double(nt); ns=double(ns); m=double(m); mu=double(mu);
-srcr=double(srcr(:)); srcz=double(srcz(:)); srcnr=double(srcnr(:)); srcnz=double(srcnz(:));
-tgtr=double(tgtr(:)); tgtz=double(tgtz(:));
-n3t=3*nt; n3s=3*ns; K=zeros(n3t,n3s);
-# FORTRAN axa_kernel_dlp_r64(int[1] nt, int[1] ns, double[ns] srcr, double[ns] srcz, double[ns] srcnr, double[ns] srcnz, double[nt] tgtr, double[nt] tgtz, int[1] m, double[1] mu, inout double[n3t,n3s] K);
-end
-
-% Naive modal SLPn kernel (port of axissymstok_kernel_slpn.m).  TARGET normal (tgtnr,tgtnz,tgtnth);
-% returns the meridional block K and the swirl block Ksw (Ksw prop. tgtnth; pass tgtnth=ones for unit).
-@function [K,Ksw] = axa_kernel_slpn_mex(nt, ns, srcr, srcz, tgtr, tgtz, tgtnr, tgtnz, tgtnth, m, mu, K, Ksw)
-nt=double(nt); ns=double(ns); m=double(m); mu=double(mu);
-srcr=double(srcr(:)); srcz=double(srcz(:)); tgtr=double(tgtr(:)); tgtz=double(tgtz(:));
-tgtnr=double(tgtnr(:)); tgtnz=double(tgtnz(:)); tgtnth=double(tgtnth(:));
-n3t=3*nt; n3s=3*ns; K=zeros(n3t,n3s); Ksw=zeros(n3t,n3s);
-# FORTRAN axa_kernel_slpn_r64(int[1] nt, int[1] ns, double[ns] srcr, double[ns] srcz, double[nt] tgtr, double[nt] tgtz, double[nt] tgtnr, double[nt] tgtnz, double[nt] tgtnth, int[1] m, double[1] mu, inout double[n3t,n3s] K, inout double[n3t,n3s] Ksw);
-end
-
-% ============================================================
-% Laplace 0th-mode kernel-split coefficients (axissymlap_kernelsplit_mod).
-% All densities REAL, nt x nq.  The normals nu=t.nx, nu'=s.nx live in the special-quad
-% matrices (Sspecialquad/Dspecialquad), NOT in these coefficients.  Naming follows the
-% Stokes axa_coef_* wrappers with the 0th-mode "0" marker.
-% ------------------------------------------------------------
-% SLP  S : C1 log, C2 smooth.
-@function [C1,C2] = axl_coef_slp0_mex(nt, nq, zr, zi, yr, yi, C1, C2)
-nt=double(nt); nq=double(nq);
-zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:));
-C1=zeros(nt,nq); C2=zeros(nt,nq);
-# FORTRAN axl_coef_slp0_r64(int[1] nt, int[1] nq, double[nt] zr, double[nt] zi, double[nq] yr, double[nq] yi, inout double[nt,nq] C1, inout double[nt,nq] C2);
-end
-
-% SLPn  S' : TARGET normal nxr,nxi.  C1 log, C2 smooth, C3 target-Cauchy density.
-@function [C1,C2,C3] = axl_coef_slpn0_mex(nt, nq, zr, zi, yr, yi, nxr, nxi, C1, C2, C3)
-nt=double(nt); nq=double(nq);
-zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:)); nxr=double(nxr(:)); nxi=double(nxi(:));
-C1=zeros(nt,nq); C2=zeros(nt,nq); C3=zeros(nt,nq);
-# FORTRAN axl_coef_slpn0_r64(int[1] nt, int[1] nq, double[nt] zr, double[nt] zi, double[nq] yr, double[nq] yi, double[nt] nxr, double[nt] nxi, inout double[nt,nq] C1, inout double[nt,nq] C2, inout double[nt,nq] C3);
-end
-
-% DLP  D : SOURCE normal nvr,nvi.  C1 log, C2 smooth, C3 source-Cauchy density.
-@function [C1,C2,C3] = axl_coef_dlp0_mex(nt, nq, zr, zi, yr, yi, nvr, nvi, C1, C2, C3)
-nt=double(nt); nq=double(nq);
-zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:)); nvr=double(nvr(:)); nvi=double(nvi(:));
-C1=zeros(nt,nq); C2=zeros(nt,nq); C3=zeros(nt,nq);
-# FORTRAN axl_coef_dlp0_r64(int[1] nt, int[1] nq, double[nt] zr, double[nt] zi, double[nq] yr, double[nq] yi, double[nq] nvr, double[nq] nvi, inout double[nt,nq] C1, inout double[nt,nq] C2, inout double[nt,nq] C3);
-end
-
-% DLPn  D' : TARGET (nxr,nxi) + SOURCE (nvr,nvi) normals.  C1 log, C2 smooth,
-% C3a target-Cauchy, C3b source-Cauchy, C4 (nu nu') deriv-Cauchy.
-@function [C1,C2,C3a,C3b,C4] = axl_coef_dlpn0_mex(nt, nq, zr, zi, yr, yi, nxr, nxi, nvr, nvi, C1, C2, C3a, C3b, C4)
-nt=double(nt); nq=double(nq);
-zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:));
-nxr=double(nxr(:)); nxi=double(nxi(:)); nvr=double(nvr(:)); nvi=double(nvi(:));
-C1=zeros(nt,nq); C2=zeros(nt,nq); C3a=zeros(nt,nq); C3b=zeros(nt,nq); C4=zeros(nt,nq);
-# FORTRAN axl_coef_dlpn0_r64(int[1] nt, int[1] nq, double[nt] zr, double[nt] zi, double[nq] yr, double[nq] yi, double[nt] nxr, double[nt] nxi, double[nq] nvr, double[nq] nvi, inout double[nt,nq] C1, inout double[nt,nq] C2, inout double[nt,nq] C3a, inout double[nt,nq] C3b, inout double[nt,nq] C4);
-end
-
-% DLPnn  D'' : TARGET + SOURCE normals.  C1 log, C2 smooth, C3a target-Cauchy,
-% C3b source-Cauchy, C4a (nu^2) deriv-Cauchy, C4b (nu nu') deriv-Cauchy, C5 cubic.
-@function [C1,C2,C3a,C3b,C4a,C4b,C5] = axl_coef_dlpnn0_mex(nt, nq, zr, zi, yr, yi, nxr, nxi, nvr, nvi, C1, C2, C3a, C3b, C4a, C4b, C5)
-nt=double(nt); nq=double(nq);
-zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:));
-nxr=double(nxr(:)); nxi=double(nxi(:)); nvr=double(nvr(:)); nvi=double(nvi(:));
-C1=zeros(nt,nq); C2=zeros(nt,nq); C3a=zeros(nt,nq); C3b=zeros(nt,nq); C4a=zeros(nt,nq); C4b=zeros(nt,nq); C5=zeros(nt,nq);
-# FORTRAN axl_coef_dlpnn0_r64(int[1] nt, int[1] nq, double[nt] zr, double[nt] zi, double[nq] yr, double[nq] yi, double[nt] nxr, double[nt] nxi, double[nq] nvr, double[nq] nvi, inout double[nt,nq] C1, inout double[nt,nq] C2, inout double[nt,nq] C3a, inout double[nt,nq] C3b, inout double[nt,nq] C4a, inout double[nt,nq] C4b, inout double[nt,nq] C5);
-end
-
-% ============================================================
-% Laplace 0th-mode close-eval OPERATORS (axissymlap_specialquad_mod).
-% Caller upsamples the source to q=2p (y=Z(tt), yp=Zp(tt)) and supplies the q->p Legendre
-% projection Pmat (q x p), GL weights gw (q), endpoints za=Z(a0)/zb=Z(b0), hm=(b0-a0)/2,
-% iside (1=ext,0=int).  W is the nt x p close-eval block.  Complex args split real/imag.
-% ------------------------------------------------------------
-% SLP  S
-@function W = axls_specialquad_slp0_mex(nt, p, hm, iside, zr, zi, yr, yi, ypr, ypi, zar, zai, zbr, zbi, gw, Pmat, W)
-nt=double(nt); p=double(p); hm=double(hm); iside=double(iside);
-zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:)); ypr=double(ypr(:)); ypi=double(ypi(:));
-zar=double(zar); zai=double(zai); zbr=double(zbr); zbi=double(zbi); gw=double(gw(:)); Pmat=double(Pmat);
-q=2*p;
-W=zeros(nt,p);
-# FORTRAN axls_specialquad_slp0_r64(int[1] nt, int[1] p, double[1] hm, int[1] iside, double[nt] zr, double[nt] zi, double[q] yr, double[q] yi, double[q] ypr, double[q] ypi, double[1] zar, double[1] zai, double[1] zbr, double[1] zbi, double[q] gw, double[q,p] Pmat, inout double[nt,p] W);
-end
-
-% SLPn  S' : TARGET normal nxr,nxi (length nt).
-@function W = axls_specialquad_slpn0_mex(nt, p, hm, iside, zr, zi, nxr, nxi, yr, yi, ypr, ypi, zar, zai, zbr, zbi, gw, Pmat, W)
-nt=double(nt); p=double(p); hm=double(hm); iside=double(iside);
-zr=double(zr(:)); zi=double(zi(:)); nxr=double(nxr(:)); nxi=double(nxi(:));
-yr=double(yr(:)); yi=double(yi(:)); ypr=double(ypr(:)); ypi=double(ypi(:));
-zar=double(zar); zai=double(zai); zbr=double(zbr); zbi=double(zbi); gw=double(gw(:)); Pmat=double(Pmat);
-q=2*p;
-W=zeros(nt,p);
-# FORTRAN axls_specialquad_slpn0_r64(int[1] nt, int[1] p, double[1] hm, int[1] iside, double[nt] zr, double[nt] zi, double[nt] nxr, double[nt] nxi, double[q] yr, double[q] yi, double[q] ypr, double[q] ypi, double[1] zar, double[1] zai, double[1] zbr, double[1] zbi, double[q] gw, double[q,p] Pmat, inout double[nt,p] W);
-end
-
-% DLP  D : source normal derived from yp (no extra input).
-@function W = axls_specialquad_dlp0_mex(nt, p, hm, iside, zr, zi, yr, yi, ypr, ypi, zar, zai, zbr, zbi, gw, Pmat, W)
-nt=double(nt); p=double(p); hm=double(hm); iside=double(iside);
-zr=double(zr(:)); zi=double(zi(:)); yr=double(yr(:)); yi=double(yi(:)); ypr=double(ypr(:)); ypi=double(ypi(:));
-zar=double(zar); zai=double(zai); zbr=double(zbr); zbi=double(zbi); gw=double(gw(:)); Pmat=double(Pmat);
-q=2*p;
-W=zeros(nt,p);
-# FORTRAN axls_specialquad_dlp0_r64(int[1] nt, int[1] p, double[1] hm, int[1] iside, double[nt] zr, double[nt] zi, double[q] yr, double[q] yi, double[q] ypr, double[q] ypi, double[1] zar, double[1] zai, double[1] zbr, double[1] zbi, double[q] gw, double[q,p] Pmat, inout double[nt,p] W);
-end
-
-% DLPn  D' : TARGET normal nxr,nxi (length nt) + source from yp.
-@function W = axls_specialquad_dlpn0_mex(nt, p, hm, iside, zr, zi, nxr, nxi, yr, yi, ypr, ypi, zar, zai, zbr, zbi, gw, Pmat, W)
-nt=double(nt); p=double(p); hm=double(hm); iside=double(iside);
-zr=double(zr(:)); zi=double(zi(:)); nxr=double(nxr(:)); nxi=double(nxi(:));
-yr=double(yr(:)); yi=double(yi(:)); ypr=double(ypr(:)); ypi=double(ypi(:));
-zar=double(zar); zai=double(zai); zbr=double(zbr); zbi=double(zbi); gw=double(gw(:)); Pmat=double(Pmat);
-q=2*p;
-W=zeros(nt,p);
-# FORTRAN axls_specialquad_dlpn0_r64(int[1] nt, int[1] p, double[1] hm, int[1] iside, double[nt] zr, double[nt] zi, double[nt] nxr, double[nt] nxi, double[q] yr, double[q] yi, double[q] ypr, double[q] ypi, double[1] zar, double[1] zai, double[1] zbr, double[1] zbi, double[q] gw, double[q,p] Pmat, inout double[nt,p] W);
-end
-
-% DLPnn  D'' : TARGET normal nxr,nxi (length nt) + source from yp.
-@function W = axls_specialquad_dlpnn0_mex(nt, p, hm, iside, zr, zi, nxr, nxi, yr, yi, ypr, ypi, zar, zai, zbr, zbi, gw, Pmat, W)
-nt=double(nt); p=double(p); hm=double(hm); iside=double(iside);
-zr=double(zr(:)); zi=double(zi(:)); nxr=double(nxr(:)); nxi=double(nxi(:));
-yr=double(yr(:)); yi=double(yi(:)); ypr=double(ypr(:)); ypi=double(ypi(:));
-zar=double(zar); zai=double(zai); zbr=double(zbr); zbi=double(zbi); gw=double(gw(:)); Pmat=double(Pmat);
-q=2*p;
-W=zeros(nt,p);
-# FORTRAN axls_specialquad_dlpnn0_r64(int[1] nt, int[1] p, double[1] hm, int[1] iside, double[nt] zr, double[nt] zi, double[nt] nxr, double[nt] nxi, double[q] yr, double[q] yi, double[q] ypr, double[q] ypi, double[1] zar, double[1] zai, double[1] zbr, double[1] zbi, double[q] gw, double[q,p] Pmat, inout double[nt,p] W);
+% DLP n-mode
+@function A = axss_dlp_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
+nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed); mu=double(mu);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1; Mp1=M+1; r3t=3*nt; c3m=3*nsp*Mp1;
+A=zeros(r3t,c3m);
+# FORTRAN axss_dlp_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, double[1] mu, inout dcomplex[r3t,c3m] A);
+A=reshape(A, r3t, 3*nsp, Mp1);
 end

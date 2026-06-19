@@ -8,4 +8,7 @@ mex_id_ = 'axm_specialquad_slp_r64(c i int64_t[x], c i int64_t[x], c i int64_t[x
 [W] = AxiStokes3D_mex(mex_id_, nt, p, M, mu, hm, iside, zr, zi, yr, yi, ypr, ypi, zar, zai, zbr, zbi, gw, Pmat, W, 1, 1, 1, 1, 1, 1, nt, nt, q, q, q, q, 1, 1, 1, 1, q, q, p, Mp1, NN);
 end
 
-% Naive modal SLP kernel (port of axissymstok_kernel.m).  K = 3nt x 3ns real block, mode m.
+% Full mode-n SLP block over all source panels (Fortran StoSLPAxiBlockMat_nmode).  Host supplies
+% targets (zr,zi), the COARSE panel POSITIONS (xcr,xci: p x np = reshape(s.x,p,np)), and the panel
+% breakpoints tpan (np+1 = s.tpan).  Fortran does refinement/upsample/close/far/projection
+% internally.  A = complex 3nt x 3(np*p) block.
