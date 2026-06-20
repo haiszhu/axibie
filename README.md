@@ -24,8 +24,10 @@ This project is in a very early state. It contains functions from Alex Barnett's
 
 ## To do list
 
-* (prototype done...) Implement high order Fourier modes to enable nonsymmetric potential and flow simulation
-* (do we need this...) Implement multiple partciles + possible interaction with confined geometry
-* (3d) Is complexification & kernel-split doable here? worth investigation... exact split formula stay private for now 
-* (3d probably) Accelerate via FMM?
+* (generic DLPn to go, 0th mode done) Implement high order Fourier modes to enable nonsymmetric potential and flow simulation
+* (do we need this, yes) Implement multiple partciles + possible interaction with confined geometry
+* (what is SLPnn, DLPnn? Azz in Dspecialquad for 2D?) Laplace case is a by-product, why not
+* (do we need this, yes) Accelerate via FMM?
+* (later) Is complexification & kernel-split doable here? worth investigation... 
+* (is LLM by itself capable to derive this? Not yet; With literature/kernel-split skills? Not yet; With 0th mode code/tex as reference, then derive generic? Still not yet; With step by step inline instruction & human involved debugging? yes... eww... so still useful at this point) exact split formula stay private for now 
 
