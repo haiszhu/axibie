@@ -51,3 +51,15 @@ close-eval floor.
 | h-refinement convergence | meridian-grid error (`np=36`) |
 |---|---|
 | ![convergence](axissymsstok_stok_slpn0th_convergence.png) | ![meridian error](axissymsstok_stok_slpn0th_error.png) |
+
+
+0th-mode-only combined-field `(D' + S')` Stokes exterior-Neumann BVP on a c-shape (solve
+`(D' + S')tau = sigma.n`, eval velocity `(D + S)tau`), exact axisymmetric-Stokeslet reference
+(`test_axissymsstok_stok_dlpn_bvp_0th.m`, `np=6:2:36`): spectral convergence to the `~1e-11`
+close-eval floor. The combined field is well-conditioned (`cond ~1e3`, vs the `S'`-only `~1e11`).
+D' is the super-singular `1/(r-r')^3` double-layer traction (five-channel split), with a `K,E`-carrier
+analytic far and a graded-azimuthal close-in-far quad.
+
+| h-refinement convergence | meridian-grid error (`np=36`) |
+|---|---|
+| ![convergence](axissymsstok_stok_dlpn0th_convergence.png) | ![meridian error](axissymsstok_stok_dlpn0th_error.png) |

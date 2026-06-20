@@ -8,4 +8,4 @@ mex_id_ = 'axss_dlp_blockmat_r64(c i int64_t[x], c i dcomplex[x], c i int64_t[x]
 [A] = AxiStokes3D_mex(mex_id_, nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, mu, A, 1, nt, 1, 1, nsp, nsp, nsp, nsp, npp1, np, np, 1, 1, 1, r2t, c2);
 end
 
-% DLP n-mode
+% DLPn 0th  (target normal tnx in the target group, source normal snx in the source group)

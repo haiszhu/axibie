@@ -4,7 +4,8 @@ module axissymstok_specialquad_mod
   use axissymstok_kernelsplit_mod, only: axissymstok_slp_coef_r64, axissymstok_slp_coef_nmode_r64, &
        axissymstok_slpn_coef_r64, axissymstok_slpn_coef_nmode_r64, &
        axissymstok_dlp_coef_r64, axissymstok_dlp_coef_nmode_r64, weight_setup_r64, &
-       axissymstok_dlp_aziquad_r64, axissymstok_slpn_aziquad_r64
+       axissymstok_dlp_aziquad_r64, axissymstok_slpn_aziquad_r64, axissymstok_dlpn_coef_r64, &
+       axissymstok_dlpn_aziquad_r64
   implicit none
   private
   public :: axissymstok_slp_blockmat_r64
@@ -13,6 +14,7 @@ module axissymstok_specialquad_mod
   public :: axissymstok_slpn_blockmat_nmode_r64
   public :: axissymstok_dlp_blockmat_r64
   public :: axissymstok_dlp_blockmat_nmode_r64
+  public :: axissymstok_dlpn_blockmat_r64
 contains
 
   subroutine axissymstok_slp_blockmat_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, mu, A)
@@ -1183,5 +1185,350 @@ contains
     end do
     deallocate(tin, joa, ci, zc, nidx, znear, ikq, ikc, C1, C2, C3, C4, As, Ad, A1, A2, A3, A4, Gcq, Gpc, ff)
   end subroutine axissymstok_dlp_blockmat_nmode_r64
+
+  subroutine axissymstok_dlpn_blockmat_r64(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, mu, A)
+    integer(8),   intent(in)    :: nt, p, np, iside, iclosed
+    complex(r64), intent(in)    :: tx(nt), tnx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
+    real(r64),    intent(in)    :: sws(p*np), tpan(np+1), mu
+    real(r64),    intent(inout) :: A(2*nt, 2*np*p)
+    integer(8) :: q, pnp, pnsa, i, j, jp, k, ne, npa, nk, nf, ia, ib, jo, l, nsc, nq_az
+    real(r64)  :: sumws, dmin, dd, spd, t1, tN, tm, denom, tgi, split
+    real(r64)  :: twopi, thr, drho, rr2, zti, rho, rhop, zh, nr, nz, nps, nzs, sc, Irr, Irz, Izr, Izz
+    complex(r64) :: ic, zlo, zhi, Dz, Dzz
+    real(r64)    :: tglp(p), wglp(p), Dp(p,p), tglq(2*p), wglq(2*p), Dq(2*p,2*p), IP2(2*p,p)
+    real(r64)    :: rk(p), rk2(2), IPe2(2,p), IPk(p,p)
+    complex(r64) :: xc(p,np), Yp(p), dYp(p), ec2(2)
+    complex(r64) :: skx(p), sknx(p), skwxp(p), skfx(2*p), dY(2*p), csx(2*p), csnx(2*p), cswxp(2*p)
+    real(r64)    :: skws(p), csws(2*p)
+    real(r64),    allocatable :: tin(:), IM(:,:), Gc(:,:), Gf(:,:), Gfold(:,:), B(:,:), tt_az(:), ww_az(:)
+    real(r64),    allocatable :: cc1(:,:), cc2(:,:), asq(:,:), a1q(:,:), a2q(:,:), a3q(:,:), a4q(:,:)
+    complex(r64), allocatable :: cc3(:,:), cc4(:,:), cc5(:,:), adq(:,:)
+    integer(8),   allocatable :: joa(:), ic_(:), ifr(:)
+    logical,      allocatable :: ik(:)
+    complex(r64), allocatable :: sax(:), sanx(:), sawxp(:), saxlo(:), saxhi(:)
+    real(r64),    allocatable :: saws(:)
+    complex(r64), allocatable :: tkx(:), tknx(:), tfx(:), tfnx(:)
+    q = 2*p; pnp = p*np; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64); thr = 0.1_r64
+    call weight_setup_r64(p, 32_8*p, 1.0e-7_r64, nq_az, tt_az, ww_az)   ! graded azimuthal mesh (close-in-far pairs)
+    call gauss_r64(p,     tglp, wglp, Dp)
+    call gauss_r64(2_8*p, tglq, wglq, Dq)
+    call lagrange_interp_r64(p, tglp, q, tglq, IP2)
+    do j = 1, np
+      do i = 1, p
+        xc(i,j) = sx((j-1)*p+i)
+      end do
+    end do
+    t1 = tpan(1) + (1.0_r64+tglp(1))/2.0_r64*(tpan(2)-tpan(1))
+    tN = tpan(np) + (1.0_r64+tglp(p))/2.0_r64*(tpan(np+1)-tpan(np))
+    allocate(tin(np+1+256)); ne = np+1; tin(1:ne) = tpan(1:np+1)
+    do while (tin(2) > t1)
+      split = 0.5_r64*(tin(1)+tin(2))
+      do i = ne, 2, -1; tin(i+1) = tin(i); end do
+      tin(2) = split; ne = ne+1
+    end do
+    do while (tin(ne-1) < tN)
+      split = 0.5_r64*(tin(ne)+tin(ne-1))
+      tin(ne+1) = tin(ne); tin(ne) = split; ne = ne+1
+    end do
+    npa = ne-1; pnsa = p*npa
+    allocate(joa(npa), IM(pnsa,pnp), sax(pnsa), sanx(pnsa), saws(pnsa), sawxp(pnsa), saxlo(npa), saxhi(npa))
+    IM = 0.0_r64
+    do k = 1, npa
+      tm = 0.5_r64*(tin(k)+tin(k+1)); jo = 1
+      do j = 1, np
+        if (tm >= tpan(j) .and. tm < tpan(j+1)) jo = j
+      end do
+      joa(k) = jo; denom = tpan(jo+1) - tpan(jo)
+      do i = 1, p
+        tgi = tin(k) + (1.0_r64+tglp(i))/2.0_r64*(tin(k+1)-tin(k))
+        rk(i) = (2.0_r64*tgi - (tpan(jo)+tpan(jo+1)))/denom
+      end do
+      call lagrange_interp_r64(p, tglp, p, rk, IPk)
+      Yp = matmul(IPk, xc(:,jo)); dYp = matmul(Dp, Yp)
+      do jp = 1, p
+        spd = abs(dYp(jp))
+        sax((k-1)*p+jp)   = Yp(jp)
+        sanx((k-1)*p+jp)  = -ic*dYp(jp)/spd
+        saws((k-1)*p+jp)  = wglp(jp)*spd
+        sawxp((k-1)*p+jp) = dYp(jp)*wglp(jp)
+        do l = 1, p; IM((k-1)*p+jp, (jo-1)*p+l) = IPk(jp,l); end do
+      end do
+      rk2(1) = (2.0_r64*tin(k)   - (tpan(jo)+tpan(jo+1)))/denom
+      rk2(2) = (2.0_r64*tin(k+1) - (tpan(jo)+tpan(jo+1)))/denom
+      call lagrange_interp_r64(p, tglp, 2_8, rk2, IPe2)
+      ec2 = matmul(IPe2, xc(:,jo)); saxlo(k) = ec2(1); saxhi(k) = ec2(2)
+    end do
+    allocate(ik(nt), ic_(nt), ifr(nt), tkx(nt), tknx(nt), tfx(nt), tfnx(nt))
+    allocate(Gc(2*nt,2*q), Gf(2*nt,2*p), Gfold(2*nt,2*p), B(2*nt,2*pnsa))
+    allocate(cc1(2*nt,2*q), cc2(2*nt,2*q), cc3(2*nt,2*q), cc4(2*nt,2*q), cc5(2*nt,2*q))
+    allocate(asq(q,nt), adq(q,nt), a1q(q,nt), a2q(q,nt), a3q(q,nt), a4q(q,nt))
+    B = 0.0_r64
+    do k = 1, npa
+      do jp = 1, p
+        skx(jp)  = sax((k-1)*p+jp);  sknx(jp)  = sanx((k-1)*p+jp)
+        skws(jp) = saws((k-1)*p+jp); skwxp(jp) = sawxp((k-1)*p+jp)
+      end do
+      zlo = saxlo(k); zhi = saxhi(k); sumws = sum(skws)
+      nk = 0; nf = 0
+      do i = 1, nt
+        if ((abs(tx(i)-zlo)+abs(tx(i)-zhi)) < 1.85_r64*sumws) then
+          ik(i) = .true.;  nk = nk+1; ic_(nk) = i; tkx(nk) = tx(i); tknx(nk) = tnx(i)
+        else
+          ik(i) = .false.; nf = nf+1; ifr(nf) = i; tfx(nf) = tx(i); tfnx(nf) = tnx(i)
+        end if
+      end do
+      if (nk > 0) then
+        dmin = huge(1.0_r64)
+        do ia = 1, nk; do jp = 1, p; dd = abs(tkx(ia)-skx(jp)); if (dd < dmin) dmin = dd; end do; end do
+        if (dmin < 1.0e-3_r64*sumws) then
+          nsc = q; skfx = matmul(IP2, skx); dY = matmul(Dq, skfx)
+          do jp = 1, q
+            spd = abs(dY(jp))
+            csx(jp) = skfx(jp); csnx(jp) = -ic*dY(jp)/spd; csws(jp) = wglq(jp)*spd; cswxp(jp) = dY(jp)*wglq(jp)
+          end do
+        else
+          nsc = p
+          do jp = 1, p
+            csx(jp) = skx(jp); csnx(jp) = sknx(jp); csws(jp) = skws(jp); cswxp(jp) = skwxp(jp)
+          end do
+        end if
+        ! ---- near: coef + special quad + 5-bucket D' combine on the close (nsc) nodes ----
+        call axissymstok_dlpn_coef_r64(nk, tkx, tknx, nsc, csx(1:nsc), csnx(1:nsc), mu, &
+             cc1(1:2*nk,1:2*nsc), cc2(1:2*nk,1:2*nsc), cc3(1:2*nk,1:2*nsc), cc4(1:2*nk,1:2*nsc), cc5(1:2*nk,1:2*nsc))
+        call sdspecialquad_r64(nk, tkx, nsc, csx(1:nsc), csnx(1:nsc), cswxp(1:nsc), zlo, zhi, iside, &
+             asq(1:nsc,1:nk), adq(1:nsc,1:nk), a1q(1:nsc,1:nk), a2q(1:nsc,1:nk), a3q(1:nsc,1:nk), a4q(1:nsc,1:nk))
+        do j = 1, nsc
+          do i = 1, nk
+            Dz = cmplx(a1q(j,i), -a2q(j,i), r64); Dzz = cmplx(a3q(j,i), -a4q(j,i), r64)
+            Gc(i,    j)     = twopi*cc1(i,j)*asq(j,i)         + cc2(i,j)*csws(j) &
+                 + twopi*real(adq(j,i)*(cc3(i,j)/csnx(j)),r64) - twopi*real(Dz*(cc4(i,j)/csnx(j)),r64) + twopi*real(Dzz*(cc5(i,j)/csnx(j)),r64)
+            Gc(i,    nsc+j) = twopi*cc1(i,nsc+j)*asq(j,i)     + cc2(i,nsc+j)*csws(j) &
+                 + twopi*real(adq(j,i)*(cc3(i,nsc+j)/csnx(j)),r64) - twopi*real(Dz*(cc4(i,nsc+j)/csnx(j)),r64) + twopi*real(Dzz*(cc5(i,nsc+j)/csnx(j)),r64)
+            Gc(nk+i, j)     = twopi*cc1(nk+i,j)*asq(j,i)      + cc2(nk+i,j)*csws(j) &
+                 + twopi*real(adq(j,i)*(cc3(nk+i,j)/csnx(j)),r64) - twopi*real(Dz*(cc4(nk+i,j)/csnx(j)),r64) + twopi*real(Dzz*(cc5(nk+i,j)/csnx(j)),r64)
+            Gc(nk+i, nsc+j) = twopi*cc1(nk+i,nsc+j)*asq(j,i)  + cc2(nk+i,nsc+j)*csws(j) &
+                 + twopi*real(adq(j,i)*(cc3(nk+i,nsc+j)/csnx(j)),r64) - twopi*real(Dz*(cc4(nk+i,nsc+j)/csnx(j)),r64) + twopi*real(Dzz*(cc5(nk+i,nsc+j)/csnx(j)),r64)
+          end do
+        end do
+        if (nsc == q) then
+          do ia = 1, 2*nk
+            do jp = 1, p
+              Gfold(ia,jp)   = sum(Gc(ia,1:q)*IP2(:,jp))
+              Gfold(ia,p+jp) = sum(Gc(ia,q+1:2*q)*IP2(:,jp))
+            end do
+          end do
+        else
+          do ia = 1, 2*nk
+            do jp = 1, p
+              Gfold(ia,jp)   = Gc(ia,jp)
+              Gfold(ia,p+jp) = Gc(ia,p+jp)
+            end do
+          end do
+        end if
+        do ia = 1, nk
+          do jp = 1, p
+            B(ic_(ia),    (k-1)*p+jp)      = Gfold(ia,    jp)
+            B(ic_(ia),    pnsa+(k-1)*p+jp) = Gfold(ia,    p+jp)
+            B(nt+ic_(ia), (k-1)*p+jp)      = Gfold(nk+ia, jp)
+            B(nt+ic_(ia), pnsa+(k-1)*p+jp) = Gfold(nk+ia, p+jp)
+          end do
+        end do
+      end if
+      if (nf > 0) then
+        ! ---- far: close-in-far pairs (dist<thr) use the cancellation-free graded azimuthal quad,
+        !      the rest the analytic (K,E carrier) far; fold via IM ----
+        do i = 1, nf
+          rho = real(tfx(i),r64); zti = aimag(tfx(i)); nr = real(tfnx(i),r64); nz = aimag(tfnx(i))
+          do j = 1, p
+            rhop = real(skx(j),r64); zh = zti - aimag(skx(j)); nps = real(sknx(j),r64); nzs = aimag(sknx(j))
+            drho = rho - rhop; rr2 = drho*drho + zh*zh
+            if (sqrt(rr2) < thr) then
+              call axissymstok_dlpn_aziquad_r64(rho, rhop, zh, nr, nz, nps, nzs, mu, nq_az, tt_az, ww_az, Irr, Irz, Izr, Izz)
+            else
+              block
+                real(r64) :: chi, vk, ve, Fn, An, dFn
+                real(r64) :: t2, t3, t4, t5, t6, t7, t8, t9, t10, t12, t14, t15
+                real(r64) :: t16, t17, t18, t19, t20, t21, t22, t27, t28, t29, t30, t31
+                real(r64) :: t32, t33, t37, t38, t39, t40, t41, t42, t45, t46, t48, t52
+                real(r64) :: t53, t11, t13, t24, t26, t34, t35, t36, t47, t49, t50, t54
+                real(r64) :: t55, t57, t59, t60, t61, t64, t65, t66, t72, t73, t74, t75
+                real(r64) :: t76, t79, t81, t83, t84, t86, t87, t88, t93, t96, t97, t98
+                real(r64) :: t103, t51, t56, t62, t67, t68, t69, t70, t77, t78, t80, t85
+                real(r64) :: t89, t91, t92, t94, t95, t99, t102, t107, t114, t71, t90, t100
+                real(r64) :: t101, t104, t109, t110, t113, t115, t121, t105, t108, t111, t116, t117
+                real(r64) :: t118, t106, t112, t119, t120, t122, t123, et1, et2, et3, et4
+                chi = (rho*rho+rhop*rhop+zh*zh)/(2.0_r64*rho*rhop)
+                call carrier_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+                t2 = nr*rho
+                t3 = nps*rhop
+                t4 = rho*rhop
+                t5 = nz*zh
+                t6 = nzs*zh
+                t7 = chi*2.0_r64
+                t8 = chi+1.0_r64
+                t9 = chi**2
+                t10 = chi**3
+                t12 = chi**5
+                t14 = rho**2
+                t15 = rho**3
+                t16 = rhop**2
+                t17 = rhop**3
+                t18 = ve*2.0_r64
+                t19 = ve*6.0_r64
+                t20 = vk*2.0_r64
+                t21 = vk*6.0_r64
+                t22 = zh**2
+                t27 = 1.0_r64/acos(-1.0_r64)
+                t28 = chi-1.0_r64
+                t29 = ve*1.8e+1_r64
+                t30 = ve*3.0e+1_r64
+                t31 = -vk
+                t32 = vk*1.0e+1_r64
+                t33 = vk*1.5e+1_r64
+                t37 = chi*ve*8.0_r64
+                t38 = chi*ve*1.2e+1_r64
+                t39 = chi*ve*4.5e+1_r64
+                t40 = chi*ve*5.8e+1_r64
+                t41 = chi*vk*-2.0_r64
+                t42 = chi*vk*-6.0_r64
+                t45 = chi*vk*1.6e+1_r64
+                t46 = chi*vk*2.0e+1_r64
+                t48 = sqrt(2.0_r64)
+                t52 = chi*vk*-1.0e+1_r64
+                t53 = chi*vk*-1.5e+1_r64
+                t11 = t9**2
+                t13 = t9**3
+                t24 = t7*vk
+                t26 = t4*2.0_r64
+                t34 = t7+2.0_r64
+                t35 = nps*rho*t5
+                t36 = nr*rhop*t6
+                t47 = -t6
+                t49 = t7-2.0_r64
+                t50 = 1.0_r64/t8
+                t54 = chi*t7*ve
+                t55 = t10*ve*4.0_r64
+                t57 = t10*t19
+                t59 = t9*vk*4.0_r64
+                t60 = t10*vk*4.0_r64
+                t61 = t9*t21
+                t64 = nps*rho*t2*2.0_r64
+                t65 = nr*rhop*t3*2.0_r64
+                t66 = 1.0_r64/t28
+                t72 = t12*ve*8.0_r64
+                t73 = t10*ve*2.1e+1_r64
+                t74 = t9*ve*3.8e+1_r64
+                t75 = t9*ve*4.6e+1_r64
+                t76 = t9*vk*-2.0_r64
+                t79 = t10*vk*-6.0_r64
+                t81 = t12*vk*8.0_r64
+                t83 = t9*vk*1.6e+1_r64
+                t84 = t10*t33
+                t86 = t9*vk*2.0e+1_r64
+                t87 = t2+t5
+                t88 = t18+t31
+                t93 = t9*vk*-1.5e+1_r64
+                t96 = 1.0_r64/t4**(3.0_r64/2.0_r64)
+                t97 = 1.0_r64/t4**(5.0_r64/2.0_r64)
+                t98 = 1.0_r64/t4**(7.0_r64/2.0_r64)
+                t103 = t20+t37+t41
+                t51 = t50**2
+                t56 = t11*ve*4.0_r64
+                t62 = t11*vk*4.0_r64
+                t67 = t66**2
+                t68 = t66**3
+                t69 = -t36
+                t70 = -t55
+                t77 = -t59
+                t78 = -t60
+                t80 = t11*vk*8.0_r64
+                t85 = t11*vk*1.6e+1_r64
+                t89 = 1.0_r64/t34
+                t91 = -t73
+                t92 = -t81
+                t94 = -t83
+                t95 = -t86
+                t99 = 1.0_r64/t49
+                t102 = t3+t47
+                t107 = t19+t24+t54+t76
+                t114 = t32+t40+t52+t57+t61+t79
+                t71 = -t56
+                t90 = t89**2
+                t100 = t99**2
+                t101 = t99**3
+                t104 = t48*t99*ve*4.0_r64
+                t109 = t29+t45+t75+t94
+                t110 = t48*t89*t99*(1.6e+1_r64/3.0_r64)
+                t113 = t21+t38+t42+t60+t70+t77
+                t115 = t48*t88*t89*t99*(8.0_r64/3.0_r64)
+                t121 = t33+t39+t53+t72+t80+t84+t91+t92+t93
+                t105 = t48*t100*(1.6e+1_r64/3.0_r64)
+                t108 = t48*t101*ve*(1.28e+2_r64/1.5e+1_r64)
+                t111 = t48*t89*t100*ve*(1.6e+1_r64/1.5e+1_r64)
+                t116 = t48*t88*t90*t99*(3.2e+1_r64/1.5e+1_r64)
+                t117 = t48*t88*t89*t100*(3.2e+1_r64/1.5e+1_r64)
+                t118 = t30+t46+t62+t71+t74+t78+t95
+                t106 = t105*ve
+                t112 = -t111
+                t119 = t105+t110
+                t120 = t106+t115
+                t122 = t88*t89*t119*(2.0_r64/5.0_r64)
+                t123 = t108+t112+t116+t117+t122
+                et1 = t27*t48*t51*t68*t118*(nr*t3*t17+nr*t17*t47+nps*t2*t15+nps*t5*t15+t2*t3*t4*4.0_r64-t2*t4*t6*2.0_r64+ &
+                     t3*t5*t26+t4*t5*t47)*(-1.0_r64/2.0_r64)+(t27*t48*t51*t68*t114*(t2*t3*t14*2.0_r64+t2*t3*t16*2.0_r64+ &
+                     t3*t5*t14*2.0_r64-t2*t6*t16*2.0_r64+t3*t5*t16+t2*t14*t47+t5*t14*t47+t5*t16*t47))/2.0_r64+ &
+                     (t4*t27*t48*t51*t68*(t35+t64+t65+t69)*(t85+vk*3.0e+1_r64+chi*ve*9.0e+1_r64-chi*vk*3.0e+1_r64- &
+                     t10*ve*4.2e+1_r64+t12*ve*1.6e+1_r64-t9*vk*3.0e+1_r64+t10*vk*3.0e+1_r64-t12*vk*1.6e+1_r64))/2.0_r64
+                et2 = t2*t3*t4*t27*t48*t51*t68*(ve*1.5e+1_r64-chi*vk*6.0e+1_r64-t9*ve*1.35e+2_r64+t11*ve*1.36e+2_r64- &
+                     t13*ve*4.8e+1_r64+t9*vk*6.0e+1_r64+t10*vk*1.0e+2_r64-t11*vk*1.0e+2_r64-t12*vk*4.8e+1_r64+ &
+                     t13*vk*4.8e+1_r64)-(t4*t27*t48*t51*t68*t87*t102*t109)/2.0_r64
+                et3 = -1.0_r64/t26**(5.0_r64/2.0_r64)*(t120*(t2*t3*t27*(3.0_r64/4.0_r64)-t2*t6*t27*(3.0_r64/2.0_r64)+ &
+                     t3*t5*t27*(3.0_r64/2.0_r64)-t5*t6*t27*3.0_r64)+(t104-chi*t120)*(t27*t35*(3.0_r64/2.0_r64)- &
+                     t27*t36*(3.0_r64/2.0_r64)+nr*nps*t22*t27*(3.0_r64/4.0_r64)+nr*rhop*t3*t27*(3.0_r64/4.0_r64)+ &
+                     nps*rho*t2*t27*(3.0_r64/4.0_r64))+t2*t3*t27*(t20*t48+t9*t120-chi*t48*t99*ve*8.0_r64)*(3.0_r64/4.0_r64))
+                et4 = 1.0_r64/t26**(7.0_r64/2.0_r64)*((t120-chi*t123)*(t22*t27*t35*(1.5e+1_r64/2.0_r64)-t22*t27*t36*(1.5e+1_r64/2.0_r64)+ &
+                     nr*rhop*t3*t22*t27*(1.5e+1_r64/2.0_r64)+nps*rho*t2*t22*t27*(1.5e+1_r64/2.0_r64))+t123*(t2*t3*t22*t27*(1.5e+1_r64/2.0_r64)- &
+                     t2*t6*t22*t27*(1.5e+1_r64/2.0_r64)+t3*t5*t22*t27*(1.5e+1_r64/2.0_r64)-t5*t6*t22*t27*(1.5e+1_r64/2.0_r64))+ &
+                     t2*t3*t22*t27*(t104-chi*t120*2.0_r64+t9*t123)*(1.5e+1_r64/2.0_r64))+nz*nzs*t18*1.0_r64/t26**(3.0_r64/2.0_r64)*t27*t48*t99
+                Irr = mu*((t48*t97*((t27*t48*t50*t67*t107*(t2*t3*-4.0_r64+t2*t6*2.0_r64-t3*t5*2.0_r64+t5*t6+ &
+                     nz*nzs*t14+nz*nzs*t16))/4.0_r64+(t27*t48*t50*t67*t113*(t35*2.0_r64-t36*2.0_r64-nz*nzs*t4+ &
+                     nr*rhop*t3*4.0_r64+nps*rho*t2*4.0_r64))/4.0_r64+t2*t3*t27*t48*t50*t67*(t19-t85-chi*vk*1.8e+1_r64- &
+                     t9*ve*3.0e+1_r64+t11*ve*1.6e+1_r64+t9*vk*1.8e+1_r64+t10*vk*1.6e+1_r64)-(nz*nzs*t4*t27*t48*t50*t67*(vk+ &
+                     chi*t31+chi*ve*4.0_r64))/2.0_r64))/8.0_r64+(t48*t98*(et1+et2))/1.6e+1_r64+(nr*nps*t27*t66*t96*ve)/2.0_r64)
+                Irz = mu*(t48*t97*(t27*t48*t50*t67*t107*(nps*nz*t14+nz*rhop*t3-nzs*rhop*t5*2.0_r64+nps*t2*zh*2.0_r64+ &
+                     nps*t5*zh)*(-1.0_r64/4.0_r64)+(t3*t27*t48*t50*t67*t113*(nz*rho+nr*zh*2.0_r64))/4.0_r64+ &
+                     (nz*rho*t27*t48*t50*t67*t103*(t3-t6*2.0_r64))/4.0_r64)*(-1.0_r64/8.0_r64)-(t48*t98*((t27*t48*t51*t68*t114*zh*(nps*t2*t14+ &
+                     nps*t5*t14+rhop*t2*t3*2.0_r64-rhop*t2*t6*2.0_r64+rhop*t3*t5+rhop*t5*t47))/2.0_r64-(rhop*t27*t48*t51*t68*t118*zh*(t35+ &
+                     t64+t69+nr*rhop*t3))/2.0_r64+rhop*t2*t3*t27*t48*t51*t68*t121*zh-(rho*t27*t48*t51*t68*t87*t102*t109*zh)/2.0_r64))/1.6e+1_r64+ &
+                     (nr*nzs*t27*t66*t96*ve)/2.0_r64)
+                Izr = mu*(t48*t97*(t27*t48*t50*t67*t107*(nr*nzs*t16+nzs*rho*t2+nzs*rho*t5*2.0_r64-nr*t3*zh*2.0_r64+ &
+                     nr*t6*zh)*(-1.0_r64/4.0_r64)+(t2*t27*t48*t50*t67*t113*(nzs*rhop-nps*zh*2.0_r64))/4.0_r64+ &
+                     (nzs*rhop*t27*t48*t50*t67*t103*(t5+t87))/4.0_r64)*(-1.0_r64/8.0_r64)+(t48*t98*((t27*t48*t51*t68*t114*zh*(nr*t3*t16+ &
+                     nr*t16*t47+rho*t2*t3*2.0_r64+rho*t3*t5*2.0_r64+rho*t2*t47+rho*t5*t47))/2.0_r64-(rho*t27*t48*t51*t68*t118*zh*(t35+ &
+                     t65+t69+nps*rho*t2))/2.0_r64+rho*t2*t3*t27*t48*t51*t68*t121*zh-(rhop*t27*t48*t51*t68*t87*t102*t109*zh)/2.0_r64))/1.6e+1_r64+ &
+                     (nps*nz*t27*t66*t96*ve)/2.0_r64)
+                Izz = mu*(et3+et4)
+              end block
+            end if
+            sc = rhop*skws(j)
+            Gf(i,    j)   = Irr*sc; Gf(i,    p+j) = Irz*sc
+            Gf(nf+i, j)   = Izr*sc; Gf(nf+i, p+j) = Izz*sc
+          end do
+        end do
+        do ib = 1, nf
+          do jp = 1, p
+            B(ifr(ib),    (k-1)*p+jp)      = Gf(ib,    jp)
+            B(ifr(ib),    pnsa+(k-1)*p+jp) = Gf(ib,    p+jp)
+            B(nt+ifr(ib), (k-1)*p+jp)      = Gf(nf+ib, jp)
+            B(nt+ifr(ib), pnsa+(k-1)*p+jp) = Gf(nf+ib, p+jp)
+          end do
+        end do
+      end if
+    end do
+    A(:, 1:pnp)       = matmul(B(:, 1:pnsa),        IM)
+    A(:, pnp+1:2*pnp) = matmul(B(:, pnsa+1:2*pnsa), IM)
+    deallocate(tin, IM, joa, sax, sanx, saws, sawxp, saxlo, saxhi, ik, ic_, ifr, tkx, tknx, tfx, tfnx, Gc, Gf, Gfold, B)
+    deallocate(cc1, cc2, cc3, cc4, cc5, asq, adq, a1q, a2q, a3q, a4q, tt_az, ww_az)
+  end subroutine axissymstok_dlpn_blockmat_r64
 
 end module axissymstok_specialquad_mod
