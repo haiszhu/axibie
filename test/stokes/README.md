@@ -27,6 +27,17 @@ convergence to the `~1e-11` close-eval floor at `np~=11`.
 |---|---|
 | ![convergence](axissymsstok_stok_slpn_convergence.png) | ![3D error](axissymsstok_stok_slpn_error.png) |
 
+Combined `(D' + S')` exterior-Neumann Stokes BVP (solve `(D' + S')tau = sigma.n`, eval velocity
+`(D + S)tau`), all-modes, h-refinement (`test_axissymsstok_stok_dlpn_bvp.m`, `np=2:16`, `pmodes=2*np`):
+spectral convergence to the close-eval floor. `D'` is the super-singular `1/(r-r')^3` double-layer
+traction (five-channel split, `K,E`-carrier analytic far + two-level graded close-eval); adding `S'`
+makes the combined field well-conditioned (`cond ~1e3`, vs the first-kind `D'`-only). Uses the MATLAB
+block `StoDLPnAxiBlockMat_nmode` (the Fortran `axss_dlpn_blockmat_nmode_mex` is not ported yet).
+
+| h-refinement convergence | 3D target-grid error (`np=16`) |
+|---|---|
+| ![convergence](axissymsstok_stok_dlpn_convergence.png) | ![3D error](axissymsstok_stok_dlpn_error.png) |
+
 0th-mode-only Stokes SLP exterior-Dirichlet BVP on a c-shape (solve `S mu = u`, eval `S mu`),
 exact axisymmetric-Stokeslet reference (`test_axissymsstok_stok_slp_bvp_0th.m`, `np=6:2:36`):
 spectral convergence to the `~1e-13` close-eval floor.

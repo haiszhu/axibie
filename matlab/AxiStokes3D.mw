@@ -89,6 +89,17 @@ A=zeros(r2t,c2);
 # FORTRAN axss_dlpn_blockmat_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] iside, int[1] iclosed, double[1] mu, inout double[r2t,c2] A);
 end
 
+% DLPn n-mode
+@function A = axss_dlpn_blockmat_nmode_mex(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
+nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed); mu=double(mu);
+tx=double(tx(:)); tnx=double(tnx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1; Mp1=M+1; r3t=3*nt; c3m=3*nsp*Mp1;
+A=zeros(r3t,c3m);
+# FORTRAN axss_dlpn_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, double[1] mu, inout dcomplex[r3t,c3m] A);
+A=reshape(A, r3t, 3*nsp, Mp1);
+end
+
 % DLP n-mode
 @function A = axss_dlp_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
 nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed); mu=double(mu);
