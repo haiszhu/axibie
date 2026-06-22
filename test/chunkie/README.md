@@ -1,4 +1,4 @@
-# Axisymmetric Stokes close-evaluation — MATLAB tests
+# Axisymmetric Stokes close-evaluation — chunkie tests(to be fixed after all stokes and laplace kernel, and checkout commit e8534b339cec88e3b65b57605ec26acb4363ad86 to begin with)
 
 Per-panel azimuthal-mode close-evaluation for the axisymmetric Stokes SLP/DLP, run on the compiled
 Fortran mex (`axm_specialquad_slp/dlp_mex` near, `axa_kernel_slp/dlp_mex` far). The split
