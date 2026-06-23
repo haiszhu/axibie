@@ -110,3 +110,89 @@ A=zeros(r3t,c3m);
 # FORTRAN axss_dlp_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, double[1] mu, inout dcomplex[r3t,c3m] A);
 A=reshape(A, r3t, 3*nsp, Mp1);
 end
+
+% ===================== Laplace (scalar, no mu; n-mode A is REAL) =====================
+
+% SLP 0th
+@function A = axls_slp_blockmat_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, A)
+nt=double(nt); p=double(p); np=double(np); iside=double(iside); iclosed=double(iclosed);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1;
+A=zeros(nt,nsp);
+# FORTRAN axls_slp_blockmat_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] iside, int[1] iclosed, inout double[nt,nsp] A);
+end
+
+% SLP n-mode
+@function A = axls_slp_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1; Mp1=M+1; cm=nsp*Mp1;
+A=zeros(nt,cm);
+# FORTRAN axls_slp_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, inout double[nt,cm] A);
+A=reshape(A, nt, nsp, Mp1);
+end
+
+% SLPn 0th (target normal tnx)
+@function A = axls_slpn_blockmat_mex(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, A)
+nt=double(nt); p=double(p); np=double(np); iside=double(iside); iclosed=double(iclosed);
+tx=double(tx(:)); tnx=double(tnx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1;
+A=zeros(nt,nsp);
+# FORTRAN axls_slpn_blockmat_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] iside, int[1] iclosed, inout double[nt,nsp] A);
+end
+
+% SLPn n-mode
+@function A = axls_slpn_blockmat_nmode_mex(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed);
+tx=double(tx(:)); tnx=double(tnx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1; Mp1=M+1; cm=nsp*Mp1;
+A=zeros(nt,cm);
+# FORTRAN axls_slpn_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, inout double[nt,cm] A);
+A=reshape(A, nt, nsp, Mp1);
+end
+
+% DLP 0th (source normal snx)
+@function A = axls_dlp_blockmat_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, A)
+nt=double(nt); p=double(p); np=double(np); iside=double(iside); iclosed=double(iclosed);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1;
+A=zeros(nt,nsp);
+# FORTRAN axls_dlp_blockmat_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] iside, int[1] iclosed, inout double[nt,nsp] A);
+end
+
+% DLP n-mode
+@function A = axls_dlp_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1; Mp1=M+1; cm=nsp*Mp1;
+A=zeros(nt,cm);
+# FORTRAN axls_dlp_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, inout double[nt,cm] A);
+A=reshape(A, nt, nsp, Mp1);
+end
+
+% DLPn 0th (target normal tnx + source normal snx)
+@function A = axls_dlpn_blockmat_mex(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, A)
+nt=double(nt); p=double(p); np=double(np); iside=double(iside); iclosed=double(iclosed);
+tx=double(tx(:)); tnx=double(tnx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1;
+A=zeros(nt,nsp);
+# FORTRAN axls_dlpn_blockmat_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] iside, int[1] iclosed, inout double[nt,nsp] A);
+end
+
+% DLPn n-mode
+@function A = axls_dlpn_blockmat_nmode_mex(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed);
+tx=double(tx(:)); tnx=double(tnx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1; Mp1=M+1; cm=nsp*Mp1;
+A=zeros(nt,cm);
+# FORTRAN axls_dlpn_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, inout double[nt,cm] A);
+A=reshape(A, nt, nsp, Mp1);
+end

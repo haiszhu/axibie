@@ -8,3 +8,7 @@ mex_id_ = 'axss_dlp_blockmat_nmode_r64(c i int64_t[x], c i dcomplex[x], c i int6
 [A] = AxiStokes3D_mex(mex_id_, nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A, 1, nt, 1, 1, nsp, nsp, nsp, nsp, npp1, np, np, 1, 1, 1, 1, r3t, c3m);
 A=reshape(A, r3t, 3*nsp, Mp1);
 end
+
+% ===================== Laplace (scalar, no mu; n-mode A is REAL) =====================
+
+% SLP 0th
