@@ -1,6 +1,6 @@
 clearvars; close all; format short e;
-addpath('/Users/hzhu/Documents/Github/axibie/utils');
-addpath('/Users/hzhu/Documents/Github/axibie/matlab');
+addpath('../../utils');
+addpath('../../matlab');
 
 p=16; iside=1; iclosed=0; mu=1;
 lam=0.75; Z=@(t) -(1.5+cos(t)).*(-sin(lam*pi*sin(t))+1i*cos(lam*pi*sin(t)));  % c-shape (open, poles t=0,pi)

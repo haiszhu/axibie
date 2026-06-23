@@ -1,7 +1,6 @@
 clearvars; close all; format short e;
-addpath('/Users/hzhu/Documents/Github/axibie/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/matlab');
+addpath('../../utils');
+addpath('../../matlab');
 % Combined-field (D' + S') exterior-Neumann Stokes BVP, all-modes, h-refinement: solve the per-mode 3x3
 % traction systems (D'(s,s,m)+S'(s,s,m)) tau_m = t_m for the density, eval velocity (D+S)[tau].  D' is the
 % hypersingular double-layer traction; adding S' makes A well-conditioned (cond ~1e3, 2nd-kind-type).

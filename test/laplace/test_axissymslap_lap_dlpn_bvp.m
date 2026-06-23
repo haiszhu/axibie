@@ -1,7 +1,6 @@
 clearvars; format short e;
-addpath('/Users/hzhu/Documents/Github/axibie/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/matlab');
+addpath('../../utils');
+addpath('../../matlab');
 
 % interior point charges -> exact exterior harmonic potential u_ex; Neumann data g = dn u_ex.
 % Combined-field Neumann: represent u = (S + D)[sigma], solve (-1/2 I + S' + D') sigma = dn u_ex

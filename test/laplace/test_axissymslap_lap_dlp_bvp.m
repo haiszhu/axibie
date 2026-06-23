@@ -1,7 +1,6 @@
 clearvars; format short e;
-addpath('/Users/hzhu/Documents/Github/axibie/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/matlab');
+addpath('../../utils');
+addpath('../../matlab');
 
 % interior point charges -> exact exterior harmonic potential u_ex (net charge ~= 0, so pure D fails:
 % the 1/r^2 double layer cannot carry the monopole -> use the combined field u = (D + S)[sigma])

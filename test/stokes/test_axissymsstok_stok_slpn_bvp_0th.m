@@ -1,6 +1,6 @@
 clearvars; close all; format short e;
-addpath('/Users/hzhu/Documents/Github/axibie/utils');
-addpath('/Users/hzhu/Documents/Github/axibie/matlab');
+addpath('../../utils');
+addpath('../../matlab');
 addpath('/Users/hzhu/Documents/Github/axibie/alpertkernels');  % AxiKernel, AxiKernelT
 
 p=16; iside=1; iclosed=0; mu=1;

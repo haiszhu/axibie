@@ -1,7 +1,6 @@
 clearvars; format short e;
-addpath('/Users/hzhu/Documents/Github/axibie/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/matlab');
+addpath('../../utils');
+addpath('../../matlab');
 
 % interior point charges -> exact exterior harmonic potential u_ex; Neumann data g = dn u_ex
 y1=[0.30;0;0.20]; q1=1.0; y2=[0.32*cos(pi/4);0.32*sin(pi/4);-0.25]; q2=-0.7;

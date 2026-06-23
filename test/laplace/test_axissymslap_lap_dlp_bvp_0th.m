@@ -1,7 +1,6 @@
 clearvars; close all; format short e;
-addpath('/Users/hzhu/Documents/Github/axibie/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/matlab');
+addpath('../../utils');
+addpath('../../matlab');
 
 p=16; iside=1; iclosed=0;
 lam=0.75; Z=@(t) -(1.5+cos(t)).*(-sin(lam*pi*sin(t))+1i*cos(lam*pi*sin(t)));  % c-shape (open, poles t=0,pi)
@@ -45,8 +44,8 @@ fill(real([s.x;s.x(1)]),imag([s.x;s.x(1)]),'w'); plot(s.x,'-k'); plot(ysrc.x,'r.
 clim([-16 -12]); colormap('jet'); axis equal tight;
 xlabel('\rho'); ylabel('z'); title('Laplace combined (D+S) 0th-mode: log_{10} err vs exact axi-ring potential');
 
-cmp = getPyPlot_cMap('rainbow', [], [], '"/Users/hzhu/.pyenv/versions/3.11.13/bin/python"');
-colormap(cmp)
+% cmp = getPyPlot_cMap('rainbow', [], [], '"/Users/hzhu/.pyenv/versions/3.11.13/bin/python"');
+% colormap(cmp)
 
 % exportgraphics(figure(1),'axissymslap_lap_dlp0th_convergence.png','Resolution',200)
 % exportgraphics(figure(2),'axissymslap_lap_dlp0th_error.png','Resolution',200)

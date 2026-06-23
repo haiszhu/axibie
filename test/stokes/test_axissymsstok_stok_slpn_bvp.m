@@ -1,6 +1,6 @@
 clearvars; close all; format short e;
-addpath('/Users/hzhu/Documents/Github/axibie/utils');
-addpath('/Users/hzhu/Documents/Github/axibie/matlab');
+addpath('../../utils');
+addpath('../../matlab');
 
 y1=[0.30;0;0.20]; F1=[1;-0.7;0.5]; y2=[0.32*cos(pi/4);0.32*sin(pi/4);-0.25]; F2=[0.4;0.9;-0.6];
 uex=@(X) stk(X,y1,F1)+stk(X,y2,F2);
