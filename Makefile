@@ -39,6 +39,7 @@ ifeq ($(UNAME), Darwin)
   MATLAB_LIBS := $(MATLAB_ROOT)/bin/$(MATLAB_ARCH)/libmx.dylib \
                  $(MATLAB_ROOT)/bin/$(MATLAB_ARCH)/libmex.dylib \
                  $(MATLAB_ROOT)/bin/$(MATLAB_ARCH)/libmat.dylib -lm
+  LAPACK_LIBS := $(MATLAB_ROOT)/bin/$(MATLAB_ARCH)/libmwlapack.dylib $(MATLAB_ROOT)/bin/$(MATLAB_ARCH)/libmwblas.dylib
   MEX_LDFLAGS := -bundle -Wl,-undefined,dynamic_lookup
 else
   MATLAB_ROOT := $(shell ls -d /usr/local/MATLAB/R* 2>/dev/null | sort | tail -n1)
@@ -46,6 +47,7 @@ else
   MEX_EXT     := mexa64
   OPENBLAS_DIR := /usr/local/opt/openblas-singlethread
   MATLAB_LIBS := -L$(MATLAB_ROOT)/bin/$(MATLAB_ARCH) -lmx -lmex -lmat -lm
+  LAPACK_LIBS := -L$(MATLAB_ROOT)/bin/$(MATLAB_ARCH) -lmwlapack -lmwblas
   MEX_LDFLAGS := -shared
 endif
 
@@ -62,7 +64,9 @@ PUBLIC_SOURCES := $(SRC_DIR)/axistokes3d_mod.f90 \
                   $(SRC_DIR)/axissymstok_kernelsplit_mex.f90 \
                   $(SRC_DIR)/axissymlap_kernelsplit_mex.f90 \
                   $(SRC_DIR)/axissymlap_specialquad_mod.f90 \
-                  $(SRC_DIR)/axissymlap_specialquad_mex.f90
+                  $(SRC_DIR)/axissymlap_specialquad_mex.f90 \
+                  $(SRC_DIR)/axissym_physop_mod.f90 \
+                  $(SRC_DIR)/axissym_physop_mex.f90
 PUBLIC_OBJECTS := $(patsubst $(SRC_DIR)/%.f90,$(BLD_DIR)/%.o,$(PUBLIC_SOURCES))
 
 PUB_LIB     := $(BLD_DIR)/lib$(PROJECT).a
@@ -96,6 +100,8 @@ $(BLD_DIR)/axissymstok_specialquad_mex.o: $(BLD_DIR)/axissymstok_specialquad_mod
 $(BLD_DIR)/axilaplace3d_mod.o: $(BLD_DIR)/axistokes3d_mod.o
 $(BLD_DIR)/axissymlap_specialquad_mod.o: $(BLD_DIR)/axilaplace3d_mod.o $(BLD_DIR)/specialquad_mod.o
 $(BLD_DIR)/axissymlap_specialquad_mex.o: $(BLD_DIR)/axissymlap_specialquad_mod.o
+$(BLD_DIR)/axissym_physop_mod.o: $(BLD_DIR)/axistokes3d_mod.o $(BLD_DIR)/axissymlap_specialquad_mod.o $(BLD_DIR)/axissymstok_specialquad_mod.o
+$(BLD_DIR)/axissym_physop_mex.o: $(BLD_DIR)/axissym_physop_mod.o
 
 $(PUB_LIB): $(PUBLIC_OBJECTS)
 	$(AR) rcs $@ $^
@@ -112,7 +118,7 @@ $(MEX_OUT): $(PUB_LIB) $(SEC_LIB) $(SEC_LIB_LAP) $(MEX_C)
 	  -I$(MATLAB_ROOT)/extern/include \
 	  $(MEX_C) \
 	  -L$(BLD_DIR) -l$(PROJECT) -laxissymstok_kernelsplit -laxissymlap_kernelsplit \
-	  $(MATLAB_LIBS) $(OPENBLAS_LIBS) \
+	  $(MATLAB_LIBS) $(LAPACK_LIBS) \
 	  -lgfortran -lm \
 	  -o $(MEX_OUT)
 

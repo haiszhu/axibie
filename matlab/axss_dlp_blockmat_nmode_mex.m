@@ -9,6 +9,3 @@ mex_id_ = 'axss_dlp_blockmat_nmode_r64(c i int64_t[x], c i dcomplex[x], c i int6
 A=reshape(A, r3t, 3*nsp, Mp1);
 end
 
-% ===================== Laplace (scalar, no mu; n-mode A is REAL) =====================
-
-% SLP 0th

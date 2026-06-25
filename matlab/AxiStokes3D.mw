@@ -111,6 +111,26 @@ A=zeros(r3t,c3m);
 A=reshape(A, r3t, 3*nsp, Mp1);
 end
 
+@function A = axss_slppres_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1; Mp1=M+1; c3m=3*nsp*Mp1;
+A=zeros(nt,c3m);
+# FORTRAN axss_slppres_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, inout dcomplex[nt,c3m] A);
+A=reshape(A, nt, 3*nsp, Mp1);
+end
+
+@function A = axss_dlppres_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:));
+nsp=p*np; npp1=np+1; Mp1=M+1; c3m=3*nsp*Mp1;
+A=zeros(nt,c3m);
+# FORTRAN axss_dlppres_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, inout dcomplex[nt,c3m] A);
+A=reshape(A, nt, 3*nsp, Mp1);
+end
+
 % ===================== Laplace (scalar, no mu; n-mode A is REAL) =====================
 
 % SLP 0th
@@ -195,4 +215,41 @@ nsp=p*np; npp1=np+1; Mp1=M+1; cm=nsp*Mp1;
 A=zeros(nt,cm);
 # FORTRAN axls_dlpn_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, inout double[nt,cm] A);
 A=reshape(A, nt, nsp, Mp1);
+end
+
+% ==== physical-space SELF operator (AxiPhysMat): all modes, returns sparse [Ab,F,Finv,Abinv,T] ====
+@function [Ab, F, Finv, Abinv, T] = axp_physmat_mex(iphys, ilayer, nc, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, R)
+iphys=double(iphys); ilayer=double(ilayer); nc=double(nc); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed); mu=double(mu);
+sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:)); R=double(R(:));
+nsp=p*np; npp1=np+1; nphi=2*M+1; r=nc*nsp; Nfull=r*nphi; Np1=Nfull+1;
+nnzA=nphi*r*r; nnzF=nphi*nphi*r; nnzT=nc*nc*nsp*nphi;
+iAb=zeros(Np1,1); jAb=zeros(nnzA,1); xAb=complex(zeros(nnzA,1));
+iAi=zeros(Np1,1); jAi=zeros(nnzA,1); xAi=complex(zeros(nnzA,1));
+iF=zeros(Np1,1); jF=zeros(nnzF,1); xF=complex(zeros(nnzF,1));
+iFi=zeros(Np1,1); jFi=zeros(nnzF,1); xFi=complex(zeros(nnzF,1));
+iT=zeros(Np1,1); jT=zeros(nnzT,1); xT=zeros(nnzT,1);
+# FORTRAN axp_physmat_r64(int[1] iphys, int[1] ilayer, int[1] nc, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, double[1] mu, double[9] R, inout double[Np1] iAb, inout double[nnzA] jAb, inout dcomplex[nnzA] xAb, inout double[Np1] iAi, inout double[nnzA] jAi, inout dcomplex[nnzA] xAi, inout double[Np1] iF, inout double[nnzF] jF, inout dcomplex[nnzF] xF, inout double[Np1] iFi, inout double[nnzF] jFi, inout dcomplex[nnzF] xFi, inout double[Np1] iT, inout double[nnzT] jT, inout double[nnzT] xT);
+% CSR (ia=row_ptr, ja=col, a=val) -> MATLAB sparse (triplet): expand row_ptr to row indices
+rows=(1:Nfull)';
+Ab    = sparse(repelem(rows, diff(round(iAb))), jAb, xAb, Nfull, Nfull);
+Abinv = sparse(repelem(rows, diff(round(iAi))), jAi, xAi, Nfull, Nfull);
+F     = sparse(repelem(rows, diff(round(iF))),  jF,  xF,  Nfull, Nfull);
+Finv  = sparse(repelem(rows, diff(round(iFi))), jFi, xFi, Nfull, Nfull);
+T     = sparse(repelem(rows, diff(round(iT))),  jT,  xT,  Nfull, Nfull);
+end
+
+% ==== physical-space OFF-DIAGONAL operator (AxiOffDiagPhysMat): one source -> arbitrary targets ====
+@function [B, F, near] = axp_offdiagphysmat_mex(iphys, ilayer, nc, nt, tx, tphi, Ct, Rt, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, Cs, Rs, M, iside, iclosed, mu, iforce, tnx, tnphi)
+iphys=double(iphys); ilayer=double(ilayer); nc=double(nc); nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed); mu=double(mu); iforce=double(iforce);
+if nargin < 25 || isempty(tnx),   tnx   = zeros(nt,1); end             % target normal (meridian rho+i z, target frame): slpn/dlpn only
+if nargin < 26 || isempty(tnphi), tnphi = zeros(nt,1); end             % target azimuthal normal component (target frame)
+tx=double(tx(:)); tphi=double(tphi(:)); tnx=complex(double(tnx(:))); tnphi=double(tnphi(:));
+sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
+sws=double(sws(:)); tpan=double(tpan(:)); Ct=double(Ct(:)); Cs=double(Cs(:)); Rt=double(Rt(:)); Rs=double(Rs(:));
+nsp=p*np; npp1=np+1; nphi=2*M+1; ncsp=nc*nsp; Nsrc=ncsp*nphi; Np1=Nsrc+1; nnzF=nphi*nphi*ncsp; cb=ncsp*nphi; nr=nc*nt;
+B=complex(zeros(nr,cb)); iF=zeros(Np1,1); jF=zeros(nnzF,1); xF=complex(zeros(nnzF,1)); near=zeros(nt,1);
+# FORTRAN axp_offdiagphysmat_r64(int[1] iphys, int[1] ilayer, int[1] nc, int[1] nt, dcomplex[nt] tx, double[nt] tphi, dcomplex[nt] tnx, double[nt] tnphi, double[3] Ct, double[9] Rt, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, double[3] Cs, double[9] Rs, int[1] M, int[1] iside, int[1] iclosed, double[1] mu, int[1] iforce, inout dcomplex[nr,cb] B, inout double[Np1] iF, inout double[nnzF] jF, inout dcomplex[nnzF] xF, inout double[nt] near);
+F = sparse(repelem((1:Nsrc)', diff(round(iF))), jF, xF, Nsrc, Nsrc);
+near = near > 0.5;
 end

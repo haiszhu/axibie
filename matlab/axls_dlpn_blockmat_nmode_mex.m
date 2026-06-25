@@ -8,3 +8,5 @@ mex_id_ = 'axls_dlpn_blockmat_nmode_r64(c i int64_t[x], c i dcomplex[x], c i dco
 [A] = AxiStokes3D_mex(mex_id_, nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A, 1, nt, nt, 1, 1, nsp, nsp, nsp, nsp, npp1, np, np, 1, 1, 1, nt, cm);
 A=reshape(A, nt, nsp, Mp1);
 end
+
+% ==== physical-space SELF operator (AxiPhysMat): all modes, returns sparse [Ab,F,Finv,Abinv,T] ====

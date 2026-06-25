@@ -82,3 +82,23 @@ subroutine axss_dlpn_blockmat_nmode_r64(nt, tx, tnx, p, np, sx, snx, sws, swxp, 
   complex(8), intent(inout) :: A(3*nt, 3*np*p, M+1)
   call blk(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
 end subroutine axss_dlpn_blockmat_nmode_r64
+
+subroutine axss_slppres_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+  use axissymstok_specialquad_mod, only: blk => axissymstok_slppres_blockmat_nmode_r64
+  implicit none
+  integer(8), intent(in)    :: nt, p, np, M, iside, iclosed
+  complex(8), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
+  real(8),    intent(in)    :: sws(p*np), tpan(np+1)
+  complex(8), intent(inout) :: A(nt, 3*np*p, M+1)
+  call blk(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+end subroutine axss_slppres_blockmat_nmode_r64
+
+subroutine axss_dlppres_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+  use axissymstok_specialquad_mod, only: blk => axissymstok_dlppres_blockmat_nmode_r64
+  implicit none
+  integer(8), intent(in)    :: nt, p, np, M, iside, iclosed
+  complex(8), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
+  real(8),    intent(in)    :: sws(p*np), tpan(np+1)
+  complex(8), intent(inout) :: A(nt, 3*np*p, M+1)
+  call blk(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+end subroutine axss_dlppres_blockmat_nmode_r64

@@ -5,7 +5,8 @@ module axissymstok_specialquad_mod
        axissymstok_slpn_coef_r64, axissymstok_slpn_coef_nmode_r64, &
        axissymstok_dlp_coef_r64, axissymstok_dlp_coef_nmode_r64, weight_setup_r64, &
        axissymstok_dlp_aziquad_r64, axissymstok_slpn_aziquad_r64, axissymstok_dlpn_coef_r64, &
-       axissymstok_dlpn_coef_nmode_r64, axissymstok_dlpn_aziquad_r64
+       axissymstok_dlpn_coef_nmode_r64, axissymstok_dlpn_aziquad_r64, &
+       axissymstok_slppres_coef_nmode_r64, axissymstok_dlppres_coef_nmode_r64
   implicit none
   private
   public :: axissymstok_slp_blockmat_r64
@@ -16,6 +17,8 @@ module axissymstok_specialquad_mod
   public :: axissymstok_dlp_blockmat_nmode_r64
   public :: axissymstok_dlpn_blockmat_r64
   public :: axissymstok_dlpn_blockmat_nmode_r64
+  public :: axissymstok_slppres_blockmat_nmode_r64
+  public :: axissymstok_dlppres_blockmat_nmode_r64
 contains
 
   subroutine axissymstok_slp_blockmat_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, mu, A)
@@ -745,6 +748,381 @@ contains
     end do
     deallocate(tin, joa, ci, zc, zcn, nidx, znear, znearn, ikq, ikc, C1, C2, C3, C4, As, Ad, A1, A2, A3, A4, Gcq, Gpc, ff)
   end subroutine axissymstok_slpn_blockmat_nmode_r64
+
+  ! ==================================================================================================
+  ! Mode-n axisymmetric Stokes SINGLE-LAYER PRESSURE block (mu-free), per source force [f_rho,f_phi,f_z].
+  !   A(nt, 3*np*p, M+1) : pressure p(x) = A * [f_rho; f_phi; f_z] of the SLP field.  Two-level close-eval
+  !   (mirror axissymstok_slpn_blockmat_nmode_r64): outer 1.85 -> Ksub(+dyadic) subpanels -> inner 1.5.
+  !   Near = the (private) axissymstok_slppres_coef_nmode_r64 split (Log+Smooth+Cauchy) on the 2p upsample;
+  !   far  = the inlined carrier coefficients PK*VK + PE*VE (the leading carrier multipliers, like slpn far).
+  ! ==================================================================================================
+  subroutine axissymstok_slppres_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+    integer(8),   intent(in)    :: nt, p, np, M, iside, iclosed
+    complex(r64), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
+    real(r64),    intent(in)    :: sws(p*np), tpan(np+1)
+    complex(r64), intent(inout) :: A(nt, 3*np*p, M+1)
+    integer(8), parameter :: Ksub = 4
+    integer(8) :: q, nso, i, j, jp, iq, ia, l, b, c, pq, qo, ne, npa, nk, nkc, jj, cols, md
+    real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, vk, ve, Fn, An, dFn
+    real(r64)  :: st1, stN, tm, denom, rlo, rhi, tgi, split
+    complex(r64) :: ic, zac, zbc, Slog, Dval, cc1, cc2, cc3
+    real(r64)    :: tglp(p), wglp(p), Dp(p,p), tglq(2*p), wglq(2*p), Dq(2*p,2*p), IP2(2*p,p)
+    real(r64)    :: tc(p,np), rk(p), re2(2), Lc(p,p), IPe2(2,p), IPqc(2*p,p), wsq(2*p), wsp(p)
+    complex(r64) :: Ypb(p), Yq(2*p), dYq(2*p), dYp(p), nvq(2*p), wxpq(2*p), ec2(2), xc(p,np)
+    real(r64),    allocatable :: tin(:)
+    integer(8),   allocatable :: joa(:), ci(:), nidx(:)
+    logical,      allocatable :: ikq(:), ikc(:)
+    complex(r64), allocatable :: zc(:), znear(:), Gcq(:,:), Gpc(:,:), ff(:,:), Ad(:,:), C1(:,:,:), C2(:,:,:), C3(:,:,:)
+    real(r64),    allocatable :: As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:)
+    q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
+    call gauss_r64(p,     tglp, wglp, Dp)
+    call gauss_r64(2_8*p, tglq, wglq, Dq)
+    call lagrange_interp_r64(p, tglp, q, tglq, IP2)
+    do j = 1, np
+      do i = 1, p
+        xc(i,j) = sx((j-1)*p+i)
+        tc(i,j) = tpan(j) + (1.0_r64+tglp(i))/2.0_r64*(tpan(j+1)-tpan(j))
+      end do
+    end do
+    st1 = tc(1,1); stN = tc(p,np)
+    allocate(tin(np*Ksub+1+512)); ne = 0
+    do j = 1, np
+      do i = 0, Ksub-1
+        ne = ne+1; tin(ne) = tpan(j) + (tpan(j+1)-tpan(j))*real(i,r64)/real(Ksub,r64)
+      end do
+    end do
+    ne = ne+1; tin(ne) = tpan(np+1)
+    do while (tin(2) > st1)
+      split = 0.5_r64*(tin(1)+tin(2)); do i = ne, 2, -1; tin(i+1) = tin(i); end do; tin(2) = split; ne = ne+1
+    end do
+    do while (tin(ne-1) < stN)
+      split = 0.5_r64*(tin(ne)+tin(ne-1)); tin(ne+1) = tin(ne); tin(ne) = split; ne = ne+1
+    end do
+    npa = ne-1
+    allocate(joa(npa))
+    do c = 1, npa
+      tm = 0.5_r64*(tin(c)+tin(c+1)); qo = 1
+      do j = 1, np
+        if (tm >= tpan(j) .and. tm < tpan(j+1)) qo = j
+      end do
+      joa(c) = qo
+    end do
+    allocate(ci(nt), zc(nt), nidx(nt), znear(nt), ikq(nt), ikc(nt))
+    allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p), ff(p,3))
+    allocate(C1(nt,3*q,M+1), C2(nt,3*q,M+1), C3(nt,3*q,M+1))
+    A = (0.0_r64,0.0_r64)
+    do pq = 1, np                                                   ! ===== outer level: original panel pq =====
+      cols = (pq-1)*p
+      sumwso = 0.0_r64
+      do jp = 1, p; sumwso = sumwso + sws(cols+jp); end do
+      nk = 0
+      do i = 1, nt
+        ikq(i) = (abs(tx(i)-sxlo(pq)) + abs(tx(i)-sxhi(pq))) < 1.85_r64*sumwso
+        if (ikq(i)) then; nk = nk + 1; nidx(nk) = i; znear(nk) = tx(i); end if
+      end do
+      ! ---- outer far: inlined carrier coefficients PK*VK + PE*VE on the coarse original nodes ----
+      do i = 1, nt
+        if (ikq(i)) cycle
+        rt = real(tx(i),r64); zti = aimag(tx(i)); rho = rt
+        do jp = 1, p
+          jj = cols + jp; rhop = real(sx(jj),r64); zh = zti - aimag(sx(jj)); ws = sws(jj)
+          rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+          do md = 0, M
+            call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
+            block
+              real(r64) :: t2, t4, t6, t7, t8, rnf
+              complex(r64) :: PKf(3), PEf(3)
+              t2=rho*rhop; t4=1.0_r64/acos(-1.0_r64); t6=1.0_r64/(chi-1.0_r64)
+              t7=1.0_r64/t2**1.5_r64; t8=(t4/sqrt(t2))/4.0_r64; rnf=real(md,r64)
+              PKf(1)=cmplx(-t8,0.0_r64,r64); PEf(1)=cmplx(rhop*t4*t6*t7*(rhop-chi*rho)*(-0.25_r64),0.0_r64,r64)
+              PKf(2)=rnf*t4/sqrt(t2)*(-0.5_r64)*ic; PEf(2)=(0.0_r64,0.0_r64)
+              PKf(3)=(0.0_r64,0.0_r64); PEf(3)=cmplx(rhop*t4*t6*t7*zh/4.0_r64,0.0_r64,r64)
+              do b = 1, 3
+                A(i, (b-1)*nso+jj, md+1) = (PKf(b)*vk + PEf(b)*ve)*ws
+              end do
+            end block
+          end do
+        end do
+      end do
+      if (nk == 0) cycle
+      ! ---- outer near: recurse into the Ksub(+dyadic) subpanels of pq, inner re-detect ----
+      do c = 1, npa
+        if (joa(c) /= pq) cycle
+        denom = tpan(pq+1) - tpan(pq)
+        do i = 1, p
+          tgi = tin(c) + (1.0_r64+tglp(i))/2.0_r64*(tin(c+1)-tin(c))
+          rk(i) = (2.0_r64*tgi - (tpan(pq)+tpan(pq+1)))/denom
+        end do
+        call lagrange_interp_r64(p, tglp, p, rk, Lc)
+        Ypb = matmul(Lc, xc(:,pq))
+        rlo = (2.0_r64*tin(c)   - (tpan(pq)+tpan(pq+1)))/denom
+        rhi = (2.0_r64*tin(c+1) - (tpan(pq)+tpan(pq+1)))/denom
+        re2(1) = rlo; re2(2) = rhi
+        call lagrange_interp_r64(p, tglp, 2_8, re2, IPe2)
+        ec2 = matmul(IPe2, xc(:,pq)); zac = ec2(1); zbc = ec2(2)
+        IPqc = matmul(IP2, Lc)
+        Yq = matmul(IP2, Ypb); dYq = matmul(Dq, Yq)
+        do iq = 1, q
+          spd = abs(dYq(iq)); nvq(iq) = -ic*dYq(iq)/spd; wsq(iq) = wglq(iq)*spd; wxpq(iq) = dYq(iq)*wglq(iq)
+        end do
+        dYp = matmul(Dp, Ypb)
+        do jp = 1, p; wsp(jp) = wglp(jp)*abs(dYp(jp)); end do
+        sumwsc = sum(wsp)
+        nkc = 0
+        do i = 1, nk
+          ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 1.5_r64*sumwsc
+          if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
+        end do
+        ! ---- inner near: (private) pressure split coef -> Slog/Dval assembly, fold q->p_sub (IPqc) ----
+        if (nkc > 0) then
+          call axissymstok_slppres_coef_nmode_r64(nkc, zc(1:nkc), q, Yq, M, &
+               C1(1:nkc,1:3*q,:), C2(1:nkc,1:3*q,:), C3(1:nkc,1:3*q,:))
+          call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, zac, zbc, iside, &
+               As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
+          do md = 0, M
+            do b = 1, 3
+              do iq = 1, q
+                do ia = 1, nkc
+                  cc1 = C1(ia, 3*(iq-1)+b, md+1); cc2 = C2(ia, 3*(iq-1)+b, md+1); cc3 = C3(ia, 3*(iq-1)+b, md+1)
+                  Slog = cmplx(As(iq,ia),0.0_r64,r64); Dval = Ad(iq,ia)
+                  Gcq(ia,iq) = twopi*cc1*Slog + cc2*wsq(iq) + cmplx(twopi*real(Dval*(cc3/nvq(iq)),r64),0.0_r64,r64)
+                end do
+              end do
+              Gpc(1:nkc,1:p) = matmul(Gcq(1:nkc,1:q), IPqc)
+              do ia = 1, nkc
+                do l = 1, p
+                  A(nidx(ci(ia)), (b-1)*nso+cols+l, md+1) = A(nidx(ci(ia)), (b-1)*nso+cols+l, md+1) + Gpc(ia,l)
+                end do
+              end do
+            end do
+          end do
+        end if
+        ! ---- inner far: inlined carrier coefficients on the FINER subpanel nodes, fold via Lc ----
+        do i = 1, nk
+          if (ikc(i)) cycle
+          rt = real(znear(i),r64); zti = aimag(znear(i)); rho = rt
+          do md = 0, M
+            do jp = 1, p
+              rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp))
+              rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+              call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
+              block
+                real(r64) :: t2, t4, t6, t7, t8, rnf
+                complex(r64) :: PKf(3), PEf(3)
+                t2=rho*rhop; t4=1.0_r64/acos(-1.0_r64); t6=1.0_r64/(chi-1.0_r64)
+                t7=1.0_r64/t2**1.5_r64; t8=(t4/sqrt(t2))/4.0_r64; rnf=real(md,r64)
+                PKf(1)=cmplx(-t8,0.0_r64,r64); PEf(1)=cmplx(rhop*t4*t6*t7*(rhop-chi*rho)*(-0.25_r64),0.0_r64,r64)
+                PKf(2)=rnf*t4/sqrt(t2)*(-0.5_r64)*ic; PEf(2)=(0.0_r64,0.0_r64)
+                PKf(3)=(0.0_r64,0.0_r64); PEf(3)=cmplx(rhop*t4*t6*t7*zh/4.0_r64,0.0_r64,r64)
+                do b = 1, 3
+                  ff(jp,b) = (PKf(b)*vk + PEf(b)*ve)*wsp(jp)
+                end do
+              end block
+            end do
+            do b = 1, 3
+              do l = 1, p
+                A(nidx(i), (b-1)*nso+cols+l, md+1) = A(nidx(i), (b-1)*nso+cols+l, md+1) + sum(ff(1:p,b)*Lc(:,l))
+              end do
+            end do
+          end do
+        end do
+      end do
+    end do
+    deallocate(tin, joa, ci, zc, nidx, znear, ikq, ikc, As, Ad, A1, A2, A3, A4, Gcq, Gpc, ff, C1, C2, C3)
+  end subroutine axissymstok_slppres_blockmat_nmode_r64
+
+  ! ==================================================================================================
+  ! Mode-n axisymmetric Stokes DOUBLE-LAYER (stresslet) PRESSURE block (mu-free), per source density.
+  !   A(nt, 3*np*p, M+1) : pressure p^D(x) = A * [mu_rho; mu_phi; mu_z].  Two-level close-eval (mirror dlpn):
+  !   near = the (private) axissymstok_dlppres_coef_nmode_r64 split (Log+Smooth+Cauchy+deriv-Cauchy) on the
+  !   2p upsample; far = a carrier-free DIRECT azimuthal ring integral (nv pts) -- avoids carrier overflow.
+  ! ==================================================================================================
+  subroutine axissymstok_dlppres_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+    integer(8),   intent(in)    :: nt, p, np, M, iside, iclosed
+    complex(r64), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
+    real(r64),    intent(in)    :: sws(p*np), tpan(np+1)
+    complex(r64), intent(inout) :: A(nt, 3*np*p, M+1)
+    integer(8), parameter :: Ksub = 4, nv = 160
+    integer(8) :: q, nso, i, j, jp, iq, ia, l, b, c, pq, qo, ne, npa, nk, nkc, jj, cols, md, iv
+    real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti
+    real(r64)  :: st1, stN, tm, denom, rlo, rhi, tgi, split, nrs, nzs, cv, sv, r2v, ndr, rcv, fac, vphi
+    complex(r64) :: ic, zac, zbc, Slog, Dval, Dz, cc1, cc2, cc3, cc4, cq, hq, ev, ir3, ir5
+    real(r64)    :: tglp(p), wglp(p), Dp(p,p), tglq(2*p), wglq(2*p), Dq(2*p,2*p), IP2(2*p,p)
+    real(r64)    :: tc(p,np), rk(p), re2(2), Lc(p,p), IPe2(2,p), IPqc(2*p,p), wsq(2*p), wsp(p)
+    complex(r64) :: Ypb(p), Yq(2*p), dYq(2*p), dYp(p), nvq(2*p), nYp(p), wxpq(2*p), ec2(2), xc(p,np)
+    complex(r64) :: Pr(M+1), Pp(M+1), Pz(M+1)
+    real(r64),    allocatable :: tin(:)
+    integer(8),   allocatable :: joa(:), ci(:), nidx(:)
+    logical,      allocatable :: ikq(:), ikc(:)
+    complex(r64), allocatable :: zc(:), znear(:), Gcq(:,:), Gpc(:,:), Ad(:,:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:)
+    real(r64),    allocatable :: As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:)
+    q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
+    call gauss_r64(p,     tglp, wglp, Dp)
+    call gauss_r64(2_8*p, tglq, wglq, Dq)
+    call lagrange_interp_r64(p, tglp, q, tglq, IP2)
+    do j = 1, np
+      do i = 1, p
+        xc(i,j) = sx((j-1)*p+i)
+        tc(i,j) = tpan(j) + (1.0_r64+tglp(i))/2.0_r64*(tpan(j+1)-tpan(j))
+      end do
+    end do
+    st1 = tc(1,1); stN = tc(p,np)
+    allocate(tin(np*Ksub+1+512)); ne = 0
+    do j = 1, np
+      do i = 0, Ksub-1
+        ne = ne+1; tin(ne) = tpan(j) + (tpan(j+1)-tpan(j))*real(i,r64)/real(Ksub,r64)
+      end do
+    end do
+    ne = ne+1; tin(ne) = tpan(np+1)
+    do while (tin(2) > st1)
+      split = 0.5_r64*(tin(1)+tin(2)); do i = ne, 2, -1; tin(i+1) = tin(i); end do; tin(2) = split; ne = ne+1
+    end do
+    do while (tin(ne-1) < stN)
+      split = 0.5_r64*(tin(ne)+tin(ne-1)); tin(ne+1) = tin(ne); tin(ne) = split; ne = ne+1
+    end do
+    npa = ne-1
+    allocate(joa(npa))
+    do c = 1, npa
+      tm = 0.5_r64*(tin(c)+tin(c+1)); qo = 1
+      do j = 1, np
+        if (tm >= tpan(j) .and. tm < tpan(j+1)) qo = j
+      end do
+      joa(c) = qo
+    end do
+    allocate(ci(nt), zc(nt), nidx(nt), znear(nt), ikq(nt), ikc(nt))
+    allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
+    allocate(C1(nt,3*q,M+1), C2(nt,3*q,M+1), C3(nt,3*q,M+1), C4(nt,3*q,M+1))
+    A = (0.0_r64,0.0_r64)
+    do pq = 1, np                                                   ! ===== outer level: original panel pq =====
+      cols = (pq-1)*p
+      sumwso = 0.0_r64
+      do jp = 1, p; sumwso = sumwso + sws(cols+jp); end do
+      nk = 0
+      do i = 1, nt
+        ikq(i) = (abs(tx(i)-sxlo(pq)) + abs(tx(i)-sxhi(pq))) < 1.85_r64*sumwso
+        if (ikq(i)) then; nk = nk + 1; nidx(nk) = i; znear(nk) = tx(i); end if
+      end do
+      ! ---- outer far: carrier-free azimuthal ring integral on the coarse original nodes ----
+      do i = 1, nt
+        if (ikq(i)) cycle
+        rt = real(tx(i),r64); zti = aimag(tx(i)); rho = rt
+        do jp = 1, p
+          jj = cols + jp; rhop = real(sx(jj),r64); zh = zti - aimag(sx(jj)); ws = sws(jj)
+          nrs = real(snx(jj),r64); nzs = aimag(snx(jj))
+          Pr = (0.0_r64,0.0_r64); Pp = (0.0_r64,0.0_r64); Pz = (0.0_r64,0.0_r64)
+          do iv = 1, nv
+            vphi = twopi*real(iv-1,r64)/real(nv,r64); cv = cos(vphi); sv = sin(vphi)
+            r2v = rho*rho + rhop*rhop - 2.0_r64*rho*rhop*cv + zh*zh
+            rcv = rho*cv - rhop; ndr = nrs*rcv + nzs*zh
+            do md = 0, M
+              ev = exp(ic*real(md,r64)*vphi); ir3 = ev/r2v**1.5_r64; ir5 = ev/r2v**2.5_r64
+              Pr(md+1) = Pr(md+1) + (-nrs*ir3 + 3.0_r64*ndr*rcv*ir5)
+              Pp(md+1) = Pp(md+1) + (3.0_r64*ndr*(-rho*sv)*ir5)
+              Pz(md+1) = Pz(md+1) + (-nzs*ir3 + 3.0_r64*ndr*zh*ir5)
+            end do
+          end do
+          fac = rhop*ws/real(nv,r64)
+          do md = 0, M
+            A(i,         jj, md+1) = Pr(md+1)*fac
+            A(i,   nso+jj, md+1)   = Pp(md+1)*fac
+            A(i, 2*nso+jj, md+1)   = Pz(md+1)*fac
+          end do
+        end do
+      end do
+      if (nk == 0) cycle
+      ! ---- outer near: recurse into the Ksub(+dyadic) subpanels of pq, inner re-detect ----
+      do c = 1, npa
+        if (joa(c) /= pq) cycle
+        denom = tpan(pq+1) - tpan(pq)
+        do i = 1, p
+          tgi = tin(c) + (1.0_r64+tglp(i))/2.0_r64*(tin(c+1)-tin(c))
+          rk(i) = (2.0_r64*tgi - (tpan(pq)+tpan(pq+1)))/denom
+        end do
+        call lagrange_interp_r64(p, tglp, p, rk, Lc)
+        Ypb = matmul(Lc, xc(:,pq))
+        rlo = (2.0_r64*tin(c)   - (tpan(pq)+tpan(pq+1)))/denom
+        rhi = (2.0_r64*tin(c+1) - (tpan(pq)+tpan(pq+1)))/denom
+        re2(1) = rlo; re2(2) = rhi
+        call lagrange_interp_r64(p, tglp, 2_8, re2, IPe2)
+        ec2 = matmul(IPe2, xc(:,pq)); zac = ec2(1); zbc = ec2(2)
+        IPqc = matmul(IP2, Lc)
+        Yq = matmul(IP2, Ypb); dYq = matmul(Dq, Yq)
+        do iq = 1, q
+          spd = abs(dYq(iq)); nvq(iq) = -ic*dYq(iq)/spd; wsq(iq) = wglq(iq)*spd; wxpq(iq) = dYq(iq)*wglq(iq)
+        end do
+        dYp = matmul(Dp, Ypb)
+        do jp = 1, p; wsp(jp) = wglp(jp)*abs(dYp(jp)); nYp(jp) = -ic*dYp(jp)/abs(dYp(jp)); end do
+        sumwsc = sum(wsp)
+        nkc = 0
+        do i = 1, nk
+          ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 1.5_r64*sumwsc
+          if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
+        end do
+        ! ---- inner near: (private) stresslet-pressure split coef -> 4-bucket assembly, fold q->p_sub ----
+        if (nkc > 0) then
+          call axissymstok_dlppres_coef_nmode_r64(nkc, zc(1:nkc), q, Yq, nvq, M, &
+               C1(1:nkc,1:3*q,:), C2(1:nkc,1:3*q,:), C3(1:nkc,1:3*q,:), C4(1:nkc,1:3*q,:))
+          call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, zac, zbc, iside, &
+               As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
+          do md = 0, M
+            do b = 1, 3
+              do iq = 1, q
+                do ia = 1, nkc
+                  cc1 = C1(ia,3*(iq-1)+b,md+1); cc2 = C2(ia,3*(iq-1)+b,md+1)
+                  cc3 = C3(ia,3*(iq-1)+b,md+1); cc4 = C4(ia,3*(iq-1)+b,md+1)
+                  Slog = cmplx(As(iq,ia),0.0_r64,r64); Dval = Ad(iq,ia); Dz = cmplx(A1(iq,ia),-A2(iq,ia),r64)
+                  if (b == 2) then                                  ! phi-force entry: imaginary partner (Re -> i Im)
+                    cq =  ic*twopi*aimag(Dval*(cc3/nvq(iq)))
+                    hq = -ic*twopi*aimag(Dz  *(cc4/nvq(iq)))
+                  else
+                    cq = cmplx( twopi*real(Dval*(cc3/nvq(iq)), r64), 0.0_r64, r64)
+                    hq = cmplx(-twopi*real(Dz  *(cc4/nvq(iq)), r64), 0.0_r64, r64)
+                  end if
+                  Gcq(ia,iq) = twopi*cc1*Slog + cc2*wsq(iq) + cq + hq
+                end do
+              end do
+              Gpc(1:nkc,1:p) = matmul(Gcq(1:nkc,1:q), IPqc)
+              do ia = 1, nkc
+                do l = 1, p
+                  A(nidx(ci(ia)), (b-1)*nso+cols+l, md+1) = A(nidx(ci(ia)), (b-1)*nso+cols+l, md+1) + Gpc(ia,l)
+                end do
+              end do
+            end do
+          end do
+        end if
+        ! ---- inner far: ring integral on the FINER subpanel nodes, fold via Lc ----
+        do i = 1, nk
+          if (ikc(i)) cycle
+          rt = real(znear(i),r64); zti = aimag(znear(i)); rho = rt
+          do jp = 1, p
+            rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp)); ws = wsp(jp)
+            nrs = real(nYp(jp),r64); nzs = aimag(nYp(jp))
+            Pr = (0.0_r64,0.0_r64); Pp = (0.0_r64,0.0_r64); Pz = (0.0_r64,0.0_r64)
+            do iv = 1, nv
+              vphi = twopi*real(iv-1,r64)/real(nv,r64); cv = cos(vphi); sv = sin(vphi)
+              r2v = rho*rho + rhop*rhop - 2.0_r64*rho*rhop*cv + zh*zh
+              rcv = rho*cv - rhop; ndr = nrs*rcv + nzs*zh
+              do md = 0, M
+                ev = exp(ic*real(md,r64)*vphi); ir3 = ev/r2v**1.5_r64; ir5 = ev/r2v**2.5_r64
+                Pr(md+1) = Pr(md+1) + (-nrs*ir3 + 3.0_r64*ndr*rcv*ir5)
+                Pp(md+1) = Pp(md+1) + (3.0_r64*ndr*(-rho*sv)*ir5)
+                Pz(md+1) = Pz(md+1) + (-nzs*ir3 + 3.0_r64*ndr*zh*ir5)
+              end do
+            end do
+            fac = rhop*ws/real(nv,r64)
+            do md = 0, M
+              do l = 1, p
+                A(nidx(i),         cols+l, md+1) = A(nidx(i),         cols+l, md+1) + Pr(md+1)*fac*Lc(jp,l)
+                A(nidx(i),   nso+cols+l, md+1)   = A(nidx(i),   nso+cols+l, md+1)   + Pp(md+1)*fac*Lc(jp,l)
+                A(nidx(i), 2*nso+cols+l, md+1)   = A(nidx(i), 2*nso+cols+l, md+1)   + Pz(md+1)*fac*Lc(jp,l)
+              end do
+            end do
+          end do
+        end do
+      end do
+    end do
+    deallocate(tin, joa, ci, zc, nidx, znear, ikq, ikc, As, Ad, A1, A2, A3, A4, Gcq, Gpc, C1, C2, C3, C4)
+  end subroutine axissymstok_dlppres_blockmat_nmode_r64
 
   subroutine axissymstok_dlp_blockmat_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, mu, A)
     integer(8),   intent(in)    :: nt, p, np, iside, iclosed

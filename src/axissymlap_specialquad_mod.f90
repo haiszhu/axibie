@@ -1,5 +1,5 @@
 module axissymlap_specialquad_mod
-  use axilaplace3d_mod, only: r64, gauss_r64, carrier_r64, lagrange_interp_r64
+  use axilaplace3d_mod, only: r64, gauss_r64, carrier_r64, carrier_all_r64, lagrange_interp_r64
   use specialquad_mod, only: sdspecialquad_r64
   use axissymlap_kernelsplit_mod, only: axissymlap_slp_coef_r64, axissymlap_slp_coef_nmode_r64, &
        axissymlap_slpn_coef_r64, axissymlap_slpn_coef_nmode_r64, &
@@ -147,6 +147,7 @@ contains
     integer(8),   allocatable :: ci(:)
     complex(r64), allocatable :: zc(:), Ad(:,:)
     real(r64),    allocatable :: C1(:,:,:), C2(:,:,:), As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:), Gcq(:,:), Gpc(:,:)
+    real(r64)    :: vka(0:M), vea(0:M), Fna(0:M), Ana(0:M), dFna(0:M), vkmat(p,0:M), SKw(p)
     q = 2*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
     call gauss_r64(p,     tglp, wglp, Dp)
     call gauss_r64(2_8*p, tglq, wglq, Dq)
@@ -224,17 +225,20 @@ contains
           end do
         end do
       end if
-      ! far: analytic mode-n single carrier K_n = SK*VK on the refined p nodes, fold via IPk
+      ! far: analytic mode-n single carrier K_n = SK*VK on the refined p nodes, fold via IPk.
+      ! all-modes carrier ONCE per (target,node) (was M+1 carrier_r64 calls per node, each redoing the AGM/Miller).
       do i = 1, nt
         if (cl(i)) cycle
         rt = real(tx(i),r64); zti = aimag(tx(i))
+        do jp = 1, p
+          rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
+          rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+          call carrier_all_r64(chi, M, vka, vea, Fna, Ana, dFna)
+          vkmat(jp,0:M) = vka(0:M); SKw(jp) = sqrt(rhop/rho)/twopi*wsp(jp)
+        end do
         do md = 0, M
           do jp = 1, p
-            rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
-            rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-            call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
-            SK = sqrt(rhop/rho)/twopi
-            ff(jp) = SK*vk*wsp(jp)
+            ff(jp) = SKw(jp)*vkmat(jp,md)
           end do
           do l = 1, p
             A(i, cjo+l, md+1) = A(i, cjo+l, md+1) + sum(ff(1:p)*IPk(:,l))
