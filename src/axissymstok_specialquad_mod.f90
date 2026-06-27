@@ -1,5 +1,6 @@
 module axissymstok_specialquad_mod
-  use axistokes3d_mod, only: r64, gauss_r64, carrier_r64, lagrange_interp_r64
+  use axistokes3d_mod, only: r64, gauss_r64, lagrange_interp_r64
+  use axisym_modal_green_mod, only: modal_green_r64, modal_green_all_r64, modal_green_all_far_r64
   use specialquad_mod, only: sdspecialquad_r64
   use axissymstok_kernelsplit_mod, only: axissymstok_slp_coef_r64, axissymstok_slp_coef_nmode_r64, &
        axissymstok_slpn_coef_r64, axissymstok_slpn_coef_nmode_r64, &
@@ -135,7 +136,7 @@ contains
         do jp = 1, p
           rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt; drho = rho - rhop
           rr2 = drho*drho + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call carrier_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
           pref = sqrt(rhop/rho)*ipi/8.0_r64 * wsp(jp) * muinv
           SKrr = (rho*rho + rhop*rhop + 2.0_r64*zh*zh)/(rho*rhop); SErr = -2.0_r64-4.0_r64*chi+2.0_r64*chi*drho*drho/rr2
           SKrz = zh/rho;   SErz = 2.0_r64*(drho*zh/rr2 - zh/(2.0_r64*rho))
@@ -156,26 +157,37 @@ contains
   end subroutine axissymstok_slp_blockmat_r64
 
   subroutine axissymstok_slp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
+    ! Two-level with Ksub=1 (dyadic-pole inner mesh).  Outer COARSE panel pq: FAR targets -> naive on the COARSE
+    ! nodes, straight into A.  NEAR targets -> per dyadic sub-panel of pq, inner-near = close-eval (targets near
+    ! that sub-panel), inner-far = naive (targets far from it; well-separated in the dyadic mesh -> accurate),
+    ! folded back via IPk.  A middle panel is ONE sub-panel == the coarse panel (no split, no cross-panel bug).
     integer(8),   intent(in)    :: nt, p, np, M, iside, iclosed
     complex(r64), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
     real(r64),    intent(in)    :: sws(p*np), tpan(np+1), mu
     complex(r64), intent(inout) :: A(3*nt, 3*np*p, M+1)
-    integer(8) :: q, nso, i, j, jp, iq, ia, l, nc, cjo, e, md, ar, b, k, jo, ne, npa
-    real(r64)  :: ipi, twopi, muinv, sumws, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, vk, ve, Fn, An, dFn
-    real(r64)  :: rn, n2, fn2, cm1, cp1, rr, rrt, srt, t1, tN, tm, denom, rlo, rhi, tgi, split
+    integer(8) :: q, pq, k, nso, i, j, jp, iq, ia, l, e, md, ar, b, ne, npa, nk, nkc, coff
+    real(r64)  :: twopi, sumws, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, vk, ve, rn, n2, fn2, ifn2
+    real(r64)  :: muinv, ipi, rr, srt, rrt, cm1, cp1, icm1, t1, tN, tm, denom, rlo, rhi, tgi, split
+    real(r64)  :: vka(0:M), vea(0:M), vkmat(p,0:M), vemat(p,0:M)
+    real(r64)  :: sk1a(p),sk3a(p),se3a(p),sk5a(p),sk7a(p),se7a(p),sk9a(p),se9a(p),cse5a(p),prefa(p),p0a(p),p1a(p),wsa(p)
+    complex(r64) :: c2a(p), c4a(p), c6a(p), c8a(p), cse2a(p)
+    real(r64)  :: se1, se5
+    complex(r64) :: sk2, se2, sk4, se4, sk6, sk8
+    complex(r64) :: Be_rr(p), Be_rt(p), Be_rz(p), &
+                    Be_tr(p), Be_tt(p), Be_tz(p), &
+                    Be_zr(p), Be_zt(p), Be_zz(p)
     complex(r64) :: ic, za, zb, cc1, cc2, cc3
-    complex(r64) :: sk1,se1,sk2,se2,sk3,se3,sk4,se4,sk5,se5,sk6,sk7,se7,sk8,sk9,se9
     real(r64)    :: tglp(p), wglp(p), Dp(p,p), tglq(2*p), wglq(2*p), Dq(2*p,2*p), IP2(2*p,p)
-    real(r64)    :: tc(p,np), rk(p), re2(2), IPk(p,p), IPe2(2,p), wsq(2*p), wsp(p)
-    complex(r64) :: Yp(p), Yq(2*p), dYp(p), dYq(2*p), nvq(2*p), wxpq(2*p), ec2(2), xc(p,np)
+    real(r64)    :: tc(p,np), rk(p), re2(2), IPk(p,p), IPe2(2,p), IPqc(2*p,p), wsq(2*p), wsp(p)
+    complex(r64) :: Yp(p), Ypb(p), Yq(2*p), dYq(2*p), dYp(p), nvq(2*p), wxpq(2*p), ec2(2), xc(p,np)
     real(r64),    allocatable :: tin(:)
-    logical,      allocatable :: cl(:)
-    integer(8),   allocatable :: ci(:)
-    complex(r64), allocatable :: zc(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), Gcq(:,:), Gpc(:,:), ff(:,:)
+    integer(8),   allocatable :: joa(:), nidx(:), ci(:)
+    logical,      allocatable :: cl(:), ikc(:)
+    complex(r64), allocatable :: znear(:), zc(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), Gcq(:,:), Gpc(:,:)
     real(r64),    allocatable :: As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:)
     complex(r64), allocatable :: Ad(:,:)
-    q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); ipi = 1.0_r64/acos(-1.0_r64)
-    twopi = 2.0_r64*acos(-1.0_r64); muinv = 1.0_r64/mu
+    q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
+    ipi = 1.0_r64/acos(-1.0_r64); muinv = 1.0_r64/mu
     call gauss_r64(p,     tglp, wglp, Dp)
     call gauss_r64(2_8*p, tglq, wglq, Dq)
     call lagrange_interp_r64(p, tglp, q, tglq, IP2)
@@ -186,129 +198,212 @@ contains
       end do
     end do
     t1 = tc(1,1); tN = tc(p,np)
-    ! ---- dyadic pole refinement of tpan -> tin (mirror StoSLPAxiBlockMat_nmode) ----
     allocate(tin(np+1+256)); ne = np+1; tin(1:ne) = tpan(1:np+1)
     do while (tin(2) > t1)
-      split = 0.5_r64*(tin(1)+tin(2))
-      do i = ne, 2, -1; tin(i+1) = tin(i); end do
-      tin(2) = split; ne = ne+1
+      split = 0.5_r64*(tin(1)+tin(2)); do i = ne, 2, -1; tin(i+1) = tin(i); end do; tin(2) = split; ne = ne+1
     end do
     do while (tin(ne-1) < tN)
-      split = 0.5_r64*(tin(ne)+tin(ne-1))
-      tin(ne+1) = tin(ne); tin(ne) = split; ne = ne+1
+      split = 0.5_r64*(tin(ne)+tin(ne-1)); tin(ne+1) = tin(ne); tin(ne) = split; ne = ne+1
     end do
     npa = ne-1
-    allocate(cl(nt), ci(nt), zc(nt), C1(3*nt,3*q,M+1), C2(3*nt,3*q,M+1), C3(3*nt,3*q,M+1))
-    allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p), ff(p,9))
-    A = (0.0_r64,0.0_r64)
+    allocate(joa(npa))
     do k = 1, npa
-      ! ---- this refined panel: parent jo, coarse->refined interp IPk, positions/endpoints ----
-      tm = 0.5_r64*(tin(k)+tin(k+1)); jo = 1
-      do j = 1, np
-        if (tm >= tpan(j) .and. tm < tpan(j+1)) jo = j
+      tm = 0.5_r64*(tin(k)+tin(k+1)); j = 1
+      do i = 1, np
+        if (tm >= tpan(i) .and. tm < tpan(i+1)) j = i
       end do
-      denom = tpan(jo+1) - tpan(jo)
-      do i = 1, p
-        tgi = tin(k) + (1.0_r64+tglp(i))/2.0_r64*(tin(k+1)-tin(k))
-        rk(i) = (2.0_r64*tgi - (tpan(jo)+tpan(jo+1)))/denom
-      end do
-      call lagrange_interp_r64(p, tglp, p, rk, IPk)
-      Yp = matmul(IPk, xc(:,jo))
-      rlo = (2.0_r64*tin(k)   - (tpan(jo)+tpan(jo+1)))/denom
-      rhi = (2.0_r64*tin(k+1) - (tpan(jo)+tpan(jo+1)))/denom
-      re2(1) = rlo; re2(2) = rhi
-      call lagrange_interp_r64(p, tglp, 2_8, re2, IPe2)
-      ec2 = matmul(IPe2, xc(:,jo)); za = ec2(1); zb = ec2(2)
-      cjo = (jo-1)*p
-      ! ---- refined-panel geometry (upsample + speed/normal via D-matrix) ----
-      Yq = matmul(IP2, Yp); dYq = matmul(Dq, Yq)
-      do iq = 1, q
-        spd = abs(dYq(iq)); nvq(iq) = -ic*dYq(iq)/spd; wsq(iq) = wglq(iq)*spd; wxpq(iq) = dYq(iq)*wglq(iq)
-      end do
-      dYp = matmul(Dp, Yp)
+      joa(k) = j
+    end do
+    allocate(cl(nt), ikc(nt), nidx(nt), ci(nt), znear(nt), zc(nt))
+    allocate(C1(3*nt,3*q,M+1), C2(3*nt,3*q,M+1), C3(3*nt,3*q,M+1))
+    allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
+    A = (0.0_r64,0.0_r64)
+    do pq = 1, np                                                   ! ===== outer: COARSE panel pq =====
+      coff = (pq-1)*p
+      sumws = 0.0_r64
       do jp = 1, p
-        wsp(jp) = wglp(jp)*abs(dYp(jp))
+        sumws = sumws + sws(coff+jp)
       end do
-      sumws = sum(wsp)
-      nc = 0
+      nk = 0
       do i = 1, nt
-        cl(i) = (abs(tx(i)-za) + abs(tx(i)-zb)) < 1.5_r64*sumws
-        if (cl(i)) then; nc = nc + 1; ci(nc) = i; zc(nc) = tx(i); end if
+        cl(i) = (abs(tx(i)-sxlo(pq)) + abs(tx(i)-sxhi(pq))) < 1.5_r64*sumws
+        if (cl(i)) then; nk = nk + 1; nidx(nk) = i; znear(nk) = tx(i); end if
       end do
-      ! ---- near: all-mode SLP close (coef + sdspecialquad), fold q->p_coarse via IPqc ----
-      if (nc > 0) then
-        call axissymstok_slp_coef_nmode_r64(nc, zc(1:nc), q, Yq, M, mu, &
-             C1(1:3*nc,1:3*q,:), C2(1:3*nc,1:3*q,:), C3(1:3*nc,1:3*q,:))
-        call sdspecialquad_r64(nc, zc(1:nc), q, Yq, nvq, wxpq, za, zb, iside, &
-             As(1:q,1:nc), Ad(1:q,1:nc), A1(1:q,1:nc), A2(1:q,1:nc), A3(1:q,1:nc), A4(1:q,1:nc))
-        do md = 0, M
-          do e = 1, 9
-            ar = (e-1)/3 + 1; b = mod(e-1,3) + 1
-            do iq = 1, q
-              do ia = 1, nc
-                cc1 = C1(3*(ia-1)+ar, 3*(iq-1)+b, md+1)
-                cc2 = C2(3*(ia-1)+ar, 3*(iq-1)+b, md+1)
-                cc3 = C3(3*(ia-1)+ar, 3*(iq-1)+b, md+1)
-                Gcq(ia,iq) = twopi*cc1*As(iq,ia) + cc2*wsq(iq) &
-                           + cmplx(twopi*real(Ad(iq,ia)*(cc3/nvq(iq)), r64), 0.0_r64, r64)
-              end do
-            end do
-            Gpc(1:nc,1:p) = matmul(Gcq(1:nc,1:q), IP2)        ! near: 1 interp = Ib upsample fold 2p->p
-            do ia = 1, nc
-              do l = 1, p                                     ! then the refinement fold (identity for middle panels)
-                A((ar-1)*nt+ci(ia), (b-1)*nso+cjo+l, md+1) = &
-                  A((ar-1)*nt+ci(ia), (b-1)*nso+cjo+l, md+1) + sum(Gpc(ia,1:p)*IPk(:,l))
-              end do
-            end do
-          end do
-        end do
-      end if
-      ! ---- far: explicit analytic mode-n two-carrier on the refined p nodes, fold via IPk ----
+      ! ---- FAR: naive on the COARSE nodes -> straight into A ----
+      do jp = 1, p
+        Yp(jp) = xc(jp,pq); wsp(jp) = sws(coff+jp)
+      end do
       do i = 1, nt
         if (cl(i)) cycle
         rt = real(tx(i),r64); zti = aimag(tx(i))
+        do jp = 1, p
+          rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
+          rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+          call modal_green_all_far_r64(chi, M, vka, vea)
+          vkmat(jp,0:M) = vka(0:M); vemat(jp,0:M) = vea(0:M)
+          rr = rho*rhop; srt = 1.0_r64/sqrt(rr); rrt = srt*srt*srt
+          cm1 = chi-1.0_r64; cp1 = chi+1.0_r64; icm1 = 1.0_r64/cm1; wsa(jp) = wsp(jp)*muinv
+          sk1a(jp) = -(1.0_r64/8.0_r64)*rhop*ipi*rrt*(rho*rho+rhop*rhop-4.0_r64*chi*rr)
+          sk3a(jp) =  (1.0_r64/8.0_r64)*rhop*rhop*ipi*rrt*zh
+          se3a(jp) =  (1.0_r64/8.0_r64)*rhop*ipi*rrt*icm1*zh*(rho - chi*rhop)
+          sk5a(jp) =  (1.0_r64/2.0_r64)*chi*rhop*srt*ipi
+          sk7a(jp) = -(1.0_r64/8.0_r64)*srt*ipi*zh
+          se7a(jp) = -(1.0_r64/8.0_r64)*rhop*ipi*rrt*icm1*zh*(rhop - chi*rho)
+          sk9a(jp) =  (1.0_r64/4.0_r64)*rhop*srt*ipi
+          se9a(jp) =  (1.0_r64/8.0_r64)*rhop*ipi*rrt*icm1*zh*zh
+          c2a(jp)  = -(1.0_r64/4.0_r64)*srt*ipi*ic*(rho - chi*rhop)
+          c4a(jp)  =  (1.0_r64/4.0_r64)*rhop*rhop*ipi*rrt*ic*(rhop - chi*rho)
+          c6a(jp)  = -(1.0_r64/4.0_r64)*ic*rhop*rhop*ipi*rrt*zh
+          c8a(jp)  = -(1.0_r64/4.0_r64)*ic*srt*ipi*zh
+          cse2a(jp)= -(3.0_r64/4.0_r64)*rhop*srt*ipi*ic*cp1
+          cse5a(jp)= -(1.0_r64/2.0_r64)*rhop*srt*ipi*cp1
+          prefa(jp)= -(1.0_r64/8.0_r64)*rhop*ipi*rrt*icm1
+          p0a(jp)  = 2.0_r64*rr + chi*rho*rho + chi*rhop*rhop - 4.0_r64*chi*chi*rr
+          p1a(jp)  = 4.0_r64*rr + 4.0_r64*chi*chi*rr - 4.0_r64*chi*rho*rho - 4.0_r64*chi*rhop*rhop
+        end do
         do md = 0, M
-          rn = real(md,r64); n2 = rn*rn; fn2 = 4.0_r64*n2 - 1.0_r64
+          rn = real(md,r64); n2 = rn*rn; fn2 = 4.0_r64*n2 - 1.0_r64; ifn2 = 1.0_r64/fn2
           do jp = 1, p
-            rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
-            rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-            rr = rho*rhop; rrt = (rho*rhop)**(-1.5_r64); srt = 1.0_r64/sqrt(rho*rhop)
-            cm1 = chi - 1.0_r64; cp1 = chi + 1.0_r64
-            call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
-            sk1 = cmplx(-(1.0_r64/8.0_r64)*rhop*ipi*rrt*(rho*rho+rhop*rhop-4.0_r64*chi*rr), 0.0_r64, r64)
-            se1 = cmplx(-(1.0_r64/8.0_r64)*rhop*ipi*rrt*(1.0_r64/cm1)*(1.0_r64/fn2)* &
-                  ( 2.0_r64*rr + 4.0_r64*n2*rr + chi*rho*rho + chi*rhop*rhop - 4.0_r64*chi*chi*rr &
-                  + 4.0_r64*n2*chi*chi*rr - 4.0_r64*chi*n2*rho*rho - 4.0_r64*chi*n2*rhop*rhop ), 0.0_r64, r64)
-            sk2 = -(1.0_r64/4.0_r64)*rn*srt*ipi*ic*(rho - chi*rhop)
-            se2 = -(3.0_r64/4.0_r64)*rn*rhop*srt*ipi*ic*cp1*(1.0_r64/fn2)
-            sk3 = cmplx((1.0_r64/8.0_r64)*rhop*rhop*ipi*rrt*zh, 0.0_r64, r64)
-            se3 = cmplx((1.0_r64/8.0_r64)*rhop*ipi*rrt*(1.0_r64/cm1)*zh*(rho - chi*rhop), 0.0_r64, r64)
-            sk4 = (1.0_r64/4.0_r64)*rn*rhop*rhop*ipi*rrt*ic*(rhop - chi*rho)
-            se4 = (3.0_r64/4.0_r64)*rn*rhop*srt*ipi*ic*cp1*(1.0_r64/fn2)
-            sk5 = cmplx((1.0_r64/2.0_r64)*chi*rhop*srt*ipi, 0.0_r64, r64)
-            se5 = cmplx(-(1.0_r64/2.0_r64)*rhop*srt*ipi*cp1*(n2-1.0_r64)*(1.0_r64/fn2), 0.0_r64, r64)
-            sk6 = -(1.0_r64/4.0_r64)*ic*rn*rhop*rhop*ipi*rrt*zh
-            sk7 = cmplx(-(1.0_r64/8.0_r64)*srt*ipi*zh, 0.0_r64, r64)
-            se7 = cmplx(-(1.0_r64/8.0_r64)*rhop*ipi*rrt*(1.0_r64/cm1)*zh*(rhop - chi*rho), 0.0_r64, r64)
-            sk8 = -(1.0_r64/4.0_r64)*ic*rn*srt*ipi*zh
-            sk9 = cmplx((1.0_r64/4.0_r64)*rhop*srt*ipi, 0.0_r64, r64)
-            se9 = cmplx((1.0_r64/8.0_r64)*rhop*ipi*rrt*(1.0_r64/cm1)*zh*zh, 0.0_r64, r64)
-            ws = wsp(jp)*muinv
-            ff(jp,1) = (sk1*vk + se1*ve)*ws; ff(jp,2) = (sk2*vk + se2*ve)*ws; ff(jp,3) = (sk3*vk + se3*ve)*ws
-            ff(jp,4) = (sk4*vk + se4*ve)*ws; ff(jp,5) = (sk5*vk + se5*ve)*ws; ff(jp,6) = (sk6*vk)*ws
-            ff(jp,7) = (sk7*vk + se7*ve)*ws; ff(jp,8) = (sk8*vk)*ws;          ff(jp,9) = (sk9*vk + se9*ve)*ws
+            vk = vkmat(jp,md); ve = vemat(jp,md); ws = wsa(jp)
+            se1 = prefa(jp)*ifn2*(p0a(jp) + n2*p1a(jp))
+            sk2 = c2a(jp)*rn;  se2 = cse2a(jp)*(rn*ifn2);  sk4 = c4a(jp)*rn;  se4 = -se2
+            se5 = cse5a(jp)*((n2-1.0_r64)*ifn2);  sk6 = c6a(jp)*rn;  sk8 = c8a(jp)*rn
+            Be_rr(jp) = (sk1a(jp)*vk + se1*ve)*ws;  Be_rt(jp) = (sk2*vk + se2*ve)*ws;  Be_rz(jp) = (sk3a(jp)*vk + se3a(jp)*ve)*ws
+            Be_tr(jp) = (sk4*vk + se4*ve)*ws;       Be_tt(jp) = (sk5a(jp)*vk + se5*ve)*ws;  Be_tz(jp) = (sk6*vk)*ws
+            Be_zr(jp) = (sk7a(jp)*vk + se7a(jp)*ve)*ws;  Be_zt(jp) = (sk8*vk)*ws;        Be_zz(jp) = (sk9a(jp)*vk + se9a(jp)*ve)*ws
           end do
-          do e = 1, 9
-            ar = (e-1)/3 + 1; b = mod(e-1,3) + 1
+          do l = 1, p
+            A(0*nt+i, 0*nso+coff+l, md+1) = A(0*nt+i, 0*nso+coff+l, md+1) + Be_rr(l)
+            A(0*nt+i, 1*nso+coff+l, md+1) = A(0*nt+i, 1*nso+coff+l, md+1) + Be_rt(l)
+            A(0*nt+i, 2*nso+coff+l, md+1) = A(0*nt+i, 2*nso+coff+l, md+1) + Be_rz(l)
+            A(1*nt+i, 0*nso+coff+l, md+1) = A(1*nt+i, 0*nso+coff+l, md+1) + Be_tr(l)
+            A(1*nt+i, 1*nso+coff+l, md+1) = A(1*nt+i, 1*nso+coff+l, md+1) + Be_tt(l)
+            A(1*nt+i, 2*nso+coff+l, md+1) = A(1*nt+i, 2*nso+coff+l, md+1) + Be_tz(l)
+            A(2*nt+i, 0*nso+coff+l, md+1) = A(2*nt+i, 0*nso+coff+l, md+1) + Be_zr(l)
+            A(2*nt+i, 1*nso+coff+l, md+1) = A(2*nt+i, 1*nso+coff+l, md+1) + Be_zt(l)
+            A(2*nt+i, 2*nso+coff+l, md+1) = A(2*nt+i, 2*nso+coff+l, md+1) + Be_zz(l)
+          end do
+        end do
+      end do
+      if (nk == 0) cycle
+      ! ---- NEAR: per dyadic sub-panel of pq, inner-near (close-eval) + inner-far (naive) ----
+      do k = 1, npa
+        if (joa(k) /= pq) cycle
+        denom = tpan(pq+1) - tpan(pq)
+        do i = 1, p
+          tgi = tin(k) + (1.0_r64+tglp(i))/2.0_r64*(tin(k+1)-tin(k))
+          rk(i) = (2.0_r64*tgi - (tpan(pq)+tpan(pq+1)))/denom
+        end do
+        call lagrange_interp_r64(p, tglp, p, rk, IPk)
+        Ypb = matmul(IPk, xc(:,pq))
+        rlo = (2.0_r64*tin(k)   - (tpan(pq)+tpan(pq+1)))/denom
+        rhi = (2.0_r64*tin(k+1) - (tpan(pq)+tpan(pq+1)))/denom
+        re2(1) = rlo; re2(2) = rhi
+        call lagrange_interp_r64(p, tglp, 2_8, re2, IPe2)
+        ec2 = matmul(IPe2, xc(:,pq)); za = ec2(1); zb = ec2(2)
+        IPqc = matmul(IP2, IPk)
+        Yq = matmul(IP2, Ypb); dYq = matmul(Dq, Yq)
+        do iq = 1, q
+          spd = abs(dYq(iq)); nvq(iq) = -ic*dYq(iq)/spd; wsq(iq) = wglq(iq)*spd; wxpq(iq) = dYq(iq)*wglq(iq)
+        end do
+        dYp = matmul(Dp, Ypb)
+        do jp = 1, p
+          wsp(jp) = wglp(jp)*abs(dYp(jp))
+        end do
+        sumwsc = sum(wsp)
+        nkc = 0
+        do i = 1, nk
+          ikc(i) = (abs(znear(i)-za) + abs(znear(i)-zb)) < 1.5_r64*sumwsc
+          if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
+        end do
+        ! inner-near: close-eval the nkc targets near sub-panel k, fold q -> coarse via IPqc
+        if (nkc > 0) then
+          call axissymstok_slp_coef_nmode_r64(nkc, zc(1:nkc), q, Yq, M, mu, &
+               C1(1:3*nkc,1:3*q,:), C2(1:3*nkc,1:3*q,:), C3(1:3*nkc,1:3*q,:))
+          call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, za, zb, iside, &
+               As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
+          do md = 0, M
+            do e = 1, 9
+              ar = (e-1)/3 + 1; b = mod(e-1,3) + 1
+              do iq = 1, q
+                do ia = 1, nkc
+                  cc1 = C1(3*(ia-1)+ar, 3*(iq-1)+b, md+1); cc2 = C2(3*(ia-1)+ar, 3*(iq-1)+b, md+1)
+                  cc3 = C3(3*(ia-1)+ar, 3*(iq-1)+b, md+1)
+                  Gcq(ia,iq) = twopi*cc1*As(iq,ia) + cc2*wsq(iq) &
+                             + cmplx(twopi*real(Ad(iq,ia)*(cc3/nvq(iq)), r64), 0.0_r64, r64)
+                end do
+              end do
+              Gpc(1:nkc,1:p) = matmul(Gcq(1:nkc,1:q), IPqc)
+              select case (e)
+              case (1); do ia=1,nkc; do l=1,p; A(0*nt+nidx(ci(ia)), 0*nso+coff+l, md+1) = A(0*nt+nidx(ci(ia)), 0*nso+coff+l, md+1) + Gpc(ia,l); end do; end do
+              case (2); do ia=1,nkc; do l=1,p; A(0*nt+nidx(ci(ia)), 1*nso+coff+l, md+1) = A(0*nt+nidx(ci(ia)), 1*nso+coff+l, md+1) + Gpc(ia,l); end do; end do
+              case (3); do ia=1,nkc; do l=1,p; A(0*nt+nidx(ci(ia)), 2*nso+coff+l, md+1) = A(0*nt+nidx(ci(ia)), 2*nso+coff+l, md+1) + Gpc(ia,l); end do; end do
+              case (4); do ia=1,nkc; do l=1,p; A(1*nt+nidx(ci(ia)), 0*nso+coff+l, md+1) = A(1*nt+nidx(ci(ia)), 0*nso+coff+l, md+1) + Gpc(ia,l); end do; end do
+              case (5); do ia=1,nkc; do l=1,p; A(1*nt+nidx(ci(ia)), 1*nso+coff+l, md+1) = A(1*nt+nidx(ci(ia)), 1*nso+coff+l, md+1) + Gpc(ia,l); end do; end do
+              case (6); do ia=1,nkc; do l=1,p; A(1*nt+nidx(ci(ia)), 2*nso+coff+l, md+1) = A(1*nt+nidx(ci(ia)), 2*nso+coff+l, md+1) + Gpc(ia,l); end do; end do
+              case (7); do ia=1,nkc; do l=1,p; A(2*nt+nidx(ci(ia)), 0*nso+coff+l, md+1) = A(2*nt+nidx(ci(ia)), 0*nso+coff+l, md+1) + Gpc(ia,l); end do; end do
+              case (8); do ia=1,nkc; do l=1,p; A(2*nt+nidx(ci(ia)), 1*nso+coff+l, md+1) = A(2*nt+nidx(ci(ia)), 1*nso+coff+l, md+1) + Gpc(ia,l); end do; end do
+              case (9); do ia=1,nkc; do l=1,p; A(2*nt+nidx(ci(ia)), 2*nso+coff+l, md+1) = A(2*nt+nidx(ci(ia)), 2*nso+coff+l, md+1) + Gpc(ia,l); end do; end do
+              end select
+            end do
+          end do
+        end if
+        ! inner-far: naive on sub-panel k for the near targets that are far from k (dyadic -> well separated), fold via IPk
+        do i = 1, nk
+          if (ikc(i)) cycle
+          rt = real(znear(i),r64); zti = aimag(znear(i))
+          do jp = 1, p
+            rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp)); rho = rt
+            rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+            call modal_green_all_far_r64(chi, M, vka, vea)
+            vkmat(jp,0:M) = vka(0:M); vemat(jp,0:M) = vea(0:M)
+          rr = rho*rhop; srt = 1.0_r64/sqrt(rr); rrt = srt*srt*srt
+          cm1 = chi-1.0_r64; cp1 = chi+1.0_r64; icm1 = 1.0_r64/cm1; wsa(jp) = wsp(jp)*muinv
+          sk1a(jp) = -(1.0_r64/8.0_r64)*rhop*ipi*rrt*(rho*rho+rhop*rhop-4.0_r64*chi*rr)
+          sk3a(jp) =  (1.0_r64/8.0_r64)*rhop*rhop*ipi*rrt*zh
+          se3a(jp) =  (1.0_r64/8.0_r64)*rhop*ipi*rrt*icm1*zh*(rho - chi*rhop)
+          sk5a(jp) =  (1.0_r64/2.0_r64)*chi*rhop*srt*ipi
+          sk7a(jp) = -(1.0_r64/8.0_r64)*srt*ipi*zh
+          se7a(jp) = -(1.0_r64/8.0_r64)*rhop*ipi*rrt*icm1*zh*(rhop - chi*rho)
+          sk9a(jp) =  (1.0_r64/4.0_r64)*rhop*srt*ipi
+          se9a(jp) =  (1.0_r64/8.0_r64)*rhop*ipi*rrt*icm1*zh*zh
+          c2a(jp)  = -(1.0_r64/4.0_r64)*srt*ipi*ic*(rho - chi*rhop)
+          c4a(jp)  =  (1.0_r64/4.0_r64)*rhop*rhop*ipi*rrt*ic*(rhop - chi*rho)
+          c6a(jp)  = -(1.0_r64/4.0_r64)*ic*rhop*rhop*ipi*rrt*zh
+          c8a(jp)  = -(1.0_r64/4.0_r64)*ic*srt*ipi*zh
+          cse2a(jp)= -(3.0_r64/4.0_r64)*rhop*srt*ipi*ic*cp1
+          cse5a(jp)= -(1.0_r64/2.0_r64)*rhop*srt*ipi*cp1
+          prefa(jp)= -(1.0_r64/8.0_r64)*rhop*ipi*rrt*icm1
+          p0a(jp)  = 2.0_r64*rr + chi*rho*rho + chi*rhop*rhop - 4.0_r64*chi*chi*rr
+          p1a(jp)  = 4.0_r64*rr + 4.0_r64*chi*chi*rr - 4.0_r64*chi*rho*rho - 4.0_r64*chi*rhop*rhop
+          end do
+          do md = 0, M
+            rn = real(md,r64); n2 = rn*rn; fn2 = 4.0_r64*n2 - 1.0_r64; ifn2 = 1.0_r64/fn2
+            do jp = 1, p
+            vk = vkmat(jp,md); ve = vemat(jp,md); ws = wsa(jp)
+            se1 = prefa(jp)*ifn2*(p0a(jp) + n2*p1a(jp))
+            sk2 = c2a(jp)*rn;  se2 = cse2a(jp)*(rn*ifn2);  sk4 = c4a(jp)*rn;  se4 = -se2
+            se5 = cse5a(jp)*((n2-1.0_r64)*ifn2);  sk6 = c6a(jp)*rn;  sk8 = c8a(jp)*rn
+            Be_rr(jp) = (sk1a(jp)*vk + se1*ve)*ws;  Be_rt(jp) = (sk2*vk + se2*ve)*ws;  Be_rz(jp) = (sk3a(jp)*vk + se3a(jp)*ve)*ws
+            Be_tr(jp) = (sk4*vk + se4*ve)*ws;       Be_tt(jp) = (sk5a(jp)*vk + se5*ve)*ws;  Be_tz(jp) = (sk6*vk)*ws
+            Be_zr(jp) = (sk7a(jp)*vk + se7a(jp)*ve)*ws;  Be_zt(jp) = (sk8*vk)*ws;        Be_zz(jp) = (sk9a(jp)*vk + se9a(jp)*ve)*ws
+            end do
             do l = 1, p
-              A((ar-1)*nt+i, (b-1)*nso+cjo+l, md+1) = &
-                A((ar-1)*nt+i, (b-1)*nso+cjo+l, md+1) + sum(ff(1:p,e)*IPk(:,l))
+              A(0*nt+nidx(i), 0*nso+coff+l, md+1) = A(0*nt+nidx(i), 0*nso+coff+l, md+1) + sum(Be_rr(1:p)*IPk(:,l))
+              A(0*nt+nidx(i), 1*nso+coff+l, md+1) = A(0*nt+nidx(i), 1*nso+coff+l, md+1) + sum(Be_rt(1:p)*IPk(:,l))
+              A(0*nt+nidx(i), 2*nso+coff+l, md+1) = A(0*nt+nidx(i), 2*nso+coff+l, md+1) + sum(Be_rz(1:p)*IPk(:,l))
+              A(1*nt+nidx(i), 0*nso+coff+l, md+1) = A(1*nt+nidx(i), 0*nso+coff+l, md+1) + sum(Be_tr(1:p)*IPk(:,l))
+              A(1*nt+nidx(i), 1*nso+coff+l, md+1) = A(1*nt+nidx(i), 1*nso+coff+l, md+1) + sum(Be_tt(1:p)*IPk(:,l))
+              A(1*nt+nidx(i), 2*nso+coff+l, md+1) = A(1*nt+nidx(i), 2*nso+coff+l, md+1) + sum(Be_tz(1:p)*IPk(:,l))
+              A(2*nt+nidx(i), 0*nso+coff+l, md+1) = A(2*nt+nidx(i), 0*nso+coff+l, md+1) + sum(Be_zr(1:p)*IPk(:,l))
+              A(2*nt+nidx(i), 1*nso+coff+l, md+1) = A(2*nt+nidx(i), 1*nso+coff+l, md+1) + sum(Be_zt(1:p)*IPk(:,l))
+              A(2*nt+nidx(i), 2*nso+coff+l, md+1) = A(2*nt+nidx(i), 2*nso+coff+l, md+1) + sum(Be_zz(1:p)*IPk(:,l))
             end do
           end do
         end do
       end do
     end do
-    deallocate(tin, cl, ci, zc, C1, C2, C3, As, Ad, A1, A2, A3, A4, Gcq, Gpc, ff)
+    deallocate(tin, joa, nidx, ci, znear, zc, cl, ikc, C1, C2, C3, As, Ad, A1, A2, A3, A4, Gcq, Gpc)
   end subroutine axissymstok_slp_blockmat_nmode_r64
 
   subroutine axissymstok_slpn_blockmat_r64(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, mu, A)
@@ -434,7 +529,7 @@ contains
             cycle
           end if
           chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call carrier_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
           block
             real(r64) :: t2,t3,t4,t5,t6,t7,t8,t9,t11,t13,t15,t16,t17,t18,t19,t20,t23,t24,t25,t26,t29,t30,t31
             real(r64) :: t32,t33,t38,t39,t44,t45,t46,t47,t52,t55,t56,t59,t62,t66
@@ -482,7 +577,12 @@ contains
     complex(r64), intent(inout) :: A(3*nt, 3*np*p, M+1)
     integer(8), parameter :: Ksub = 4
     integer(8) :: q, pq, nso, i, j, jp, iq, ia, l, e, md, ar, b, c, qo, ne, npa, nk, nkc, jj, cols
-    real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, nr, nz, vk, ve, Fn, An, dFn, rn
+    real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, nr, nz, vk, ve, Fn, An, dFn, rn, n2, ifn2
+    real(r64)  :: vka(0:M), vea(0:M), Fna(0:M), Ana(0:M), dFna(0:M), vkmat(p,0:M), vemat(p,0:M)
+    complex(r64) :: coK(9), coE(9), pcs(27), pcsm(27,p)   ! pcs/pcsm = md-indep far coK/coE pieces (inlined per node, see the far blocks)
+    complex(r64) :: Be_rr(p), Be_rt(p), Be_rz(p), &       ! 9 entries of the 3x3 traction block, per panel node
+                    Be_tr(p), Be_tt(p), Be_tz(p), &
+                    Be_zr(p), Be_zt(p), Be_zz(p)
     real(r64)  :: st1, stN, tm, denom, rlo, rhi, tgi, split
     complex(r64) :: ic, zac, zbc, cc1, cc2, cc3, cc4, Slog, Dval, Dz, Acau, Ahy
     real(r64)    :: tglp(p), wglp(p), Dp(p,p), tglq(2*p), wglq(2*p), Dq(2*p,2*p), IP2(2*p,p)
@@ -491,7 +591,7 @@ contains
     real(r64),    allocatable :: tin(:)
     integer(8),   allocatable :: joa(:), ci(:), nidx(:)
     logical,      allocatable :: ikq(:), ikc(:)
-    complex(r64), allocatable :: zc(:), zcn(:), znear(:), znearn(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:), Gcq(:,:), Gpc(:,:), ff(:,:)
+    complex(r64), allocatable :: zc(:), zcn(:), znear(:), znearn(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:), Gcq(:,:), Gpc(:,:)
     real(r64),    allocatable :: As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:)
     complex(r64), allocatable :: Ad(:,:)
     q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
@@ -530,7 +630,7 @@ contains
     end do
     allocate(ci(nt), zc(nt), zcn(nt), nidx(nt), znear(nt), znearn(nt), ikq(nt), ikc(nt))
     allocate(C1(3*nt,3*q,M+1), C2(3*nt,3*q,M+1), C3(3*nt,3*q,M+1), C4(3*nt,3*q,M+1))
-    allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p), ff(p,9))
+    allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
     A = (0.0_r64,0.0_r64)
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
       cols = (pq-1)*p
@@ -550,61 +650,81 @@ contains
         do jp = 1, p
           jj = cols + jp; rhop = real(sx(jj),r64); zh = zti - aimag(sx(jj)); ws = sws(jj)
           rho = rt; rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+          call modal_green_all_far_r64(chi, M, vka, vea)        ! all modes ONCE per node
+          ! ---- md-INDEPENDENT pieces of the slpn far coK/coE coefficients (inlined, computed ONCE per node) ----
+          ! coK linear in n2(=mode^2) with at most a 1/(4n2-1)=ifn2 factor; the do-md loop then assembles:
+          !   coK diag(1,3,5,7,9)=p0+n2*p2   coK cross(2,4,6,8)=n*p1   coE(1,5)=ifn2*(p0+n2*p2)
+          !   coE(2,4)=n*ifn2*(p1+n2*p3)     coE(3,7,9)=p0             coE(6,8)=n*p1
+          ! pcs order: coK1_0 coK1_2 coE1_0 coE1_2 coK2_1 coE2_1 coE2_3 coK3_0 coK3_2 coE3_0
+          !            coK4_1 coE4_1 coE4_3 coK5_0 coK5_2 coE5_0 coE5_2 coK6_1 coE6_1 coK7_0
+          !            coK7_2 coE7_0 coK8_1 coE8_1 coK9_0 coK9_2 coE9_0   (gen /tmp/gen_slpn_pieces.m; 1/pi=ipi; uses outer ic)
+          block
+            real(r64) :: ipi, r15, r25
+            real(r64) :: t2,t3,t4,t5,t6,t7,t8,t11,t13,t14,t15,t16,t17,t18,t19,t20,t21,t22,t25,t26,t27,t28
+            real(r64) :: t29,t30,t31,t32,t33,t34,t37,t39,t40,t41,t47,t48,t49,t50,t51,t52,t53,t54,t55,t56
+            complex(r64) :: t23,t24,t35,t36,t38,t42,t45,t46,t57
+            ipi = 1.0_r64/acos(-1.0_r64)
+            t2=chi*rho; t3=chi*rhop; t4=nr*rho; t5=rho*rhop; t6=nz*zh; t7=chi+1.0_r64; t8=chi*chi
+            t11=rho*rho; t13=rhop*rhop; t14=t13*rhop; t15=zh*zh; t16=nr*rhop*3.0_r64; t18=chi-1.0_r64
+            t17=nr*t3; t19=-t2; t20=-t3; t21=1.0_r64/t7; t22=t8-1.0_r64
+            r15=1.0_r64/t5**1.5_r64; r25=1.0_r64/t5**2.5_r64
+            t23=t4*ic; t24=t6*ic; t25=t4*t11*3.0_r64; t26=nr*t13*3.0_r64; t31=t6*t11*3.0_r64; t32=t6*t13*3.0_r64
+            t33=1.0_r64/t18; t38=nr*rhop*t2*2.0_r64*ic; t39=t2*t2*t4; t41=rhop*t2*t6*10.0_r64
+            t48=rhop*t2*t4*16.0_r64; t51=t2*t2*t6; t52=t3*t3*t6; t53=chi*t2*t3*t6*2.0_r64
+            t27=-t17; t28=t13*t17*6.0_r64; t29=rho+t20; t30=rhop+t19; t34=t33*t33; t35=t17*ic
+            t36=rho*t24; t40=t2*t17*2.0_r64; t42=rho*t23; t46=-t38; t47=t3*t3*t17*2.0_r64; t49=1.0_r64/t22
+            t50=-t41; t54=-t48; t55=t2*t2*t17*4.0_r64; t37=-t28; t45=-t35; t56=t4+t6+t27; t57=t23+t24+t45
+            pcs(1)  = ipi*rhop*r25*t49*(nr*t14*(-3.0_r64)-t4*t5*7.0_r64-t5*t6*4.0_r64+nr*rhop*t2*t2*4.0_r64 &
+                      +nr*t2*t13*11.0_r64+rho*t2*t4+rho*t2*t6+rhop*t3*t6+rhop*t3*t17*2.0_r64+t2*t3*t6*2.0_r64 &
+                      -t2*t3*t17*8.0_r64)*(-1.0_r64/8.0_r64)
+            pcs(2)  = ipi*rhop*r25*t49*t56*(t5+rho*t19+rhop*t20+t2*t3)*(-1.0_r64/2.0_r64)
+            pcs(3)  = ipi*rhop*t21*t34*r25*(t25+t31+t32+t37+t39+t47+t50+t51+t52+t53+t54+t55+t4*t13*3.0_r64 &
+                      +rhop*t2*t17*17.0_r64-chi*t2*t3*t17*8.0_r64)*(-1.0_r64/8.0_r64)
+            pcs(4)  = ipi*(rhop*t21*t34*r25*(t25+t31+t32+t37+t39+t47+t50+t51+t52+t53+t54+t55+t4*t13*6.0_r64 &
+                      +rhop*t2*t17*11.0_r64-chi*t2*t3*t17*5.0_r64))/2.0_r64
+            pcs(5)  = ipi*rhop*r15*(t4*2.0_r64*ic-t17*2.0_r64*ic+t24)*(-3.0_r64/4.0_r64)
+            pcs(6)  = ipi*(t33*r15*(t36+t42+t46+nr*t13*3.0_r64*ic-t3*t6*ic-t3*t17*2.0_r64*ic))/4.0_r64
+            pcs(7)  = ipi*(-t29*t33*r15*t57)
+            pcs(8)  = ipi*rhop*r25*t49*zh*(t26+rho*t4+rho*t6-t3*t17*2.0_r64+t6*t20-nr*rhop*t2*2.0_r64)*(-1.0_r64/8.0_r64)
+            pcs(9)  = ipi*(rhop*t29*r25*t49*t56*zh)/2.0_r64
+            pcs(10) = ipi*rhop*t21*t34*r25*zh*(t40+rhop*t4*6.0_r64+rhop*t6*3.0_r64-rhop*t17*6.0_r64-t2*t4*4.0_r64 &
+                      -t2*t6*4.0_r64+chi*t3*t6+chi*t3*t17*2.0_r64)*(-1.0_r64/8.0_r64)
+            pcs(11) = ipi*t13*r25*(t36+t42+t46+nr*t13*ic)*(3.0_r64/4.0_r64)
+            pcs(12) = ipi*(t13*t33*r25*(rhop*t4*(-4.0_r64*ic)-rhop*t6*ic+rhop*t35+t2*t17*2.0_r64*ic+t2*t23+t2*t24))/4.0_r64
+            pcs(13) = ipi*t13*t30*t33*r25*t57
+            pcs(14) = ipi*rhop*r15*(t4+t6-t17*4.0_r64)*(-1.0_r64/4.0_r64)
+            pcs(15) = ipi*rhop*r15*t56*(-1.0_r64/2.0_r64)
+            pcs(16) = ipi*rhop*t33*r15*(t16+chi*t6-chi*t17*4.0_r64+nr*t2)*(-1.0_r64/4.0_r64)
+            pcs(17) = ipi*(rhop*t33*r15*(t16+chi*t6*2.0_r64-chi*t17*5.0_r64+nr*t2*2.0_r64))/2.0_r64
+            pcs(18) = ipi*nr*t14*r25*zh*cmplx(0.0_r64,-0.75_r64,r64)
+            pcs(19) = ipi*t13*t33*r25*t57*zh*(-1.0_r64/4.0_r64)
+            pcs(20) = ipi*rhop*r25*t49*zh*(t40-rhop*t4*4.0_r64-rhop*t6+rhop*t17+t2*t4+t2*t6)*(-1.0_r64/8.0_r64)
+            pcs(21) = ipi*rhop*t30*r25*t49*t56*zh*(-1.0_r64/2.0_r64)
+            pcs(22) = ipi*(rhop*t21*t34*r25*zh*(t26+chi*t40+rho*t4*3.0_r64+rho*t6*3.0_r64-t3*t6*4.0_r64+t3*t17 &
+                      +nr*t2*t2+chi*t2*t6-nr*rhop*t2*10.0_r64))/8.0_r64
+            pcs(23) = ipi*t4*t13*r25*zh*cmplx(0.0_r64,-0.75_r64,r64)
+            pcs(24) = ipi*t33*r15*t57*zh*(-1.0_r64/4.0_r64)
+            pcs(25) = ipi*rhop*t15*r25*t49*t56*(-1.0_r64/8.0_r64)
+            pcs(26) = ipi*(rhop*t15*r25*t49*t56)/2.0_r64
+            pcs(27) = ipi*rhop*t15*t21*t34*r25*(t16-chi*t6*4.0_r64+chi*t17-nr*t2*4.0_r64)*(-1.0_r64/8.0_r64)
+          end block
           do md = 0, M
-            rn = real(md,r64)
-            call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
-            block
-              real(r64) :: t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t13,t15,t16,t17,t18,t19,t20,t21,t22,t23,t24,t25
-              real(r64) :: t26,t27,t28,t29,t30,t31,t32,t33,t38,t39,t41,t42,t43,t44,t45,t46,t47,t52,t53,t55,t56,t59,t61,t62,t66
-              complex(r64) :: t34,t35,t36,t37,t48,t50,t51,t54,t57,t58,t60,t63,t64,t65,t69, coK(9), coE(9)
-              t2=nr*rho; t3=nr*rhop; t4=rho*rhop; t5=nz*zh; t6=chi+1.0_r64; t7=chi*chi; t8=chi**3
-              t10=rn*rn; t11=rho*rho; t13=rhop*rhop; t15=zh*zh; t17=1.0_r64/acos(-1.0_r64); t20=chi-1.0_r64; t21=-rhop
-              t9=t7*t7; t16=t3*3.0_r64; t18=rho*t5; t19=rhop*t5; t22=t10*4.0_r64; t23=-t3; t24=rho*t2; t25=t2*t11
-              t26=rhop*t3; t27=chi*t3*4.0_r64; t28=rhop*t2*4.0_r64; t29=chi*rhop*t2*2.0_r64; t30=t5*t11; t31=1.0_r64/t6
-              t32=t7-1.0_r64; t33=t4*t5*4.0_r64; t34=t2*ic; t35=t2*2.0_r64*ic; t36=t3*ic; t37=t5*ic; t41=rho+t21
-              t44=t2*t13*3.0_r64; t45=t2*t4*7.0_r64; t46=1.0_r64/t20; t50=chi*t3*2.0_r64*ic; t52=t2+t5
-              t55=rhop*t2*t7*2.0_r64; t59=1.0_r64/t4**2.5_r64; t60=chi*t3*(-ic); t63=rhop*t2*t10*4.0_r64*ic
-              t38=t24*3.0_r64; t39=rhop*t16; t42=-t27; t43=-t28; t47=t46*t46; t48=-t36; t51=t18*ic; t53=t41*t41
-              t54=chi*rhop*t35; t56=t22-1.0_r64; t57=t24*ic; t58=t26*ic; t61=1.0_r64/t41; t62=1.0_r64/t32
-              t64=t10*t18*4.0_r64*ic; t65=t10*t24*4.0_r64*ic; t69=t34+t37+t60; t66=1.0_r64/t56
-              coK(1) = cmplx(rhop*t17*t59*t62*(-t33-t45+chi*t25+chi*t30-t3*t13*3.0_r64+chi*t2*t13*11.0_r64+chi*t5*t13 &
-                     -chi*t10*t25*4.0_r64-chi*t10*t30*4.0_r64+t2*t4*t7*4.0_r64+t4*t5*t7*2.0_r64-t2*t8*t13*8.0_r64 &
-                     +t3*t7*t13*2.0_r64+t2*t4*t22+t4*t5*t22-chi*t2*t10*t13*8.0_r64-chi*t5*t10*t13*4.0_r64 &
-                     +t2*t4*t7*t10*8.0_r64-t2*t8*t10*t13*4.0_r64+t4*t5*t7*t22+t3*t7*t13*t22)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-              coE(1) = cmplx(rhop*t17*t31*t47*t59*t66*(t25*3.0_r64+t30*3.0_r64+t44+t5*t13*3.0_r64+t7*t25-t10*t25*12.0_r64 &
-                     +t7*t30-t10*t30*12.0_r64-chi*t2*t4*16.0_r64-chi*t4*t5*10.0_r64-chi*t3*t13*6.0_r64+t2*t4*t8*4.0_r64 &
-                     +t4*t5*t8*2.0_r64+t2*t7*t13*17.0_r64-t2*t9*t13*8.0_r64+t3*t8*t13*2.0_r64-t2*t10*t13*24.0_r64 &
-                     +t5*t7*t13-t5*t10*t13*12.0_r64-t7*t10*t25*4.0_r64-t7*t10*t30*4.0_r64+chi*t2*t4*t10*64.0_r64 &
-                     +chi*t4*t5*t10*40.0_r64+chi*t3*t10*t13*24.0_r64-t2*t4*t8*t10*16.0_r64-t4*t5*t8*t10*8.0_r64 &
-                     -t2*t7*t10*t13*44.0_r64+t2*t9*t10*t13*20.0_r64-t3*t8*t10*t13*8.0_r64-t5*t7*t10*t13*4.0_r64)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-              coK(2) = rn*rhop/t4**1.5_r64*t17*(t35+t37-t50)*(-3.0_r64/4.0_r64)
-              coE(2) = rn/t4**1.5_r64*t17*t46*t66*(t26*(-3.0_r64*ic)-t51+t54-t57+t64+t65+chi*t19*ic+t7*t26*2.0_r64*ic &
-                     -chi*t10*t19*4.0_r64*ic+t7*t10*t26*4.0_r64*ic-chi*rhop*t2*t10*8.0_r64*ic)*(-1.0_r64/4.0_r64)
-              coK(3) = cmplx((rhop*t17*t59*t62*zh*(-t18-t24-t26*3.0_r64+t29+chi*t19+t7*t26*2.0_r64+t18*t22+t22*t24 &
-                     -chi*t10*t19*4.0_r64+t7*t22*t26-chi*rhop*t2*t10*8.0_r64))/8.0_r64, 0.0_r64, r64)
-              coE(3) = cmplx(rhop*t17*t31*t47*t59*zh*(t19*3.0_r64+t55-chi*t18*4.0_r64-chi*t24*4.0_r64-chi*t26*6.0_r64 &
-                     +rhop*t2*6.0_r64+t7*t19+t8*t26*2.0_r64)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-              coK(4) = rn*t13*t17*t59*(t51+t57+t58-chi*rhop*t2*2.0_r64*ic)*(3.0_r64/4.0_r64)
-              coE(4) = (rn*t13*t17*t46*t59*t66*(t19*(-ic)+t63+chi*t51+chi*t57+chi*t58-rhop*t2*4.0_r64*ic+t10*t19*4.0_r64*ic &
-                     +t7*t63-chi*t10*t18*4.0_r64*ic-chi*t10*t24*4.0_r64*ic-chi*t10*t26*4.0_r64*ic+rhop*t7*t35))/4.0_r64
-              coK(5) = cmplx(rhop/t4**1.5_r64*t17*(t42+t52+t2*t10*2.0_r64+t5*t10*2.0_r64-chi*t3*t10*2.0_r64)*(-1.0_r64/4.0_r64), 0.0_r64, r64)
-              coE(5) = cmplx(rhop/t4**1.5_r64*t17*t46*t66*(t16+chi*t2+chi*t5-t3*t7*4.0_r64-t3*t10*6.0_r64 &
-                     -chi*t2*t10*4.0_r64-chi*t5*t10*4.0_r64+t3*t7*t10*10.0_r64)*(-1.0_r64/4.0_r64), 0.0_r64, r64)
-              coK(6) = rn*t3*t13*t17*t59*zh*cmplx(0.0_r64,-0.75_r64,r64)
-              coE(6) = rn*t13*t17*t46*t59*t69*zh*(-1.0_r64/4.0_r64)
-              coK(7) = cmplx(rhop*t17*t59*t62*zh*(-t19+t43+t55+chi*t18+chi*t24+chi*t26+t19*t22-chi*t10*t18*4.0_r64 &
-                     -chi*t10*t24*4.0_r64-chi*t10*t26*4.0_r64+rhop*t2*t22+rhop*t2*t7*t22)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-              coE(7) = cmplx((rhop*t17*t31*t47*t59*zh*(t18*3.0_r64+t38+t39-chi*t19*4.0_r64+t7*t18+t7*t24+t7*t26 &
-                     -chi*rhop*t2*10.0_r64+rhop*t2*t8*2.0_r64))/8.0_r64, 0.0_r64, r64)
-              coK(8) = rn*t2*t13*t17*t59*zh*cmplx(0.0_r64,-0.75_r64,r64)
-              coE(8) = rn/t4**1.5_r64*t17*t46*t69*zh*(-1.0_r64/4.0_r64)
-              coK(9) = cmplx((rhop*t15*t17*t56*t59*t62*(t52+chi*t23))/8.0_r64, 0.0_r64, r64)
-              coE(9) = cmplx(rhop*t15*t17*t31*t47*t59*(t16-chi*t2*4.0_r64-chi*t5*4.0_r64+t3*t7)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-              do e = 1, 9
-                ar = (e-1)/3 + 1; b = mod(e-1,3) + 1
-                A((ar-1)*nt+i, (b-1)*nso+jj, md+1) = -(coK(e)*vk + coE(e)*ve)*ws
-              end do
-            end block
+            rn = real(md,r64); n2 = rn*rn; ifn2 = 1.0_r64/(4.0_r64*n2-1.0_r64)
+            vk = vka(md); ve = vea(md)
+            coK(1)=pcs(1)+n2*pcs(2);  coK(3)=pcs(8)+n2*pcs(9);  coK(5)=pcs(14)+n2*pcs(15)
+            coK(7)=pcs(20)+n2*pcs(21); coK(9)=pcs(25)+n2*pcs(26)
+            coK(2)=rn*pcs(5); coK(4)=rn*pcs(11); coK(6)=rn*pcs(18); coK(8)=rn*pcs(23)
+            coE(1)=ifn2*(pcs(3)+n2*pcs(4)); coE(5)=ifn2*(pcs(16)+n2*pcs(17))
+            coE(2)=rn*ifn2*(pcs(6)+n2*pcs(7)); coE(4)=rn*ifn2*(pcs(12)+n2*pcs(13))
+            coE(3)=pcs(10); coE(7)=pcs(22); coE(9)=pcs(27)
+            coE(6)=rn*pcs(19); coE(8)=rn*pcs(24)
+            ! 3x3 traction block entries  Be_** = -(coK*vk + coE*ve)*ws   (row r/t/z = 0/1/2*nt, col r/t/z = 0/1/2*nso)
+            Be_rr(jp) = -(coK(1)*vk+coE(1)*ve)*ws;  Be_rt(jp) = -(coK(2)*vk+coE(2)*ve)*ws;  Be_rz(jp) = -(coK(3)*vk+coE(3)*ve)*ws
+            Be_tr(jp) = -(coK(4)*vk+coE(4)*ve)*ws;  Be_tt(jp) = -(coK(5)*vk+coE(5)*ve)*ws;  Be_tz(jp) = -(coK(6)*vk+coE(6)*ve)*ws
+            Be_zr(jp) = -(coK(7)*vk+coE(7)*ve)*ws;  Be_zt(jp) = -(coK(8)*vk+coE(8)*ve)*ws;  Be_zz(jp) = -(coK(9)*vk+coE(9)*ve)*ws
+            A(0*nt+i, 0*nso+jj, md+1) = Be_rr(jp);  A(0*nt+i, 1*nso+jj, md+1) = Be_rt(jp);  A(0*nt+i, 2*nso+jj, md+1) = Be_rz(jp)
+            A(1*nt+i, 0*nso+jj, md+1) = Be_tr(jp);  A(1*nt+i, 1*nso+jj, md+1) = Be_tt(jp);  A(1*nt+i, 2*nso+jj, md+1) = Be_tz(jp)
+            A(2*nt+i, 0*nso+jj, md+1) = Be_zr(jp);  A(2*nt+i, 1*nso+jj, md+1) = Be_zt(jp);  A(2*nt+i, 2*nso+jj, md+1) = Be_zz(jp)
           end do
         end do
       end do
@@ -664,12 +784,17 @@ contains
                 end do
               end do
               Gpc(1:nkc,1:p) = matmul(Gcq(1:nkc,1:q), IPqc)
-              do ia = 1, nkc
-                do l = 1, p
-                  A((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) = &
-                    A((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) + Gpc(ia,l)
-                end do
-              end do
+              select case (e)                                  ! fold Gpc into the (row,col) 3x3 block of A
+              case (1); do ia=1,nkc; do l=1,p; A(0*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) = A(0*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_rr
+              case (2); do ia=1,nkc; do l=1,p; A(0*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) = A(0*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_rt
+              case (3); do ia=1,nkc; do l=1,p; A(0*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) = A(0*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_rz
+              case (4); do ia=1,nkc; do l=1,p; A(1*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) = A(1*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_tr
+              case (5); do ia=1,nkc; do l=1,p; A(1*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) = A(1*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_tt
+              case (6); do ia=1,nkc; do l=1,p; A(1*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) = A(1*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_tz
+              case (7); do ia=1,nkc; do l=1,p; A(2*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) = A(2*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_zr
+              case (8); do ia=1,nkc; do l=1,p; A(2*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) = A(2*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_zt
+              case (9); do ia=1,nkc; do l=1,p; A(2*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) = A(2*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_zz
+              end select
             end do
           end do
         end if
@@ -677,76 +802,95 @@ contains
         do i = 1, nk
           if (ikc(i)) cycle
           rt = real(znear(i),r64); zti = aimag(znear(i)); nr = real(znearn(i),r64); nz = aimag(znearn(i))
+          do jp = 1, p                                          ! carrier_all ONCE per node (was M+1 modal_green_r64 calls)
+            rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp)); rho = rt
+            rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+            call modal_green_all_far_r64(chi, M, vka, vea)
+            vkmat(jp,0:M) = vka(0:M); vemat(jp,0:M) = vea(0:M)
+            ! ---- md-indep far coK/coE pieces, inlined ONCE per node (see outer-far block for the pcs layout) ----
+            block
+              real(r64) :: ipi, r15, r25
+              real(r64) :: t2,t3,t4,t5,t6,t7,t8,t11,t13,t14,t15,t16,t17,t18,t19,t20,t21,t22,t25,t26,t27,t28
+              real(r64) :: t29,t30,t31,t32,t33,t34,t37,t39,t40,t41,t47,t48,t49,t50,t51,t52,t53,t54,t55,t56
+              complex(r64) :: t23,t24,t35,t36,t38,t42,t45,t46,t57
+              ipi = 1.0_r64/acos(-1.0_r64)
+              t2=chi*rho; t3=chi*rhop; t4=nr*rho; t5=rho*rhop; t6=nz*zh; t7=chi+1.0_r64; t8=chi*chi
+              t11=rho*rho; t13=rhop*rhop; t14=t13*rhop; t15=zh*zh; t16=nr*rhop*3.0_r64; t18=chi-1.0_r64
+              t17=nr*t3; t19=-t2; t20=-t3; t21=1.0_r64/t7; t22=t8-1.0_r64
+              r15=1.0_r64/t5**1.5_r64; r25=1.0_r64/t5**2.5_r64
+              t23=t4*ic; t24=t6*ic; t25=t4*t11*3.0_r64; t26=nr*t13*3.0_r64; t31=t6*t11*3.0_r64; t32=t6*t13*3.0_r64
+              t33=1.0_r64/t18; t38=nr*rhop*t2*2.0_r64*ic; t39=t2*t2*t4; t41=rhop*t2*t6*10.0_r64
+              t48=rhop*t2*t4*16.0_r64; t51=t2*t2*t6; t52=t3*t3*t6; t53=chi*t2*t3*t6*2.0_r64
+              t27=-t17; t28=t13*t17*6.0_r64; t29=rho+t20; t30=rhop+t19; t34=t33*t33; t35=t17*ic
+              t36=rho*t24; t40=t2*t17*2.0_r64; t42=rho*t23; t46=-t38; t47=t3*t3*t17*2.0_r64; t49=1.0_r64/t22
+              t50=-t41; t54=-t48; t55=t2*t2*t17*4.0_r64; t37=-t28; t45=-t35; t56=t4+t6+t27; t57=t23+t24+t45
+              pcsm(1,jp)  = ipi*rhop*r25*t49*(nr*t14*(-3.0_r64)-t4*t5*7.0_r64-t5*t6*4.0_r64+nr*rhop*t2*t2*4.0_r64 &
+                        +nr*t2*t13*11.0_r64+rho*t2*t4+rho*t2*t6+rhop*t3*t6+rhop*t3*t17*2.0_r64+t2*t3*t6*2.0_r64 &
+                        -t2*t3*t17*8.0_r64)*(-1.0_r64/8.0_r64)
+              pcsm(2,jp)  = ipi*rhop*r25*t49*t56*(t5+rho*t19+rhop*t20+t2*t3)*(-1.0_r64/2.0_r64)
+              pcsm(3,jp)  = ipi*rhop*t21*t34*r25*(t25+t31+t32+t37+t39+t47+t50+t51+t52+t53+t54+t55+t4*t13*3.0_r64 &
+                        +rhop*t2*t17*17.0_r64-chi*t2*t3*t17*8.0_r64)*(-1.0_r64/8.0_r64)
+              pcsm(4,jp)  = ipi*(rhop*t21*t34*r25*(t25+t31+t32+t37+t39+t47+t50+t51+t52+t53+t54+t55+t4*t13*6.0_r64 &
+                        +rhop*t2*t17*11.0_r64-chi*t2*t3*t17*5.0_r64))/2.0_r64
+              pcsm(5,jp)  = ipi*rhop*r15*(t4*2.0_r64*ic-t17*2.0_r64*ic+t24)*(-3.0_r64/4.0_r64)
+              pcsm(6,jp)  = ipi*(t33*r15*(t36+t42+t46+nr*t13*3.0_r64*ic-t3*t6*ic-t3*t17*2.0_r64*ic))/4.0_r64
+              pcsm(7,jp)  = ipi*(-t29*t33*r15*t57)
+              pcsm(8,jp)  = ipi*rhop*r25*t49*zh*(t26+rho*t4+rho*t6-t3*t17*2.0_r64+t6*t20-nr*rhop*t2*2.0_r64)*(-1.0_r64/8.0_r64)
+              pcsm(9,jp)  = ipi*(rhop*t29*r25*t49*t56*zh)/2.0_r64
+              pcsm(10,jp) = ipi*rhop*t21*t34*r25*zh*(t40+rhop*t4*6.0_r64+rhop*t6*3.0_r64-rhop*t17*6.0_r64-t2*t4*4.0_r64 &
+                        -t2*t6*4.0_r64+chi*t3*t6+chi*t3*t17*2.0_r64)*(-1.0_r64/8.0_r64)
+              pcsm(11,jp) = ipi*t13*r25*(t36+t42+t46+nr*t13*ic)*(3.0_r64/4.0_r64)
+              pcsm(12,jp) = ipi*(t13*t33*r25*(rhop*t4*(-4.0_r64*ic)-rhop*t6*ic+rhop*t35+t2*t17*2.0_r64*ic+t2*t23+t2*t24))/4.0_r64
+              pcsm(13,jp) = ipi*t13*t30*t33*r25*t57
+              pcsm(14,jp) = ipi*rhop*r15*(t4+t6-t17*4.0_r64)*(-1.0_r64/4.0_r64)
+              pcsm(15,jp) = ipi*rhop*r15*t56*(-1.0_r64/2.0_r64)
+              pcsm(16,jp) = ipi*rhop*t33*r15*(t16+chi*t6-chi*t17*4.0_r64+nr*t2)*(-1.0_r64/4.0_r64)
+              pcsm(17,jp) = ipi*(rhop*t33*r15*(t16+chi*t6*2.0_r64-chi*t17*5.0_r64+nr*t2*2.0_r64))/2.0_r64
+              pcsm(18,jp) = ipi*nr*t14*r25*zh*cmplx(0.0_r64,-0.75_r64,r64)
+              pcsm(19,jp) = ipi*t13*t33*r25*t57*zh*(-1.0_r64/4.0_r64)
+              pcsm(20,jp) = ipi*rhop*r25*t49*zh*(t40-rhop*t4*4.0_r64-rhop*t6+rhop*t17+t2*t4+t2*t6)*(-1.0_r64/8.0_r64)
+              pcsm(21,jp) = ipi*rhop*t30*r25*t49*t56*zh*(-1.0_r64/2.0_r64)
+              pcsm(22,jp) = ipi*(rhop*t21*t34*r25*zh*(t26+chi*t40+rho*t4*3.0_r64+rho*t6*3.0_r64-t3*t6*4.0_r64+t3*t17 &
+                        +nr*t2*t2+chi*t2*t6-nr*rhop*t2*10.0_r64))/8.0_r64
+              pcsm(23,jp) = ipi*t4*t13*r25*zh*cmplx(0.0_r64,-0.75_r64,r64)
+              pcsm(24,jp) = ipi*t33*r15*t57*zh*(-1.0_r64/4.0_r64)
+              pcsm(25,jp) = ipi*rhop*t15*r25*t49*t56*(-1.0_r64/8.0_r64)
+              pcsm(26,jp) = ipi*(rhop*t15*r25*t49*t56)/2.0_r64
+              pcsm(27,jp) = ipi*rhop*t15*t21*t34*r25*(t16-chi*t6*4.0_r64+chi*t17-nr*t2*4.0_r64)*(-1.0_r64/8.0_r64)
+            end block
+          end do
           do md = 0, M
-            rn = real(md,r64)
+            rn = real(md,r64); n2 = rn*rn; ifn2 = 1.0_r64/(4.0_r64*n2-1.0_r64)
             do jp = 1, p
-              rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp)); rho = rt
-              rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-              call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
-              block
-                real(r64) :: t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t13,t15,t16,t17,t18,t19,t20,t21,t22,t23,t24,t25
-                real(r64) :: t26,t27,t28,t29,t30,t31,t32,t33,t38,t39,t41,t42,t43,t44,t45,t46,t47,t52,t53,t55,t56,t59,t61,t62,t66
-                complex(r64) :: t34,t35,t36,t37,t48,t50,t51,t54,t57,t58,t60,t63,t64,t65,t69, coK(9), coE(9)
-                t2=nr*rho; t3=nr*rhop; t4=rho*rhop; t5=nz*zh; t6=chi+1.0_r64; t7=chi*chi; t8=chi**3
-                t10=rn*rn; t11=rho*rho; t13=rhop*rhop; t15=zh*zh; t17=1.0_r64/acos(-1.0_r64); t20=chi-1.0_r64; t21=-rhop
-                t9=t7*t7; t16=t3*3.0_r64; t18=rho*t5; t19=rhop*t5; t22=t10*4.0_r64; t23=-t3; t24=rho*t2; t25=t2*t11
-                t26=rhop*t3; t27=chi*t3*4.0_r64; t28=rhop*t2*4.0_r64; t29=chi*rhop*t2*2.0_r64; t30=t5*t11; t31=1.0_r64/t6
-                t32=t7-1.0_r64; t33=t4*t5*4.0_r64; t34=t2*ic; t35=t2*2.0_r64*ic; t36=t3*ic; t37=t5*ic; t41=rho+t21
-                t44=t2*t13*3.0_r64; t45=t2*t4*7.0_r64; t46=1.0_r64/t20; t50=chi*t3*2.0_r64*ic; t52=t2+t5
-                t55=rhop*t2*t7*2.0_r64; t59=1.0_r64/t4**2.5_r64; t60=chi*t3*(-ic); t63=rhop*t2*t10*4.0_r64*ic
-                t38=t24*3.0_r64; t39=rhop*t16; t42=-t27; t43=-t28; t47=t46*t46; t48=-t36; t51=t18*ic; t53=t41*t41
-                t54=chi*rhop*t35; t56=t22-1.0_r64; t57=t24*ic; t58=t26*ic; t61=1.0_r64/t41; t62=1.0_r64/t32
-                t64=t10*t18*4.0_r64*ic; t65=t10*t24*4.0_r64*ic; t69=t34+t37+t60; t66=1.0_r64/t56
-                coK(1) = cmplx(rhop*t17*t59*t62*(-t33-t45+chi*t25+chi*t30-t3*t13*3.0_r64+chi*t2*t13*11.0_r64+chi*t5*t13 &
-                       -chi*t10*t25*4.0_r64-chi*t10*t30*4.0_r64+t2*t4*t7*4.0_r64+t4*t5*t7*2.0_r64-t2*t8*t13*8.0_r64 &
-                       +t3*t7*t13*2.0_r64+t2*t4*t22+t4*t5*t22-chi*t2*t10*t13*8.0_r64-chi*t5*t10*t13*4.0_r64 &
-                       +t2*t4*t7*t10*8.0_r64-t2*t8*t10*t13*4.0_r64+t4*t5*t7*t22+t3*t7*t13*t22)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-                coE(1) = cmplx(rhop*t17*t31*t47*t59*t66*(t25*3.0_r64+t30*3.0_r64+t44+t5*t13*3.0_r64+t7*t25-t10*t25*12.0_r64 &
-                       +t7*t30-t10*t30*12.0_r64-chi*t2*t4*16.0_r64-chi*t4*t5*10.0_r64-chi*t3*t13*6.0_r64+t2*t4*t8*4.0_r64 &
-                       +t4*t5*t8*2.0_r64+t2*t7*t13*17.0_r64-t2*t9*t13*8.0_r64+t3*t8*t13*2.0_r64-t2*t10*t13*24.0_r64 &
-                       +t5*t7*t13-t5*t10*t13*12.0_r64-t7*t10*t25*4.0_r64-t7*t10*t30*4.0_r64+chi*t2*t4*t10*64.0_r64 &
-                       +chi*t4*t5*t10*40.0_r64+chi*t3*t10*t13*24.0_r64-t2*t4*t8*t10*16.0_r64-t4*t5*t8*t10*8.0_r64 &
-                       -t2*t7*t10*t13*44.0_r64+t2*t9*t10*t13*20.0_r64-t3*t8*t10*t13*8.0_r64-t5*t7*t10*t13*4.0_r64)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-                coK(2) = rn*rhop/t4**1.5_r64*t17*(t35+t37-t50)*(-3.0_r64/4.0_r64)
-                coE(2) = rn/t4**1.5_r64*t17*t46*t66*(t26*(-3.0_r64*ic)-t51+t54-t57+t64+t65+chi*t19*ic+t7*t26*2.0_r64*ic &
-                       -chi*t10*t19*4.0_r64*ic+t7*t10*t26*4.0_r64*ic-chi*rhop*t2*t10*8.0_r64*ic)*(-1.0_r64/4.0_r64)
-                coK(3) = cmplx((rhop*t17*t59*t62*zh*(-t18-t24-t26*3.0_r64+t29+chi*t19+t7*t26*2.0_r64+t18*t22+t22*t24 &
-                       -chi*t10*t19*4.0_r64+t7*t22*t26-chi*rhop*t2*t10*8.0_r64))/8.0_r64, 0.0_r64, r64)
-                coE(3) = cmplx(rhop*t17*t31*t47*t59*zh*(t19*3.0_r64+t55-chi*t18*4.0_r64-chi*t24*4.0_r64-chi*t26*6.0_r64 &
-                       +rhop*t2*6.0_r64+t7*t19+t8*t26*2.0_r64)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-                coK(4) = rn*t13*t17*t59*(t51+t57+t58-chi*rhop*t2*2.0_r64*ic)*(3.0_r64/4.0_r64)
-                coE(4) = (rn*t13*t17*t46*t59*t66*(t19*(-ic)+t63+chi*t51+chi*t57+chi*t58-rhop*t2*4.0_r64*ic+t10*t19*4.0_r64*ic &
-                       +t7*t63-chi*t10*t18*4.0_r64*ic-chi*t10*t24*4.0_r64*ic-chi*t10*t26*4.0_r64*ic+rhop*t7*t35))/4.0_r64
-                coK(5) = cmplx(rhop/t4**1.5_r64*t17*(t42+t52+t2*t10*2.0_r64+t5*t10*2.0_r64-chi*t3*t10*2.0_r64)*(-1.0_r64/4.0_r64), 0.0_r64, r64)
-                coE(5) = cmplx(rhop/t4**1.5_r64*t17*t46*t66*(t16+chi*t2+chi*t5-t3*t7*4.0_r64-t3*t10*6.0_r64 &
-                       -chi*t2*t10*4.0_r64-chi*t5*t10*4.0_r64+t3*t7*t10*10.0_r64)*(-1.0_r64/4.0_r64), 0.0_r64, r64)
-                coK(6) = rn*t3*t13*t17*t59*zh*cmplx(0.0_r64,-0.75_r64,r64)
-                coE(6) = rn*t13*t17*t46*t59*t69*zh*(-1.0_r64/4.0_r64)
-                coK(7) = cmplx(rhop*t17*t59*t62*zh*(-t19+t43+t55+chi*t18+chi*t24+chi*t26+t19*t22-chi*t10*t18*4.0_r64 &
-                       -chi*t10*t24*4.0_r64-chi*t10*t26*4.0_r64+rhop*t2*t22+rhop*t2*t7*t22)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-                coE(7) = cmplx((rhop*t17*t31*t47*t59*zh*(t18*3.0_r64+t38+t39-chi*t19*4.0_r64+t7*t18+t7*t24+t7*t26 &
-                       -chi*rhop*t2*10.0_r64+rhop*t2*t8*2.0_r64))/8.0_r64, 0.0_r64, r64)
-                coK(8) = rn*t2*t13*t17*t59*zh*cmplx(0.0_r64,-0.75_r64,r64)
-                coE(8) = rn/t4**1.5_r64*t17*t46*t69*zh*(-1.0_r64/4.0_r64)
-                coK(9) = cmplx((rhop*t15*t17*t56*t59*t62*(t52+chi*t23))/8.0_r64, 0.0_r64, r64)
-                coE(9) = cmplx(rhop*t15*t17*t31*t47*t59*(t16-chi*t2*4.0_r64-chi*t5*4.0_r64+t3*t7)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-                do e = 1, 9
-                  ff(jp,e) = -(coK(e)*vk + coE(e)*ve)*wsp(jp)
-                end do
-              end block
+              vk = vkmat(jp,md); ve = vemat(jp,md)
+              coK(1)=pcsm(1,jp)+n2*pcsm(2,jp);   coK(3)=pcsm(8,jp)+n2*pcsm(9,jp);   coK(5)=pcsm(14,jp)+n2*pcsm(15,jp)
+              coK(7)=pcsm(20,jp)+n2*pcsm(21,jp); coK(9)=pcsm(25,jp)+n2*pcsm(26,jp)
+              coK(2)=rn*pcsm(5,jp); coK(4)=rn*pcsm(11,jp); coK(6)=rn*pcsm(18,jp); coK(8)=rn*pcsm(23,jp)
+              coE(1)=ifn2*(pcsm(3,jp)+n2*pcsm(4,jp)); coE(5)=ifn2*(pcsm(16,jp)+n2*pcsm(17,jp))
+              coE(2)=rn*ifn2*(pcsm(6,jp)+n2*pcsm(7,jp)); coE(4)=rn*ifn2*(pcsm(12,jp)+n2*pcsm(13,jp))
+              coE(3)=pcsm(10,jp); coE(7)=pcsm(22,jp); coE(9)=pcsm(27,jp)
+              coE(6)=rn*pcsm(19,jp); coE(8)=rn*pcsm(24,jp)
+              ! 3x3 traction block entries  Be_** = -(coK*vk + coE*ve)*wsp   (per subpanel node jp, folded below)
+              Be_rr(jp) = -(coK(1)*vk+coE(1)*ve)*wsp(jp);  Be_rt(jp) = -(coK(2)*vk+coE(2)*ve)*wsp(jp);  Be_rz(jp) = -(coK(3)*vk+coE(3)*ve)*wsp(jp)
+              Be_tr(jp) = -(coK(4)*vk+coE(4)*ve)*wsp(jp);  Be_tt(jp) = -(coK(5)*vk+coE(5)*ve)*wsp(jp);  Be_tz(jp) = -(coK(6)*vk+coE(6)*ve)*wsp(jp)
+              Be_zr(jp) = -(coK(7)*vk+coE(7)*ve)*wsp(jp);  Be_zt(jp) = -(coK(8)*vk+coE(8)*ve)*wsp(jp);  Be_zz(jp) = -(coK(9)*vk+coE(9)*ve)*wsp(jp)
             end do
-            do e = 1, 9
-              ar = (e-1)/3 + 1; b = mod(e-1,3) + 1
-              do l = 1, p
-                A((ar-1)*nt+nidx(i), (b-1)*nso+cols+l, md+1) = &
-                  A((ar-1)*nt+nidx(i), (b-1)*nso+cols+l, md+1) + sum(ff(1:p,e)*Lc(:,l))
-              end do
+            do l = 1, p                                        ! fold each named block (sum over subpanel nodes via Lc) into A
+              A(0*nt+nidx(i), 0*nso+cols+l, md+1) = A(0*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_rr(1:p)*Lc(:,l))   ! Be_rr
+              A(0*nt+nidx(i), 1*nso+cols+l, md+1) = A(0*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_rt(1:p)*Lc(:,l))   ! Be_rt
+              A(0*nt+nidx(i), 2*nso+cols+l, md+1) = A(0*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_rz(1:p)*Lc(:,l))   ! Be_rz
+              A(1*nt+nidx(i), 0*nso+cols+l, md+1) = A(1*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_tr(1:p)*Lc(:,l))   ! Be_tr
+              A(1*nt+nidx(i), 1*nso+cols+l, md+1) = A(1*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_tt(1:p)*Lc(:,l))   ! Be_tt
+              A(1*nt+nidx(i), 2*nso+cols+l, md+1) = A(1*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_tz(1:p)*Lc(:,l))   ! Be_tz
+              A(2*nt+nidx(i), 0*nso+cols+l, md+1) = A(2*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_zr(1:p)*Lc(:,l))   ! Be_zr
+              A(2*nt+nidx(i), 1*nso+cols+l, md+1) = A(2*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_zt(1:p)*Lc(:,l))   ! Be_zt
+              A(2*nt+nidx(i), 2*nso+cols+l, md+1) = A(2*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_zz(1:p)*Lc(:,l))   ! Be_zz
             end do
           end do
         end do
       end do
     end do
-    deallocate(tin, joa, ci, zc, zcn, nidx, znear, znearn, ikq, ikc, C1, C2, C3, C4, As, Ad, A1, A2, A3, A4, Gcq, Gpc, ff)
+    deallocate(tin, joa, ci, zc, zcn, nidx, znear, znearn, ikq, ikc, C1, C2, C3, C4, As, Ad, A1, A2, A3, A4, Gcq, Gpc)
   end subroutine axissymstok_slpn_blockmat_nmode_r64
 
   ! ==================================================================================================
@@ -764,6 +908,7 @@ contains
     integer(8), parameter :: Ksub = 4
     integer(8) :: q, nso, i, j, jp, iq, ia, l, b, c, pq, qo, ne, npa, nk, nkc, jj, cols, md
     real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, vk, ve, Fn, An, dFn
+    real(r64)  :: vka(0:M), vea(0:M), Fna(0:M), Ana(0:M), dFna(0:M), vkmat(p,0:M), vemat(p,0:M)
     real(r64)  :: st1, stN, tm, denom, rlo, rhi, tgi, split
     complex(r64) :: ic, zac, zbc, Slog, Dval, cc1, cc2, cc3
     real(r64)    :: tglp(p), wglp(p), Dp(p,p), tglq(2*p), wglq(2*p), Dq(2*p,2*p), IP2(2*p,p)
@@ -827,8 +972,9 @@ contains
         do jp = 1, p
           jj = cols + jp; rhop = real(sx(jj),r64); zh = zti - aimag(sx(jj)); ws = sws(jj)
           rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+          call modal_green_all_r64(chi, M, vka, vea, Fna, Ana, dFna)        ! all modes ONCE per node
           do md = 0, M
-            call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
+            vk = vka(md); ve = vea(md)
             block
               real(r64) :: t2, t4, t6, t7, t8, rnf
               complex(r64) :: PKf(3), PEf(3)
@@ -901,11 +1047,17 @@ contains
         do i = 1, nk
           if (ikc(i)) cycle
           rt = real(znear(i),r64); zti = aimag(znear(i)); rho = rt
+          do jp = 1, p                                          ! carrier_all ONCE per node (was M+1 modal_green_r64 calls)
+            rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp))
+            rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+            call modal_green_all_r64(chi, M, vka, vea, Fna, Ana, dFna)
+            vkmat(jp,0:M) = vka(0:M); vemat(jp,0:M) = vea(0:M)
+          end do
           do md = 0, M
             do jp = 1, p
               rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp))
               rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-              call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
+              vk = vkmat(jp,md); ve = vemat(jp,md)
               block
                 real(r64) :: t2, t4, t6, t7, t8, rnf
                 complex(r64) :: PKf(3), PEf(3)
@@ -1247,7 +1399,7 @@ contains
             cycle
           end if
           chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call carrier_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
           block
             real(r64) :: t2,t3,t4,t5,t6,t7,t8,t9,t11,t13,t15,t16,t17,t18,t19,t20,t21,t23,t24,t25,t26,t27
             real(r64) :: t30,t31,t32,t33,t39,t40,t41,t43,t44,t45,t46,t47,t48,t49,t50,t57,t58,t59,t62,t65,t70
@@ -1295,6 +1447,12 @@ contains
     integer(8), parameter :: Ksub = 4
     integer(8) :: q, pq, nso, i, j, jp, iq, ia, l, e, md, ar, b, c, qo, ne, npa, nk, nkc, jj, cols
     real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, nrp, nzp, vk, ve, Fn, An, dFn, rn
+    real(r64)  :: vka(0:M), vea(0:M), Fna(0:M), Ana(0:M), dFna(0:M), vkmat(p,0:M), vemat(p,0:M)
+    complex(r64) :: coK(9), coE(9), pcs(27), pcsm(27,p)
+    complex(r64) :: Be_rr(p), Be_rt(p), Be_rz(p), &       ! 9 entries of the 3x3 block, per panel node
+                    Be_tr(p), Be_tt(p), Be_tz(p), &
+                    Be_zr(p), Be_zt(p), Be_zz(p)
+    real(r64)  :: n2, ifn2
     real(r64)  :: st1, stN, tm, denom, rlo, rhi, tgi, split
     complex(r64) :: ic, zac, zbc, cc1, cc2, cc3, cc4, Slog, Dval, Dz, Acau, Ahy
     real(r64)    :: tglp(p), wglp(p), Dp(p,p), tglq(2*p), wglq(2*p), Dq(2*p,2*p), IP2(2*p,p)
@@ -1303,7 +1461,7 @@ contains
     real(r64),    allocatable :: tin(:)
     integer(8),   allocatable :: joa(:), ci(:), nidx(:)
     logical,      allocatable :: ikq(:), ikc(:)
-    complex(r64), allocatable :: zc(:), znear(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:), Gcq(:,:), Gpc(:,:), ff(:,:)
+    complex(r64), allocatable :: zc(:), znear(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:), Gcq(:,:), Gpc(:,:)
     real(r64),    allocatable :: As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:)
     complex(r64), allocatable :: Ad(:,:)
     q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
@@ -1342,7 +1500,7 @@ contains
     end do
     allocate(ci(nt), zc(nt), nidx(nt), znear(nt), ikq(nt), ikc(nt))
     allocate(C1(3*nt,3*q,M+1), C2(3*nt,3*q,M+1), C3(3*nt,3*q,M+1), C4(3*nt,3*q,M+1))
-    allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p), ff(p,9))
+    allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
     A = (0.0_r64,0.0_r64)
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
       cols = (pq-1)*p
@@ -1366,60 +1524,73 @@ contains
           jj = cols + jp; rhop = real(sx(jj),r64); zh = zti - aimag(sx(jj)); ws = sws(jj)
           nrp = real(snx(jj),r64); nzp = aimag(snx(jj)); rho = rt
           rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+          call modal_green_all_far_r64(chi, M, vka, vea)        ! all modes ONCE per node
+          block
+            real(r64) :: ipi, r15, r25
+            real(r64) :: t2,t3,t4,t5,t6,t7,t8,t11,t12,t13,t15,t16,t17,t18,t19,t20,t21,t22,t23,t26,t27,t28,t29,t30,t31,t32
+            real(r64) :: t33,t34,t36,t39,t40,t44,t45,t46,t47,t48,t49,t50,t51,t52,t53,t54,t55
+            complex(r64) :: t24,t25,t35,t37,t41,t56
+            ipi = 1.0_r64/acos(-1.0_r64)
+            t2=chi*rho; t3=chi*rhop; t4=nrp*rhop; t5=rho*rhop; t6=nzp*zh; t7=chi+1.0_r64; t8=chi*chi
+            t11=rho*rho; t12=t11*rho; t13=rhop*rhop; t15=zh*zh; t16=nrp*rho*3.0_r64; t18=chi-1.0_r64
+            t17=nrp*t2; t19=-t2; t20=-t3; t21=-t4; t22=1.0_r64/t7; t23=t8-1.0_r64
+            r15=1.0_r64/t5**1.5_r64; r25=1.0_r64/t5**2.5_r64
+            t24=t4*ic; t25=t6*ic; t26=nrp*t11*3.0_r64; t27=t4*t13*3.0_r64; t31=t6*t11*3.0_r64; t32=t6*t13*3.0_r64
+            t33=1.0_r64/t18; t40=rhop*t2*t6*10.0_r64; t41=nrp*t11*3.0_r64*ic; t45=rhop*t2*t4*16.0_r64
+            t48=t2*t2*t6; t49=t3*t3*t6; t50=chi*t2*t3*t6*2.0_r64
+            t28=t11*t17*6.0_r64; t29=rho+t20; t30=rhop+t19; t34=t33*t33; t35=-t24; t36=-t27; t37=t17*ic
+            t39=t3*t17*2.0_r64; t44=t2*t2*t17*2.0_r64; t46=1.0_r64/t23; t47=-t40; t52=t3*t4*t20; t53=t3*t3*t17*4.0_r64
+            t55=t6+t17+t21; t51=-t44; t54=-t53; t56=t25+t35+t37
+            pcs(1) = ipi*rhop*r25*t46*(nrp*t12*3.0_r64+t4*t5*7.0_r64-t5*t6*4.0_r64-rho*t2*t4*11.0_r64+rho*t2*t6-rho*t2*t17*2.0_r64 &
+                    +rhop*t3*t6+rhop*t4*t20-t2*t3*t4*4.0_r64+t2*t3*t6*2.0_r64+t2*t3*t17*8.0_r64)*(-1.0_r64/8.0_r64)
+            pcs(2) = ipi*rhop*r25*t46*t55*(t5+rho*t19+rhop*t20+t2*t3)*(-1.0_r64/2.0_r64)
+            pcs(3) = ipi*rhop*t22*t34*r25*(t28+t31+t32+t36+t45+t47+t48+t49+t50+t51+t52+t54-t4*t11*3.0_r64 &
+                    -t2*t2*t4*17.0_r64+chi*t2*t3*t17*8.0_r64)*(-1.0_r64/8.0_r64)
+            pcs(4) = ipi*(rhop*t22*t34*r25*(t28+t31+t32+t36+t45+t47+t48+t49+t50+t51+t52+t54-t4*t11*6.0_r64 &
+                    -t2*t2*t4*11.0_r64+chi*t2*t3*t17*5.0_r64))/2.0_r64
+            pcs(5) = ipi*(r15*(t41+rhop*t4*3.0_r64*ic-rhop*t6*3.0_r64*ic-t2*t4*6.0_r64*ic))/4.0_r64
+            pcs(6) = ipi*(t33*r15*(rho*t4*(-4.0_r64*ic)+rho*t25+rho*t37-t3*t6*ic+t3*t17*2.0_r64*ic+t3*t24))/4.0_r64
+            pcs(7) = ipi*(-t29*t33*r15*t56)
+            pcs(8) = ipi*rhop*r25*t46*zh*(t39-rho*t4*4.0_r64+rho*t6+rho*t17+t3*t4+t6*t20)*(-1.0_r64/8.0_r64)
+            pcs(9) = ipi*(rhop*t29*r25*t46*t55*zh)/2.0_r64
+            pcs(10) = ipi*(rhop*t22*t34*r25*zh*(t26+chi*t39+rhop*t4*3.0_r64-rhop*t6*3.0_r64-t2*t4*10.0_r64+t2*t6*4.0_r64 &
+                    +t2*t17+nrp*t3*t3+chi*t6*t20))/8.0_r64
+            pcs(11) = ipi*rhop*r15*(t4*(-2.0_r64*ic)+t17*2.0_r64*ic+t25)*(3.0_r64/4.0_r64)
+            pcs(12) = ipi*(t13*t33*r25*(t41-rhop*t6*ic+rhop*t24-t2*t4*2.0_r64*ic-t2*t17*2.0_r64*ic+t2*t25))/4.0_r64
+            pcs(13) = ipi*t13*t30*t33*r25*t56
+            pcs(14) = ipi*rhop*r15*(t17*3.0_r64+t55)*(-1.0_r64/4.0_r64)
+            pcs(15) = ipi*rhop*r15*t55*(-1.0_r64/2.0_r64)
+            pcs(16) = ipi*(rhop*t33*r15*(t16-chi*t6-chi*t17*4.0_r64+nrp*t3))/4.0_r64
+            pcs(17) = ipi*rhop*t33*r15*(t16-chi*t6*2.0_r64-chi*t17*5.0_r64+nrp*t3*2.0_r64)*(-1.0_r64/2.0_r64)
+            pcs(18) = ipi*t4*r15*zh*cmplx(0.0_r64,0.75_r64,r64)
+            pcs(19) = ipi*t13*t33*r25*t56*zh*(-1.0_r64/4.0_r64)
+            pcs(20) = ipi*rhop*r25*t46*zh*(t26+rhop*t4-rhop*t6-t2*t4*2.0_r64+t2*t6-t2*t17*2.0_r64)*(-1.0_r64/8.0_r64)
+            pcs(21) = ipi*rhop*t30*r25*t46*t55*zh*(-1.0_r64/2.0_r64)
+            pcs(22) = ipi*rhop*t22*t34*r25*zh*(t39+rho*t4*6.0_r64-rho*t6*3.0_r64-rho*t17*6.0_r64-t3*t4*4.0_r64+t3*t6*4.0_r64 &
+                    +chi*t2*t17*2.0_r64+chi*t6*t19)*(-1.0_r64/8.0_r64)
+            pcs(23) = ipi*nrp*rho*r15*zh*cmplx(0.0_r64,0.75_r64,r64)
+            pcs(24) = ipi*t33*r15*t56*zh*(-1.0_r64/4.0_r64)
+            pcs(25) = ipi*rhop*t15*r25*t46*t55*(-1.0_r64/8.0_r64)
+            pcs(26) = ipi*(rhop*t15*r25*t46*t55)/2.0_r64
+            pcs(27) = ipi*(rhop*t15*t22*t34*r25*(t16+chi*t6*4.0_r64+chi*t17-nrp*t3*4.0_r64))/8.0_r64
+          end block
           do md = 0, M
-            rn = real(md,r64); call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
-            block
-              real(r64) :: t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t13,t15,t16,t17,t18,t19,t20,t21,t22,t23,t24,t25,t26
-              real(r64) :: t27,t28,t29,t30,t31,t32,t33,t34,t39,t40,t41,t43,t44,t45,t46,t47,t48,t49,t50,t57,t58,t59,t62,t65,t70
-              complex(r64) :: t35,t36,t37,t38,t51,t52,t53,t54,t56,t60,t61,t67,t68,t69,t73, coK(9), coE(9)
-              t2=nrp*rho; t3=nrp*rhop; t4=rho*rhop; t5=nzp*zh; t6=chi+1.0_r64; t7=chi*chi; t8=chi**3
-              t10=rn*rn; t11=rho*rho; t13=rhop*rhop; t15=zh*zh; t17=1.0_r64/acos(-1.0_r64); t20=chi-1.0_r64; t21=-rhop
-              t9=t7*t7; t16=t2*3.0_r64; t18=rho*t5; t19=rhop*t5; t22=t10*4.0_r64; t23=-t3; t24=-t5; t25=rho*t2; t26=rhop*t3
-              t27=t3*t13; t28=chi*t2*4.0_r64; t29=rhop*t2*4.0_r64; t30=chi*rhop*t2*2.0_r64; t31=t5*t13; t32=1.0_r64/t6
-              t33=t7-1.0_r64; t34=t4*t5*4.0_r64; t39=rho*t16; t40=t11*t16; t41=t26*3.0_r64; t43=-t29; t44=-t18; t45=-t19
-              t46=t4*t16; t47=t2*t13*7.0_r64; t48=1.0_r64/t20; t49=t48*t48; t50=-t34; t57=t13*t24; t58=rhop*t2*t7*2.0_r64
-              t59=t22-1.0_r64; t62=1.0_r64/t4**2.5_r64; t65=1.0_r64/t33; t70=1.0_r64/t59
-              t35=t2*ic; t36=t3*ic; t37=t3*2.0_r64*ic; t38=t5*ic; t51=-t36; t52=chi*t35; t53=chi*t2*2.0_r64*ic
-              t54=t19*ic; t56=rhop*t53; t60=t25*ic; t61=t26*ic; t67=rhop*t2*t10*4.0_r64*ic; t68=t10*t19*4.0_r64*ic
-              t69=t10*t26*4.0_r64*ic; t73=t38+t51+t52
-              coK(1) = cmplx(rhop*t17*t62*t65*(t40+t47+t50+chi*t31-chi*t2*t4*11.0_r64+chi*t5*t11+chi*t13*t23 &
-                     -chi*t10*t31*4.0_r64+chi*t22*t27+t2*t4*t8*8.0_r64+t4*t5*t7*2.0_r64-t2*t7*t11*2.0_r64-t2*t7*t13*4.0_r64 &
-                     -t2*t10*t13*4.0_r64+t4*t5*t22+chi*t2*t4*t10*8.0_r64-chi*t5*t10*t11*4.0_r64-t2*t7*t10*t11*4.0_r64 &
-                     -t2*t7*t10*t13*8.0_r64+t2*t4*t8*t22+t4*t5*t7*t22)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-              coE(1) = cmplx((rhop*t17*t32*t49*t62*t70*(t27*3.0_r64-t31*3.0_r64+t46-t5*t11*3.0_r64+t7*t27-t10*t27*12.0_r64 &
-                     +t10*t31*12.0_r64+t7*t57+chi*t4*t5*10.0_r64-chi*t2*t11*6.0_r64-chi*t2*t13*16.0_r64+t2*t4*t7*17.0_r64 &
-                     -t2*t4*t9*8.0_r64-t2*t4*t10*24.0_r64-t4*t5*t8*2.0_r64+t2*t8*t11*2.0_r64+t2*t8*t13*4.0_r64 &
-                     +t5*t10*t11*12.0_r64+t7*t11*t24-t7*t10*t27*4.0_r64+t7*t22*t31-chi*t4*t5*t10*40.0_r64 &
-                     +chi*t2*t10*t11*24.0_r64+chi*t2*t10*t13*64.0_r64-t2*t4*t7*t10*44.0_r64+t2*t4*t9*t10*20.0_r64 &
-                     +t4*t5*t8*t10*8.0_r64-t2*t8*t10*t11*8.0_r64-t2*t8*t10*t13*16.0_r64+t5*t7*t11*t22))/8.0_r64, 0.0_r64, r64)
-              coK(2) = rn/t4**1.5_r64*t17*(t54+t56-t60-t61)*(-3.0_r64/4.0_r64)
-              coE(2) = (rn/t4**1.5_r64*t17*t48*t70*(t18*ic+t67-chi*t19*ic+chi*t60+chi*t61+chi*t68-rhop*t2*4.0_r64*ic &
-                     -t10*t18*4.0_r64*ic+t7*t67-chi*t10*t25*4.0_r64*ic-chi*t10*t26*4.0_r64*ic+rhop*t2*t7*2.0_r64*ic))/4.0_r64
-              coK(3) = cmplx(rhop*t17*t62*t65*zh*(t18+t43+t58+chi*t25+chi*t26+chi*t45-t10*t18*4.0_r64-chi*t10*t25*4.0_r64 &
-                     -chi*t10*t26*4.0_r64+chi*t19*t22+rhop*t2*t22+rhop*t2*t7*t22)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-              coE(3) = cmplx((rhop*t17*t32*t49*t62*zh*(t19*(-3.0_r64)+t39+t41+chi*t18*4.0_r64+t7*t25+t7*t26+t7*t45 &
-                     -chi*rhop*t2*10.0_r64+rhop*t2*t8*2.0_r64))/8.0_r64, 0.0_r64, r64)
-              coK(4) = rn*rhop/t4**1.5_r64*t17*(-t37+t38+t53)*(3.0_r64/4.0_r64)
-              coE(4) = rn*t13*t17*t48*t62*t70*(t25*(-3.0_r64)*ic+t54+t56-t61-t68+t69-chi*t18*ic+t7*t25*2.0_r64*ic &
-                     +chi*t10*t18*4.0_r64*ic+t7*t10*t25*4.0_r64*ic-chi*rhop*t2*t10*8.0_r64*ic)*(-1.0_r64/4.0_r64)
-              coK(5) = cmplx(rhop/t4**1.5_r64*t17*(t5+t23+t28-t3*t10*2.0_r64+t5*t10*2.0_r64+chi*t2*t10*2.0_r64)*(-1.0_r64/4.0_r64), 0.0_r64, r64)
-              coE(5) = cmplx((rhop/t4**1.5_r64*t17*t48*t70*(t16+chi*t3+chi*t24-t2*t7*4.0_r64-t2*t10*6.0_r64 &
-                     -chi*t3*t10*4.0_r64+chi*t5*t22+t2*t7*t10*10.0_r64))/4.0_r64, 0.0_r64, r64)
-              coK(6) = rn*t2*t13*t17*t62*zh*cmplx(0.0_r64,0.75_r64,r64)
-              coE(6) = rn*t13*t17*t48*t62*t73*zh*(-1.0_r64/4.0_r64)
-              coK(7) = cmplx((rhop*t17*t62*t65*zh*(t19-t25*3.0_r64+t30+chi*t44+t3*t21-t10*t19*4.0_r64+t7*t25*2.0_r64 &
-                     +t22*t26+chi*t18*t22+t7*t22*t25-chi*rhop*t2*t10*8.0_r64))/8.0_r64, 0.0_r64, r64)
-              coE(7) = cmplx((rhop*t17*t32*t49*t62*zh*(t18*3.0_r64-t58-chi*t19*4.0_r64+chi*t25*6.0_r64+chi*t26*4.0_r64 &
-                     -rhop*t2*6.0_r64+t7*t18-t8*t25*2.0_r64))/8.0_r64, 0.0_r64, r64)
-              coK(8) = rn*t2/t4**1.5_r64*t17*zh*cmplx(0.0_r64,0.75_r64,r64)
-              coE(8) = rn/t4**1.5_r64*t17*t48*t73*zh*(-1.0_r64/4.0_r64)
-              coK(9) = cmplx((rhop*t15*t17*t59*t62*t65*(t5+t23+chi*t2))/8.0_r64, 0.0_r64, r64)
-              coE(9) = cmplx((rhop*t15*t17*t32*t49*t62*(t16-chi*t3*4.0_r64+chi*t5*4.0_r64+t2*t7))/8.0_r64, 0.0_r64, r64)
-              do e = 1, 9
-                ar = (e-1)/3 + 1; b = mod(e-1,3) + 1
-                A((ar-1)*nt+i, (b-1)*nso+jj, md+1) = (coK(e)*vk + coE(e)*ve)*ws
-              end do
-            end block
+            rn = real(md,r64); n2 = rn*rn; ifn2 = 1.0_r64/(4.0_r64*n2-1.0_r64)
+            vk = vka(md); ve = vea(md)
+            coK(1)=pcs(1)+n2*pcs(2);   coK(3)=pcs(8)+n2*pcs(9);   coK(5)=pcs(14)+n2*pcs(15)
+            coK(7)=pcs(20)+n2*pcs(21); coK(9)=pcs(25)+n2*pcs(26)
+            coK(2)=rn*pcs(5); coK(4)=rn*pcs(11); coK(6)=rn*pcs(18); coK(8)=rn*pcs(23)
+            coE(1)=ifn2*(pcs(3)+n2*pcs(4)); coE(5)=ifn2*(pcs(16)+n2*pcs(17))
+            coE(2)=rn*ifn2*(pcs(6)+n2*pcs(7)); coE(4)=rn*ifn2*(pcs(12)+n2*pcs(13))
+            coE(3)=pcs(10); coE(7)=pcs(22); coE(9)=pcs(27)
+            coE(6)=rn*pcs(19); coE(8)=rn*pcs(24)
+            ! 3x3 block entries  Be_** = (coK*vk + coE*ve)*ws   (row r/t/z = 0/1/2*nt, col r/t/z = 0/1/2*nso)
+            Be_rr(jp) = (coK(1)*vk+coE(1)*ve)*ws;  Be_rt(jp) = (coK(2)*vk+coE(2)*ve)*ws;  Be_rz(jp) = (coK(3)*vk+coE(3)*ve)*ws
+            Be_tr(jp) = (coK(4)*vk+coE(4)*ve)*ws;  Be_tt(jp) = (coK(5)*vk+coE(5)*ve)*ws;  Be_tz(jp) = (coK(6)*vk+coE(6)*ve)*ws
+            Be_zr(jp) = (coK(7)*vk+coE(7)*ve)*ws;  Be_zt(jp) = (coK(8)*vk+coE(8)*ve)*ws;  Be_zz(jp) = (coK(9)*vk+coE(9)*ve)*ws
+            A(0*nt+i, 0*nso+jj, md+1) = Be_rr(jp);  A(0*nt+i, 1*nso+jj, md+1) = Be_rt(jp);  A(0*nt+i, 2*nso+jj, md+1) = Be_rz(jp)
+            A(1*nt+i, 0*nso+jj, md+1) = Be_tr(jp);  A(1*nt+i, 1*nso+jj, md+1) = Be_tt(jp);  A(1*nt+i, 2*nso+jj, md+1) = Be_tz(jp)
+            A(2*nt+i, 0*nso+jj, md+1) = Be_zr(jp);  A(2*nt+i, 1*nso+jj, md+1) = Be_zt(jp);  A(2*nt+i, 2*nso+jj, md+1) = Be_zz(jp)
           end do
         end do
       end do
@@ -1479,12 +1650,17 @@ contains
                 end do
               end do
               Gpc(1:nkc,1:p) = matmul(Gcq(1:nkc,1:q), IPqc)
-              do ia = 1, nkc
-                do l = 1, p
-                  A((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) = &
-                    A((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) + Gpc(ia,l)
-                end do
-              end do
+              select case (e)                                  ! fold Gpc into the (row,col) 3x3 block of A
+              case (1); do ia=1,nkc; do l=1,p; A(0*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) = A(0*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_rr
+              case (2); do ia=1,nkc; do l=1,p; A(0*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) = A(0*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_rt
+              case (3); do ia=1,nkc; do l=1,p; A(0*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) = A(0*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_rz
+              case (4); do ia=1,nkc; do l=1,p; A(1*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) = A(1*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_tr
+              case (5); do ia=1,nkc; do l=1,p; A(1*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) = A(1*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_tt
+              case (6); do ia=1,nkc; do l=1,p; A(1*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) = A(1*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_tz
+              case (7); do ia=1,nkc; do l=1,p; A(2*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) = A(2*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_zr
+              case (8); do ia=1,nkc; do l=1,p; A(2*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) = A(2*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_zt
+              case (9); do ia=1,nkc; do l=1,p; A(2*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) = A(2*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_zz
+              end select
             end do
           end do
         end if
@@ -1492,77 +1668,94 @@ contains
         do i = 1, nk
           if (ikc(i)) cycle
           rt = real(znear(i),r64); zti = aimag(znear(i))
+          do jp = 1, p                                          ! carrier_all + md-indep pieces ONCE per node
+            rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp)); rho = rt
+            nrp = real(-ic*dYp(jp)/abs(dYp(jp)),r64); nzp = aimag(-ic*dYp(jp)/abs(dYp(jp)))
+            rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+            call modal_green_all_far_r64(chi, M, vka, vea)
+            vkmat(jp,0:M) = vka(0:M); vemat(jp,0:M) = vea(0:M)
+            block
+              real(r64) :: ipi, r15, r25
+              real(r64) :: t2,t3,t4,t5,t6,t7,t8,t11,t12,t13,t15,t16,t17,t18,t19,t20,t21,t22,t23,t26,t27,t28,t29,t30,t31,t32
+              real(r64) :: t33,t34,t36,t39,t40,t44,t45,t46,t47,t48,t49,t50,t51,t52,t53,t54,t55
+              complex(r64) :: t24,t25,t35,t37,t41,t56
+              ipi = 1.0_r64/acos(-1.0_r64)
+              t2=chi*rho; t3=chi*rhop; t4=nrp*rhop; t5=rho*rhop; t6=nzp*zh; t7=chi+1.0_r64; t8=chi*chi
+              t11=rho*rho; t12=t11*rho; t13=rhop*rhop; t15=zh*zh; t16=nrp*rho*3.0_r64; t18=chi-1.0_r64
+              t17=nrp*t2; t19=-t2; t20=-t3; t21=-t4; t22=1.0_r64/t7; t23=t8-1.0_r64
+              r15=1.0_r64/t5**1.5_r64; r25=1.0_r64/t5**2.5_r64
+              t24=t4*ic; t25=t6*ic; t26=nrp*t11*3.0_r64; t27=t4*t13*3.0_r64; t31=t6*t11*3.0_r64; t32=t6*t13*3.0_r64
+              t33=1.0_r64/t18; t40=rhop*t2*t6*10.0_r64; t41=nrp*t11*3.0_r64*ic; t45=rhop*t2*t4*16.0_r64
+              t48=t2*t2*t6; t49=t3*t3*t6; t50=chi*t2*t3*t6*2.0_r64
+              t28=t11*t17*6.0_r64; t29=rho+t20; t30=rhop+t19; t34=t33*t33; t35=-t24; t36=-t27; t37=t17*ic
+              t39=t3*t17*2.0_r64; t44=t2*t2*t17*2.0_r64; t46=1.0_r64/t23; t47=-t40; t52=t3*t4*t20; t53=t3*t3*t17*4.0_r64
+              t55=t6+t17+t21; t51=-t44; t54=-t53; t56=t25+t35+t37
+              pcsm(1,jp) = ipi*rhop*r25*t46*(nrp*t12*3.0_r64+t4*t5*7.0_r64-t5*t6*4.0_r64-rho*t2*t4*11.0_r64+rho*t2*t6-rho*t2*t17*2.0_r64 &
+                      +rhop*t3*t6+rhop*t4*t20-t2*t3*t4*4.0_r64+t2*t3*t6*2.0_r64+t2*t3*t17*8.0_r64)*(-1.0_r64/8.0_r64)
+              pcsm(2,jp) = ipi*rhop*r25*t46*t55*(t5+rho*t19+rhop*t20+t2*t3)*(-1.0_r64/2.0_r64)
+              pcsm(3,jp) = ipi*rhop*t22*t34*r25*(t28+t31+t32+t36+t45+t47+t48+t49+t50+t51+t52+t54-t4*t11*3.0_r64 &
+                      -t2*t2*t4*17.0_r64+chi*t2*t3*t17*8.0_r64)*(-1.0_r64/8.0_r64)
+              pcsm(4,jp) = ipi*(rhop*t22*t34*r25*(t28+t31+t32+t36+t45+t47+t48+t49+t50+t51+t52+t54-t4*t11*6.0_r64 &
+                      -t2*t2*t4*11.0_r64+chi*t2*t3*t17*5.0_r64))/2.0_r64
+              pcsm(5,jp) = ipi*(r15*(t41+rhop*t4*3.0_r64*ic-rhop*t6*3.0_r64*ic-t2*t4*6.0_r64*ic))/4.0_r64
+              pcsm(6,jp) = ipi*(t33*r15*(rho*t4*(-4.0_r64*ic)+rho*t25+rho*t37-t3*t6*ic+t3*t17*2.0_r64*ic+t3*t24))/4.0_r64
+              pcsm(7,jp) = ipi*(-t29*t33*r15*t56)
+              pcsm(8,jp) = ipi*rhop*r25*t46*zh*(t39-rho*t4*4.0_r64+rho*t6+rho*t17+t3*t4+t6*t20)*(-1.0_r64/8.0_r64)
+              pcsm(9,jp) = ipi*(rhop*t29*r25*t46*t55*zh)/2.0_r64
+              pcsm(10,jp) = ipi*(rhop*t22*t34*r25*zh*(t26+chi*t39+rhop*t4*3.0_r64-rhop*t6*3.0_r64-t2*t4*10.0_r64+t2*t6*4.0_r64 &
+                      +t2*t17+nrp*t3*t3+chi*t6*t20))/8.0_r64
+              pcsm(11,jp) = ipi*rhop*r15*(t4*(-2.0_r64*ic)+t17*2.0_r64*ic+t25)*(3.0_r64/4.0_r64)
+              pcsm(12,jp) = ipi*(t13*t33*r25*(t41-rhop*t6*ic+rhop*t24-t2*t4*2.0_r64*ic-t2*t17*2.0_r64*ic+t2*t25))/4.0_r64
+              pcsm(13,jp) = ipi*t13*t30*t33*r25*t56
+              pcsm(14,jp) = ipi*rhop*r15*(t17*3.0_r64+t55)*(-1.0_r64/4.0_r64)
+              pcsm(15,jp) = ipi*rhop*r15*t55*(-1.0_r64/2.0_r64)
+              pcsm(16,jp) = ipi*(rhop*t33*r15*(t16-chi*t6-chi*t17*4.0_r64+nrp*t3))/4.0_r64
+              pcsm(17,jp) = ipi*rhop*t33*r15*(t16-chi*t6*2.0_r64-chi*t17*5.0_r64+nrp*t3*2.0_r64)*(-1.0_r64/2.0_r64)
+              pcsm(18,jp) = ipi*t4*r15*zh*cmplx(0.0_r64,0.75_r64,r64)
+              pcsm(19,jp) = ipi*t13*t33*r25*t56*zh*(-1.0_r64/4.0_r64)
+              pcsm(20,jp) = ipi*rhop*r25*t46*zh*(t26+rhop*t4-rhop*t6-t2*t4*2.0_r64+t2*t6-t2*t17*2.0_r64)*(-1.0_r64/8.0_r64)
+              pcsm(21,jp) = ipi*rhop*t30*r25*t46*t55*zh*(-1.0_r64/2.0_r64)
+              pcsm(22,jp) = ipi*rhop*t22*t34*r25*zh*(t39+rho*t4*6.0_r64-rho*t6*3.0_r64-rho*t17*6.0_r64-t3*t4*4.0_r64+t3*t6*4.0_r64 &
+                      +chi*t2*t17*2.0_r64+chi*t6*t19)*(-1.0_r64/8.0_r64)
+              pcsm(23,jp) = ipi*nrp*rho*r15*zh*cmplx(0.0_r64,0.75_r64,r64)
+              pcsm(24,jp) = ipi*t33*r15*t56*zh*(-1.0_r64/4.0_r64)
+              pcsm(25,jp) = ipi*rhop*t15*r25*t46*t55*(-1.0_r64/8.0_r64)
+              pcsm(26,jp) = ipi*(rhop*t15*r25*t46*t55)/2.0_r64
+              pcsm(27,jp) = ipi*(rhop*t15*t22*t34*r25*(t16+chi*t6*4.0_r64+chi*t17-nrp*t3*4.0_r64))/8.0_r64
+            end block
+          end do
           do md = 0, M
-            rn = real(md,r64)
+            rn = real(md,r64); n2 = rn*rn; ifn2 = 1.0_r64/(4.0_r64*n2-1.0_r64)
             do jp = 1, p
-              rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp)); rho = rt
-              nrp = real(-ic*dYp(jp)/abs(dYp(jp)),r64); nzp = aimag(-ic*dYp(jp)/abs(dYp(jp)))
-              rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-              call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
-              block
-                real(r64) :: t2,t3,t4,t5,t6,t7,t8,t9,t10,t11,t13,t15,t16,t17,t18,t19,t20,t21,t22,t23,t24,t25,t26
-                real(r64) :: t27,t28,t29,t30,t31,t32,t33,t34,t39,t40,t41,t43,t44,t45,t46,t47,t48,t49,t50,t57,t58,t59,t62,t65,t70
-                complex(r64) :: t35,t36,t37,t38,t51,t52,t53,t54,t56,t60,t61,t67,t68,t69,t73, coK(9), coE(9)
-                t2=nrp*rho; t3=nrp*rhop; t4=rho*rhop; t5=nzp*zh; t6=chi+1.0_r64; t7=chi*chi; t8=chi**3
-                t10=rn*rn; t11=rho*rho; t13=rhop*rhop; t15=zh*zh; t17=1.0_r64/acos(-1.0_r64); t20=chi-1.0_r64; t21=-rhop
-                t9=t7*t7; t16=t2*3.0_r64; t18=rho*t5; t19=rhop*t5; t22=t10*4.0_r64; t23=-t3; t24=-t5; t25=rho*t2; t26=rhop*t3
-                t27=t3*t13; t28=chi*t2*4.0_r64; t29=rhop*t2*4.0_r64; t30=chi*rhop*t2*2.0_r64; t31=t5*t13; t32=1.0_r64/t6
-                t33=t7-1.0_r64; t34=t4*t5*4.0_r64; t39=rho*t16; t40=t11*t16; t41=t26*3.0_r64; t43=-t29; t44=-t18; t45=-t19
-                t46=t4*t16; t47=t2*t13*7.0_r64; t48=1.0_r64/t20; t49=t48*t48; t50=-t34; t57=t13*t24; t58=rhop*t2*t7*2.0_r64
-                t59=t22-1.0_r64; t62=1.0_r64/t4**2.5_r64; t65=1.0_r64/t33; t70=1.0_r64/t59
-                t35=t2*ic; t36=t3*ic; t37=t3*2.0_r64*ic; t38=t5*ic; t51=-t36; t52=chi*t35; t53=chi*t2*2.0_r64*ic
-                t54=t19*ic; t56=rhop*t53; t60=t25*ic; t61=t26*ic; t67=rhop*t2*t10*4.0_r64*ic; t68=t10*t19*4.0_r64*ic
-                t69=t10*t26*4.0_r64*ic; t73=t38+t51+t52
-                coK(1) = cmplx(rhop*t17*t62*t65*(t40+t47+t50+chi*t31-chi*t2*t4*11.0_r64+chi*t5*t11+chi*t13*t23 &
-                       -chi*t10*t31*4.0_r64+chi*t22*t27+t2*t4*t8*8.0_r64+t4*t5*t7*2.0_r64-t2*t7*t11*2.0_r64-t2*t7*t13*4.0_r64 &
-                       -t2*t10*t13*4.0_r64+t4*t5*t22+chi*t2*t4*t10*8.0_r64-chi*t5*t10*t11*4.0_r64-t2*t7*t10*t11*4.0_r64 &
-                       -t2*t7*t10*t13*8.0_r64+t2*t4*t8*t22+t4*t5*t7*t22)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-                coE(1) = cmplx((rhop*t17*t32*t49*t62*t70*(t27*3.0_r64-t31*3.0_r64+t46-t5*t11*3.0_r64+t7*t27-t10*t27*12.0_r64 &
-                       +t10*t31*12.0_r64+t7*t57+chi*t4*t5*10.0_r64-chi*t2*t11*6.0_r64-chi*t2*t13*16.0_r64+t2*t4*t7*17.0_r64 &
-                       -t2*t4*t9*8.0_r64-t2*t4*t10*24.0_r64-t4*t5*t8*2.0_r64+t2*t8*t11*2.0_r64+t2*t8*t13*4.0_r64 &
-                       +t5*t10*t11*12.0_r64+t7*t11*t24-t7*t10*t27*4.0_r64+t7*t22*t31-chi*t4*t5*t10*40.0_r64 &
-                       +chi*t2*t10*t11*24.0_r64+chi*t2*t10*t13*64.0_r64-t2*t4*t7*t10*44.0_r64+t2*t4*t9*t10*20.0_r64 &
-                       +t4*t5*t8*t10*8.0_r64-t2*t8*t10*t11*8.0_r64-t2*t8*t10*t13*16.0_r64+t5*t7*t11*t22))/8.0_r64, 0.0_r64, r64)
-                coK(2) = rn/t4**1.5_r64*t17*(t54+t56-t60-t61)*(-3.0_r64/4.0_r64)
-                coE(2) = (rn/t4**1.5_r64*t17*t48*t70*(t18*ic+t67-chi*t19*ic+chi*t60+chi*t61+chi*t68-rhop*t2*4.0_r64*ic &
-                       -t10*t18*4.0_r64*ic+t7*t67-chi*t10*t25*4.0_r64*ic-chi*t10*t26*4.0_r64*ic+rhop*t2*t7*2.0_r64*ic))/4.0_r64
-                coK(3) = cmplx(rhop*t17*t62*t65*zh*(t18+t43+t58+chi*t25+chi*t26+chi*t45-t10*t18*4.0_r64-chi*t10*t25*4.0_r64 &
-                       -chi*t10*t26*4.0_r64+chi*t19*t22+rhop*t2*t22+rhop*t2*t7*t22)*(-1.0_r64/8.0_r64), 0.0_r64, r64)
-                coE(3) = cmplx((rhop*t17*t32*t49*t62*zh*(t19*(-3.0_r64)+t39+t41+chi*t18*4.0_r64+t7*t25+t7*t26+t7*t45 &
-                       -chi*rhop*t2*10.0_r64+rhop*t2*t8*2.0_r64))/8.0_r64, 0.0_r64, r64)
-                coK(4) = rn*rhop/t4**1.5_r64*t17*(-t37+t38+t53)*(3.0_r64/4.0_r64)
-                coE(4) = rn*t13*t17*t48*t62*t70*(t25*(-3.0_r64)*ic+t54+t56-t61-t68+t69-chi*t18*ic+t7*t25*2.0_r64*ic &
-                       +chi*t10*t18*4.0_r64*ic+t7*t10*t25*4.0_r64*ic-chi*rhop*t2*t10*8.0_r64*ic)*(-1.0_r64/4.0_r64)
-                coK(5) = cmplx(rhop/t4**1.5_r64*t17*(t5+t23+t28-t3*t10*2.0_r64+t5*t10*2.0_r64+chi*t2*t10*2.0_r64)*(-1.0_r64/4.0_r64), 0.0_r64, r64)
-                coE(5) = cmplx((rhop/t4**1.5_r64*t17*t48*t70*(t16+chi*t3+chi*t24-t2*t7*4.0_r64-t2*t10*6.0_r64 &
-                       -chi*t3*t10*4.0_r64+chi*t5*t22+t2*t7*t10*10.0_r64))/4.0_r64, 0.0_r64, r64)
-                coK(6) = rn*t2*t13*t17*t62*zh*cmplx(0.0_r64,0.75_r64,r64)
-                coE(6) = rn*t13*t17*t48*t62*t73*zh*(-1.0_r64/4.0_r64)
-                coK(7) = cmplx((rhop*t17*t62*t65*zh*(t19-t25*3.0_r64+t30+chi*t44+t3*t21-t10*t19*4.0_r64+t7*t25*2.0_r64 &
-                       +t22*t26+chi*t18*t22+t7*t22*t25-chi*rhop*t2*t10*8.0_r64))/8.0_r64, 0.0_r64, r64)
-                coE(7) = cmplx((rhop*t17*t32*t49*t62*zh*(t18*3.0_r64-t58-chi*t19*4.0_r64+chi*t25*6.0_r64+chi*t26*4.0_r64 &
-                       -rhop*t2*6.0_r64+t7*t18-t8*t25*2.0_r64))/8.0_r64, 0.0_r64, r64)
-                coK(8) = rn*t2/t4**1.5_r64*t17*zh*cmplx(0.0_r64,0.75_r64,r64)
-                coE(8) = rn/t4**1.5_r64*t17*t48*t73*zh*(-1.0_r64/4.0_r64)
-                coK(9) = cmplx((rhop*t15*t17*t59*t62*t65*(t5+t23+chi*t2))/8.0_r64, 0.0_r64, r64)
-                coE(9) = cmplx((rhop*t15*t17*t32*t49*t62*(t16-chi*t3*4.0_r64+chi*t5*4.0_r64+t2*t7))/8.0_r64, 0.0_r64, r64)
-                do e = 1, 9
-                  ff(jp,e) = (coK(e)*vk + coE(e)*ve)*wsp(jp)
-                end do
-              end block
+              vk = vkmat(jp,md); ve = vemat(jp,md)
+              coK(1)=pcsm(1,jp)+n2*pcsm(2,jp);   coK(3)=pcsm(8,jp)+n2*pcsm(9,jp);   coK(5)=pcsm(14,jp)+n2*pcsm(15,jp)
+              coK(7)=pcsm(20,jp)+n2*pcsm(21,jp); coK(9)=pcsm(25,jp)+n2*pcsm(26,jp)
+              coK(2)=rn*pcsm(5,jp); coK(4)=rn*pcsm(11,jp); coK(6)=rn*pcsm(18,jp); coK(8)=rn*pcsm(23,jp)
+              coE(1)=ifn2*(pcsm(3,jp)+n2*pcsm(4,jp)); coE(5)=ifn2*(pcsm(16,jp)+n2*pcsm(17,jp))
+              coE(2)=rn*ifn2*(pcsm(6,jp)+n2*pcsm(7,jp)); coE(4)=rn*ifn2*(pcsm(12,jp)+n2*pcsm(13,jp))
+              coE(3)=pcsm(10,jp); coE(7)=pcsm(22,jp); coE(9)=pcsm(27,jp)
+              coE(6)=rn*pcsm(19,jp); coE(8)=rn*pcsm(24,jp)
+              ! 3x3 block entries  Be_** = (coK*vk + coE*ve)*wsp   (per subpanel node jp, folded below)
+              Be_rr(jp) = (coK(1)*vk+coE(1)*ve)*wsp(jp);  Be_rt(jp) = (coK(2)*vk+coE(2)*ve)*wsp(jp);  Be_rz(jp) = (coK(3)*vk+coE(3)*ve)*wsp(jp)
+              Be_tr(jp) = (coK(4)*vk+coE(4)*ve)*wsp(jp);  Be_tt(jp) = (coK(5)*vk+coE(5)*ve)*wsp(jp);  Be_tz(jp) = (coK(6)*vk+coE(6)*ve)*wsp(jp)
+              Be_zr(jp) = (coK(7)*vk+coE(7)*ve)*wsp(jp);  Be_zt(jp) = (coK(8)*vk+coE(8)*ve)*wsp(jp);  Be_zz(jp) = (coK(9)*vk+coE(9)*ve)*wsp(jp)
             end do
-            do e = 1, 9
-              ar = (e-1)/3 + 1; b = mod(e-1,3) + 1
-              do l = 1, p
-                A((ar-1)*nt+nidx(i), (b-1)*nso+cols+l, md+1) = &
-                  A((ar-1)*nt+nidx(i), (b-1)*nso+cols+l, md+1) + sum(ff(1:p,e)*Lc(:,l))
-              end do
+            do l = 1, p                                        ! fold each named block (sum over subpanel nodes via Lc) into A
+              A(0*nt+nidx(i), 0*nso+cols+l, md+1) = A(0*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_rr(1:p)*Lc(:,l))
+              A(0*nt+nidx(i), 1*nso+cols+l, md+1) = A(0*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_rt(1:p)*Lc(:,l))
+              A(0*nt+nidx(i), 2*nso+cols+l, md+1) = A(0*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_rz(1:p)*Lc(:,l))
+              A(1*nt+nidx(i), 0*nso+cols+l, md+1) = A(1*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_tr(1:p)*Lc(:,l))
+              A(1*nt+nidx(i), 1*nso+cols+l, md+1) = A(1*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_tt(1:p)*Lc(:,l))
+              A(1*nt+nidx(i), 2*nso+cols+l, md+1) = A(1*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_tz(1:p)*Lc(:,l))
+              A(2*nt+nidx(i), 0*nso+cols+l, md+1) = A(2*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_zr(1:p)*Lc(:,l))
+              A(2*nt+nidx(i), 1*nso+cols+l, md+1) = A(2*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_zt(1:p)*Lc(:,l))
+              A(2*nt+nidx(i), 2*nso+cols+l, md+1) = A(2*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_zz(1:p)*Lc(:,l))
             end do
           end do
         end do
       end do
     end do
-    deallocate(tin, joa, ci, zc, nidx, znear, ikq, ikc, C1, C2, C3, C4, As, Ad, A1, A2, A3, A4, Gcq, Gpc, ff)
+    deallocate(tin, joa, ci, zc, nidx, znear, ikq, ikc, C1, C2, C3, C4, As, Ad, A1, A2, A3, A4, Gcq, Gpc)
   end subroutine axissymstok_dlp_blockmat_nmode_r64
 
   subroutine axissymstok_dlpn_blockmat_r64(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, mu, A)
@@ -1737,7 +1930,7 @@ contains
                 real(r64) :: t101, t104, t109, t110, t113, t115, t121, t105, t108, t111, t116, t117
                 real(r64) :: t118, t106, t112, t119, t120, t122, t123, et1, et2, et3, et4
                 chi = (rho*rho+rhop*rhop+zh*zh)/(2.0_r64*rho*rhop)
-                call carrier_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+                call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
                 t2 = nr*rho
                 t3 = nps*rhop
                 t4 = rho*rhop
@@ -1918,6 +2111,7 @@ contains
     integer(8), parameter :: Ksub = 4
     integer(8) :: qq, nso, i, j, jp, iq, ia, l, e, md, ar, b, c, qo, ne, npa, nk, nkc, jj, cols
     real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, nrp, nzp, vk, ve, Fn, An, dFn, rn, nrt, nzt
+    real(r64)  :: vka(0:M), vea(0:M), Fna(0:M), Ana(0:M), dFna(0:M), vkmat(p,0:M), vemat(p,0:M)
     real(r64)  :: st1, stN, tm, denom, rlo, rhi, tgi, split
     complex(r64) :: ic, zac, zbc, cc1, cc2, cc3, cc4, cc5, Slog, Dval, Dz, Dzz, Acau, Ahy, Asup
     real(r64)    :: tglp(p), wglp(p), Dp(p,p), tglq(2*p), wglq(2*p), Dq(2*p,2*p), IP2(2*p,p)
@@ -1988,8 +2182,9 @@ contains
           jj = cols + jp; rhop = real(sx(jj),r64); zh = zti - aimag(sx(jj)); ws = sws(jj)
           nrp = real(snx(jj),r64); nzp = aimag(snx(jj)); rho = rt
           rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+          call modal_green_all_r64(chi, M, vka, vea, Fna, Ana, dFna)        ! all modes ONCE per node
           do md = 0, M
-            rn = real(md,r64); call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
+            rn = real(md,r64); vk = vka(md); ve = vea(md)
             block
               complex(r64) :: t2, t3, t4, t5, t7, t9, t10, t12
               complex(r64) :: t13, t15, t16, t18, t19, t21, t22, t6
@@ -2456,13 +2651,19 @@ contains
         do i = 1, nk
           if (ikc(i)) cycle
           rt = real(znear(i),r64); zti = aimag(znear(i)); nrt = real(znearn(i),r64); nzt = aimag(znearn(i))
+          do jp = 1, p                                          ! carrier_all ONCE per node (was M+1 modal_green_r64 calls)
+            rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp)); rho = rt
+            rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+            call modal_green_all_r64(chi, M, vka, vea, Fna, Ana, dFna)
+            vkmat(jp,0:M) = vka(0:M); vemat(jp,0:M) = vea(0:M)
+          end do
           do md = 0, M
             rn = real(md,r64)
             do jp = 1, p
               rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp)); rho = rt
               nrp = real(-ic*dYp(jp)/abs(dYp(jp)),r64); nzp = aimag(-ic*dYp(jp)/abs(dYp(jp)))
               rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-              call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
+              vk = vkmat(jp,md); ve = vemat(jp,md)
               block
                 complex(r64) :: t2, t3, t4, t5, t7, t9, t10, t12
                 complex(r64) :: t13, t15, t16, t18, t19, t21, t22, t6

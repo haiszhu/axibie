@@ -1,5 +1,6 @@
 module axissymlap_specialquad_mod
-  use axilaplace3d_mod, only: r64, gauss_r64, carrier_r64, carrier_all_r64, lagrange_interp_r64
+  use axilaplace3d_mod, only: r64, gauss_r64, lagrange_interp_r64
+  use axisym_modal_green_mod, only: modal_green_r64, modal_green_all_r64, modal_green_all_far_r64
   use specialquad_mod, only: sdspecialquad_r64
   use axissymlap_kernelsplit_mod, only: axissymlap_slp_coef_r64, axissymlap_slp_coef_nmode_r64, &
        axissymlap_slpn_coef_r64, axissymlap_slpn_coef_nmode_r64, &
@@ -117,7 +118,7 @@ contains
         do jp = 1, p
           rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
           rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call carrier_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
           SK = sqrt(rhop/rho)/twopi
           ff(jp) = SK*vk*wsp(jp)
         end do
@@ -130,24 +131,23 @@ contains
   end subroutine axissymlap_slp_blockmat_r64
 
   subroutine axissymlap_slp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
-    ! scalar Laplace SLP all-modes block, real A(nt, np*p, M+1) -- mirror of LapSLPAxiBlockMat_nmode.
     integer(8),   intent(in)    :: nt, p, np, M, iside, iclosed
     complex(r64), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
     real(r64),    intent(in)    :: sws(p*np), tpan(np+1)
     real(r64),    intent(inout) :: A(nt, np*p, M+1)
-    integer(8) :: q, i, j, jp, iq, ia, l, nc, cjo, md, k, jo, ne, npa
-    real(r64)  :: twopi, sumws, rho, rhop, zh, rr2, chi, rt, zti, vk, ve, Fn, An, dFn, SK
+    integer(8) :: q, nsa, i, j, jp, iq, ia, l, nc, cjo, md, k, jo, ne, npa, coff, K1, K2, nr1, nr2, c1b, c2b
+    real(r64)  :: twopi, sumws, rho, rhop, zh, rr2, chi, rt, zti
     real(r64)  :: t1, tN, tm, denom, rlo, rhi, tgi, split, ff(p)
     complex(r64) :: ic, za, zb
     real(r64)    :: tglp(p), wglp(p), Dp(p,p), tglq(2*p), wglq(2*p), Dq(2*p,2*p), IP2(2*p,p)
     real(r64)    :: rk(p), re2(2), IPk(p,p), IPe2(2,p), wsq(2*p), wsp(p)
     complex(r64) :: Yp(p), Yq(2*p), dYp(p), dYq(2*p), nvq(2*p), wxpq(2*p), ec2(2), xc(p,np)
-    real(r64),    allocatable :: tin(:)
+    real(r64),    allocatable :: tin(:), L1(:,:), L2(:,:), t_aux1(:), t_aux2(:), Be(:,:,:)
     logical,      allocatable :: cl(:)
     integer(8),   allocatable :: ci(:)
     complex(r64), allocatable :: zc(:), Ad(:,:)
     real(r64),    allocatable :: C1(:,:,:), C2(:,:,:), As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:), Gcq(:,:), Gpc(:,:)
-    real(r64)    :: vka(0:M), vea(0:M), Fna(0:M), Ana(0:M), dFna(0:M), vkmat(p,0:M), SKw(p)
+    real(r64)    :: vka(0:M), vea(0:M), vkmat(p,0:M), SKw(p)
     q = 2*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
     call gauss_r64(p,     tglp, wglp, Dp)
     call gauss_r64(2_8*p, tglq, wglq, Dq)
@@ -159,26 +159,45 @@ contains
     end do
     t1 = tpan(1) + (1.0_r64+tglp(1))/2.0_r64*(tpan(2)-tpan(1))
     tN = tpan(np) + (1.0_r64+tglp(p))/2.0_r64*(tpan(np+1)-tpan(np))
-    ! dyadic pole refinement of tpan -> tin (mirror LapSLPAxiBlockMat_nmode, refine 1st/last)
     allocate(tin(np+1+256)); ne = np+1; tin(1:ne) = tpan(1:np+1)
+    nr1 = 0
     do while (tin(2) > t1)
       split = 0.5_r64*(tin(1)+tin(2))
       do i = ne, 2, -1; tin(i+1) = tin(i); end do
-      tin(2) = split; ne = ne+1
+      tin(2) = split; ne = ne+1; nr1 = nr1+1
     end do
+    nr2 = 0
     do while (tin(ne-1) < tN)
       split = 0.5_r64*(tin(ne)+tin(ne-1))
-      tin(ne+1) = tin(ne); tin(ne) = split; ne = ne+1
+      tin(ne+1) = tin(ne); tin(ne) = split; ne = ne+1; nr2 = nr2+1
     end do
-    npa = ne-1
+    npa = ne-1; nsa = npa*p
+    K1 = nr1+1; K2 = nr2+1; c1b = K1*p; c2b = (K1+np-2)*p   ! Be col blocks: aux1=1:c1b, mid=c1b+1:c2b, aux2=c2b+1:nsa
     allocate(cl(nt), ci(nt), zc(nt), C1(nt,q,M+1), C2(nt,q,M+1))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
-    A = 0.0_r64
+    allocate(L1(K1*p,p), L2(K2*p,p), t_aux1(K1*p), t_aux2(K2*p), Be(nt,nsa,M+1))
+    do j = 1, K1                                          ! pole-1 sub-panels (parent panel 1), nodes in parent-1 coords
+      do i = 1, p
+        tgi = tin(j) + (1.0_r64+tglp(i))/2.0_r64*(tin(j+1)-tin(j))
+        t_aux1((j-1)*p+i) = (2.0_r64*tgi - (tpan(1)+tpan(2)))/(tpan(2)-tpan(1))
+      end do
+    end do
+    do j = 1, K2                                          ! pole-2 sub-panels (parent panel np), nodes in parent-np coords
+      k = (K1+np-2) + j
+      do i = 1, p
+        tgi = tin(k) + (1.0_r64+tglp(i))/2.0_r64*(tin(k+1)-tin(k))
+        t_aux2((j-1)*p+i) = (2.0_r64*tgi - (tpan(np)+tpan(np+1)))/(tpan(np+1)-tpan(np))
+      end do
+    end do
+    call lagrange_interp_r64(p, tglp, K1*p, t_aux1, L1)   ! == MATLAB  L1 = interpmat_1d(t_aux1, gauss(p))
+    call lagrange_interp_r64(p, tglp, K2*p, t_aux2, L2)
+    Be = 0.0_r64
     do k = 1, npa
       tm = 0.5_r64*(tin(k)+tin(k+1)); jo = 1
       do j = 1, np
         if (tm >= tpan(j) .and. tm < tpan(j+1)) jo = j
       end do
+      coff = (k-1)*p
       denom = tpan(jo+1) - tpan(jo)
       do i = 1, p
         tgi = tin(k) + (1.0_r64+tglp(i))/2.0_r64*(tin(k+1)-tin(k))
@@ -206,7 +225,6 @@ contains
         cl(i) = (abs(tx(i)-za) + abs(tx(i)-zb)) < 1.5_r64*sumws
         if (cl(i)) then; nc = nc + 1; ci(nc) = i; zc(nc) = tx(i); end if
       end do
-      ! near: all-mode SLP close (coef + sdspecialquad log), fold q->p (IP2) -> coarse (IPk)
       if (nc > 0) then
         call axissymlap_slp_coef_nmode_r64(nc, zc(1:nc), q, Yq, M, C1(1:nc,1:q,:), C2(1:nc,1:q,:))
         call sdspecialquad_r64(nc, zc(1:nc), q, Yq, nvq, wxpq, za, zb, iside, &
@@ -217,36 +235,41 @@ contains
               Gcq(ia,iq) = twopi*C1(ia,iq,md+1)*As(iq,ia) + C2(ia,iq,md+1)*wsq(iq)
             end do
           end do
-          Gpc(1:nc,1:p) = matmul(Gcq(1:nc,1:q), IP2)
-          do ia = 1, nc
+          Gpc(1:nc,1:p) = matmul(Gcq(1:nc,1:q), IP2)         ! 2p -> p (refined nodes)
+          do ia = 1, nc                                      ! write into Be (refined nodes, NO IPk)
             do l = 1, p
-              A(ci(ia), cjo+l, md+1) = A(ci(ia), cjo+l, md+1) + sum(Gpc(ia,1:p)*IPk(:,l))
+              Be(ci(ia), coff+l, md+1) = Be(ci(ia), coff+l, md+1) + Gpc(ia,l)
             end do
           end do
         end do
       end if
-      ! far: analytic mode-n single carrier K_n = SK*VK on the refined p nodes, fold via IPk.
-      ! all-modes carrier ONCE per (target,node) (was M+1 carrier_r64 calls per node, each redoing the AGM/Miller).
       do i = 1, nt
         if (cl(i)) cycle
         rt = real(tx(i),r64); zti = aimag(tx(i))
         do jp = 1, p
           rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
           rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call carrier_all_r64(chi, M, vka, vea, Fna, Ana, dFna)
+          call modal_green_all_far_r64(chi, M, vka, vea)
           vkmat(jp,0:M) = vka(0:M); SKw(jp) = sqrt(rhop/rho)/twopi*wsp(jp)
         end do
         do md = 0, M
           do jp = 1, p
             ff(jp) = SKw(jp)*vkmat(jp,md)
           end do
-          do l = 1, p
-            A(i, cjo+l, md+1) = A(i, cjo+l, md+1) + sum(ff(1:p)*IPk(:,l))
+          do jp = 1, p                                       ! write into Be at refined col coff+jp (NO IPk)
+            Be(i, coff+jp, md+1) = Be(i, coff+jp, md+1) + ff(jp)
           end do
         end do
       end do
     end do
-    deallocate(tin, cl, ci, zc, C1, C2, As, Ad, A1, A2, A3, A4, Gcq, Gpc)
+    ! ===== refined -> coarse projection:  A = Be * intMat,  intMat = blkdiag(L1, eye, L2) =====
+    A = 0.0_r64
+    do md = 0, M
+      A(1:nt, 1:p,             md+1) = A(1:nt, 1:p,             md+1) + matmul(Be(:,1:c1b,md+1),   L1)
+      A(1:nt, p+1:(np-1)*p,    md+1) = A(1:nt, p+1:(np-1)*p,    md+1) +        Be(:,c1b+1:c2b,md+1)
+      A(1:nt, (np-1)*p+1:np*p, md+1) = A(1:nt, (np-1)*p+1:np*p, md+1) + matmul(Be(:,c2b+1:nsa,md+1), L2)
+    end do
+    deallocate(tin, L1, L2, t_aux1, t_aux2, Be, cl, ci, zc, C1, C2, As, Ad, A1, A2, A3, A4, Gcq, Gpc)
   end subroutine axissymlap_slp_blockmat_nmode_r64
 
   subroutine axissymlap_slpn_blockmat_r64(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, A)
@@ -364,7 +387,7 @@ contains
         do jp = 1, p
           rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
           rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call carrier_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
           Qd = -ve/(2.0_r64*(chi-1.0_r64)); SK = sqrt(rhop/rho)/twopi
           ff(jp) = SK*( -nr/(2.0_r64*rho)*vk + (nr*(rho-rhop*chi)+nz*zh)/(rho*rhop)*Qd )*wsp(jp)
         end do
@@ -496,11 +519,19 @@ contains
       do i = 1, nt
         if (cl(i)) cycle
         rt = real(tx(i),r64); zti = aimag(tx(i)); nr = real(tnx(i),r64); nz = aimag(tnx(i))
+        block
+          real(r64) :: vka(0:M), vea(0:M), Fna(0:M), Ana(0:M), dFna(0:M), vkmat(p,0:M), vemat(p,0:M)
+          do jp = 1, p                                          ! carrier_all ONCE per node (was M+1 modal_green_r64 calls)
+            rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
+            rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+            call modal_green_all_r64(chi, M, vka, vea, Fna, Ana, dFna)
+            vkmat(jp,0:M) = vka(0:M); vemat(jp,0:M) = vea(0:M)
+          end do
         do md = 0, M
           do jp = 1, p
             rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
             rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-            call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
+            vk = vkmat(jp,md); ve = vemat(jp,md)
             Qd = -ve/(2.0_r64*(chi-1.0_r64)); SK = sqrt(rhop/rho)/twopi
             ff(jp) = SK*( -nr/(2.0_r64*rho)*vk + (nr*(rho-rhop*chi)+nz*zh)/(rho*rhop)*Qd )*wsp(jp)
           end do
@@ -508,6 +539,7 @@ contains
             A(i, cjo+l, md+1) = A(i, cjo+l, md+1) + sum(ff(1:p)*IPk(:,l))
           end do
         end do
+        end block
       end do
     end do
     deallocate(tin, cl, ci, zc, zcn, C1, C2, C3, As, Ad, A1, A2, A3, A4, Gcq)
@@ -628,7 +660,7 @@ contains
           rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
           nr = real(nvp(jp),r64); nz = aimag(nvp(jp))
           rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call carrier_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
           Qd = -ve/(2.0_r64*(chi-1.0_r64)); SK = sqrt(rhop/rho)/twopi
           ff(jp) = SK*( -nr/(2.0_r64*rhop)*vk + (nr*(rhop-rho*chi)-nz*zh)/(rho*rhop)*Qd )*wsp(jp)
         end do
@@ -759,12 +791,20 @@ contains
       do i = 1, nt
         if (cl(i)) cycle
         rt = real(tx(i),r64); zti = aimag(tx(i))
+        block
+          real(r64) :: vka(0:M), vea(0:M), Fna(0:M), Ana(0:M), dFna(0:M), vkmat(p,0:M), vemat(p,0:M)
+          do jp = 1, p                                          ! carrier_all ONCE per node (was M+1 modal_green_r64 calls)
+            rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
+            rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+            call modal_green_all_r64(chi, M, vka, vea, Fna, Ana, dFna)
+            vkmat(jp,0:M) = vka(0:M); vemat(jp,0:M) = vea(0:M)
+          end do
         do md = 0, M
           do jp = 1, p
             rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
             nr = real(nvp(jp),r64); nz = aimag(nvp(jp))
             rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-            call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
+            vk = vkmat(jp,md); ve = vemat(jp,md)
             Qd = -ve/(2.0_r64*(chi-1.0_r64)); SK = sqrt(rhop/rho)/twopi
             ff(jp) = SK*( -nr/(2.0_r64*rhop)*vk + (nr*(rhop-rho*chi)-nz*zh)/(rho*rhop)*Qd )*wsp(jp)
           end do
@@ -772,6 +812,7 @@ contains
             A(i, cjo+l, md+1) = A(i, cjo+l, md+1) + sum(ff(1:p)*IPk(:,l))
           end do
         end do
+        end block
       end do
     end do
     deallocate(tin, cl, ci, zc, C1, C2, C3, As, Ad, A1, A2, A3, A4, Gcq)
@@ -907,7 +948,7 @@ contains
           rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt; drho = rho - rhop
           nrp = real(nvp(jp),r64); nzp = aimag(nvp(jp))
           rr2 = drho*drho + zh*zh; tchi = rr2/(2.0_r64*rho*rhop); chi = 1.0_r64 + tchi
-          call carrier_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
           Qd = -ve/(2.0_r64*tchi); Qdd = (2.0_r64*chi*Qd + 0.25_r64*vk)/(1.0_r64-chi*chi)
           Bq = 1.0_r64/sqrt(rho*rhop); Br = -Bq/(2.0_r64*rho); Brp = -Bq/(2.0_r64*rhop); Brrp = Bq/(4.0_r64*rho*rhop)
           chir = drho/(rho*rhop) - rr2/(2.0_r64*rho*rho*rhop)
@@ -1071,13 +1112,21 @@ contains
       do i = 1, nt
         if (cl(i)) cycle
         rt = real(tx(i),r64); zti = aimag(tx(i)); nr = real(tnx(i),r64); nz = aimag(tnx(i))
+        block
+          real(r64) :: vka(0:M), vea(0:M), Fna(0:M), Ana(0:M), dFna(0:M), vkmat(p,0:M), vemat(p,0:M)
+          do jp = 1, p                                          ! carrier_all ONCE per node (was M+1 modal_green_r64 calls)
+            rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
+            rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+            call modal_green_all_r64(chi, M, vka, vea, Fna, Ana, dFna)
+            vkmat(jp,0:M) = vka(0:M); vemat(jp,0:M) = vea(0:M)
+          end do
         do md = 0, M
           rn2 = real(md,r64)**2
           do jp = 1, p
             rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt; drho = rho - rhop
             nrp = real(nvp(jp),r64); nzp = aimag(nvp(jp))
             rr2 = drho*drho + zh*zh; tchi = rr2/(2.0_r64*rho*rhop); chi = 1.0_r64 + tchi
-            call carrier_r64(chi, md, vk, ve, Fn, An, dFn)
+            vk = vkmat(jp,md); ve = vemat(jp,md)
             Qd = -ve/(2.0_r64*tchi); Qdd = (2.0_r64*chi*Qd - (rn2-0.25_r64)*vk)/(1.0_r64-chi*chi)
             Bq = 1.0_r64/sqrt(rho*rhop); Br = -Bq/(2.0_r64*rho); Brp = -Bq/(2.0_r64*rhop); Brrp = Bq/(4.0_r64*rho*rhop)
             chir = drho/(rho*rhop) - rr2/(2.0_r64*rho*rho*rhop)
@@ -1098,6 +1147,7 @@ contains
             A(i, cjo+l, md+1) = A(i, cjo+l, md+1) + sum(ff(1:p)*IPk(:,l))
           end do
         end do
+        end block
       end do
     end do
     if (isself) then                                              ! m=0 self: D'_0[1] = 0 (hypersingular nullspace)

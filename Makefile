@@ -57,6 +57,7 @@ OPENBLAS_LIBS := -L$(OPENBLAS_DIR)/lib -lopenblas
 # wrappers use their kernelsplit module -> they compile against the shipped
 # build/axissym{stok,lap}_kernelsplit_mod.mod and link build/libaxissym{stok,lap}_kernelsplit.a.
 PUBLIC_SOURCES := $(SRC_DIR)/axistokes3d_mod.f90 \
+                  $(SRC_DIR)/axisym_modal_green_mod.f90 \
                   $(SRC_DIR)/axilaplace3d_mod.f90 \
                   $(SRC_DIR)/specialquad_mod.f90 \
                   $(SRC_DIR)/axissymstok_specialquad_mod.f90 \
@@ -94,11 +95,12 @@ $(BLD_DIR)/%.o: $(SRC_DIR)/%.f90 | $(BLD_DIR)
 
 # Build-order deps (axissymstok_kernelsplit_mod.mod is shipped in $(BLD_DIR), so the files that
 # `use` that module need no .o dependency -- it is already present).
+$(BLD_DIR)/axisym_modal_green_mod.o: $(BLD_DIR)/axistokes3d_mod.o
 $(BLD_DIR)/specialquad_mod.o: $(BLD_DIR)/axistokes3d_mod.o
-$(BLD_DIR)/axissymstok_specialquad_mod.o: $(BLD_DIR)/axistokes3d_mod.o $(BLD_DIR)/specialquad_mod.o
+$(BLD_DIR)/axissymstok_specialquad_mod.o: $(BLD_DIR)/axistokes3d_mod.o $(BLD_DIR)/specialquad_mod.o $(BLD_DIR)/axisym_modal_green_mod.o
 $(BLD_DIR)/axissymstok_specialquad_mex.o: $(BLD_DIR)/axissymstok_specialquad_mod.o
 $(BLD_DIR)/axilaplace3d_mod.o: $(BLD_DIR)/axistokes3d_mod.o
-$(BLD_DIR)/axissymlap_specialquad_mod.o: $(BLD_DIR)/axilaplace3d_mod.o $(BLD_DIR)/specialquad_mod.o
+$(BLD_DIR)/axissymlap_specialquad_mod.o: $(BLD_DIR)/axilaplace3d_mod.o $(BLD_DIR)/specialquad_mod.o $(BLD_DIR)/axisym_modal_green_mod.o
 $(BLD_DIR)/axissymlap_specialquad_mex.o: $(BLD_DIR)/axissymlap_specialquad_mod.o
 $(BLD_DIR)/axissym_physop_mod.o: $(BLD_DIR)/axistokes3d_mod.o $(BLD_DIR)/axissymlap_specialquad_mod.o $(BLD_DIR)/axissymstok_specialquad_mod.o
 $(BLD_DIR)/axissym_physop_mex.o: $(BLD_DIR)/axissym_physop_mod.o
