@@ -253,3 +253,70 @@ B=complex(zeros(nr,cb)); iF=zeros(Np1,1); jF=zeros(nnzF,1); xF=complex(zeros(nnz
 F = sparse(repelem((1:Nsrc)', diff(round(iF))), jF, xF, Nsrc, Nsrc);
 near = near > 0.5;
 end
+
+% ============================================================
+% Helpers for the pure-MATLAB n-mode block builders (utils/axls_*_blockmat_nmode.m):
+% the SAME compiled gauss / lagrange-interp / carrier / sdspecialquad / split-coef routines.
+% ============================================================
+
+% Gauss-Legendre nodes/weights + spectral diff matrix on [-1,1]
+@function [tgl, wgl, Dgl] = axt_gauss_mex(n)
+n=double(n);
+tgl=zeros(n,1); wgl=zeros(n,1); Dgl=zeros(n,n);
+# FORTRAN axt_gauss_r64(int[1] n, inout double[n] tgl, inout double[n] wgl, inout double[n,n] Dgl);
+end
+
+% Lagrange interpolation matrix: values on nodes xs (ns) -> targets xt (nt)
+@function Mat = axt_lagrange_interp_mex(ns, xs, nt, xt)
+ns=double(ns); nt=double(nt); xs=double(xs(:)); xt=double(xt(:));
+Mat=zeros(nt,ns);
+# FORTRAN axt_lagrange_interp_r64(int[1] ns, double[ns] xs, int[1] nt, double[nt] xt, inout double[nt,ns] Mat);
+end
+
+% All-modes Q-side carrier vk=Q_{n-1/2}(chi), ve, n=0..M  (scalar chi)
+@function [vk, ve] = axmg_modal_green_all_far_mex(chi, M)
+chi=double(chi); M=double(M); Mp1=M+1;
+vk=zeros(Mp1,1); ve=zeros(Mp1,1);
+# FORTRAN axmg_modal_green_all_far_r64(double[1] chi, int[1] M, inout double[Mp1] vk, inout double[Mp1] ve);
+end
+
+% Helsing close-eval special quadrature: log(As), Cauchy(Ad), deriv(A1,A2), hyper(A3,A4)
+@function [As, Ad, A1, A2, A3, A4] = axsq_sdspecialquad_mex(nt, zt, p, zsrc, nzsrc, wzp, za, zb, iside)
+nt=double(nt); p=double(p); iside=double(iside);
+zt=double(zt(:)); zsrc=double(zsrc(:)); nzsrc=double(nzsrc(:)); wzp=double(wzp(:));
+za=double(za(1)); zb=double(zb(1));
+As=zeros(p,nt); A1=zeros(p,nt); A2=zeros(p,nt); A3=zeros(p,nt); A4=zeros(p,nt); Ad=complex(zeros(p,nt));
+# FORTRAN axsq_sdspecialquad_r64(int[1] nt, dcomplex[nt] zt, int[1] p, dcomplex[p] zsrc, dcomplex[p] nzsrc, dcomplex[p] wzp, dcomplex[1] za, dcomplex[1] zb, int[1] iside, inout double[p,nt] As, inout dcomplex[p,nt] Ad, inout double[p,nt] A1, inout double[p,nt] A2, inout double[p,nt] A3, inout double[p,nt] A4);
+end
+
+% SLP n-mode split coefs C1(log), C2(smooth)
+@function [C1, C2] = axlk_slp_coef_nmode_mex(nt, tx, nq, sx, M)
+nt=double(nt); nq=double(nq); M=double(M); tx=double(tx(:)); sx=double(sx(:)); Mp1=M+1; cm=nq*Mp1;
+C1=zeros(nt,cm); C2=zeros(nt,cm);
+# FORTRAN axlk_slp_coef_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] nq, dcomplex[nq] sx, int[1] M, inout double[nt,cm] C1, inout double[nt,cm] C2);
+C1=reshape(C1,nt,nq,Mp1); C2=reshape(C2,nt,nq,Mp1);
+end
+
+% SLPn n-mode split coefs (target normal tnx): C1,C2,C3(target Cauchy)
+@function [C1, C2, C3] = axlk_slpn_coef_nmode_mex(nt, tx, tnx, nq, sx, M)
+nt=double(nt); nq=double(nq); M=double(M); tx=double(tx(:)); tnx=double(tnx(:)); sx=double(sx(:)); Mp1=M+1; cm=nq*Mp1;
+C1=zeros(nt,cm); C2=zeros(nt,cm); C3=zeros(nt,cm);
+# FORTRAN axlk_slpn_coef_nmode_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] nq, dcomplex[nq] sx, int[1] M, inout double[nt,cm] C1, inout double[nt,cm] C2, inout double[nt,cm] C3);
+C1=reshape(C1,nt,nq,Mp1); C2=reshape(C2,nt,nq,Mp1); C3=reshape(C3,nt,nq,Mp1);
+end
+
+% DLP n-mode split coefs (source normal snx): C1,C2,C3(source Cauchy)
+@function [C1, C2, C3] = axlk_dlp_coef_nmode_mex(nt, tx, nq, sx, snx, M)
+nt=double(nt); nq=double(nq); M=double(M); tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); Mp1=M+1; cm=nq*Mp1;
+C1=zeros(nt,cm); C2=zeros(nt,cm); C3=zeros(nt,cm);
+# FORTRAN axlk_dlp_coef_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] nq, dcomplex[nq] sx, dcomplex[nq] snx, int[1] M, inout double[nt,cm] C1, inout double[nt,cm] C2, inout double[nt,cm] C3);
+C1=reshape(C1,nt,nq,Mp1); C2=reshape(C2,nt,nq,Mp1); C3=reshape(C3,nt,nq,Mp1);
+end
+
+% DLPn n-mode split coefs (both normals): C1,C2,C3a(target Cauchy),C3b(source Cauchy),C4(deriv-Cauchy)
+@function [C1, C2, C3a, C3b, C4] = axlk_dlpn_coef_nmode_mex(nt, tx, tnx, nq, sx, snx, M)
+nt=double(nt); nq=double(nq); M=double(M); tx=double(tx(:)); tnx=double(tnx(:)); sx=double(sx(:)); snx=double(snx(:)); Mp1=M+1; cm=nq*Mp1;
+C1=zeros(nt,cm); C2=zeros(nt,cm); C3a=zeros(nt,cm); C3b=zeros(nt,cm); C4=zeros(nt,cm);
+# FORTRAN axlk_dlpn_coef_nmode_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] nq, dcomplex[nq] sx, dcomplex[nq] snx, int[1] M, inout double[nt,cm] C1, inout double[nt,cm] C2, inout double[nt,cm] C3a, inout double[nt,cm] C3b, inout double[nt,cm] C4);
+C1=reshape(C1,nt,nq,Mp1); C2=reshape(C2,nt,nq,Mp1); C3a=reshape(C3a,nt,nq,Mp1); C3b=reshape(C3b,nt,nq,Mp1); C4=reshape(C4,nt,nq,Mp1);
+end

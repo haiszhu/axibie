@@ -12,3 +12,10 @@ mex_id_ = 'axp_offdiagphysmat_r64(c i int64_t[x], c i int64_t[x], c i int64_t[x]
 F = sparse(repelem((1:Nsrc)', diff(round(iF))), jF, xF, Nsrc, Nsrc);
 near = near > 0.5;
 end
+
+% ============================================================
+% Helpers for the pure-MATLAB n-mode block builders (utils/axls_*_blockmat_nmode.m):
+% the SAME compiled gauss / lagrange-interp / carrier / sdspecialquad / split-coef routines.
+% ============================================================
+
+% Gauss-Legendre nodes/weights + spectral diff matrix on [-1,1]
