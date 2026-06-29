@@ -1,0 +1,122 @@
+# Makefile_kdtree — build the MATLAB mex of external/kdtree (taiya/kdtree) with gcc.
+#
+# Direct compiler link (NOT MATLAB's `mex` script), mirroring this repo's convention:
+#   -bundle -Wl,-undefined,dynamic_lookup + the MATLAB SDK headers/libs.
+# C++ runtimes are linked statically so MATLAB doesn't pick up a clashing libstdc++.
+#
+#   make -f Makefile_kdtree            # build all toolbox mex for this arch
+#   make -f Makefile_kdtree clean      # remove the mex built for this arch
+#   make -f Makefile_kdtree CXX=g++-14 # override the compiler
+
+# ---------- compiler (newest Homebrew g++; override on the command line) ----------
+CXX := $(shell ls /opt/homebrew/bin/g++-[0-9]* 2>/dev/null | sort -V | tail -1)
+
+# c++14, not c++17: the old code uses dynamic exception specifications (throw(...)),
+# which C++17 removed. c++14 still allows them (deprecation warning only).
+CXXFLAGS := -O2 -std=c++14 -fPIC -Wall -fmessage-length=0
+
+# ---------- platform / MATLAB SDK detection (mirrors ./Makefile) ----------
+UNAME := $(shell uname)
+ARCH  := $(shell uname -m)
+ifeq ($(UNAME), Darwin)
+  MATLAB_ROOT := $(shell ls -d /Applications/MATLAB_R*.app 2>/dev/null | sort | tail -n1)
+  ifeq ($(ARCH), arm64)
+    MATLAB_ARCH := maca64
+    MEX_EXT     := mexmaca64
+  else
+    MATLAB_ARCH := maci64
+    MEX_EXT     := mexmaci64
+  endif
+  MATLAB_LIBS := $(MATLAB_ROOT)/bin/$(MATLAB_ARCH)/libmx.dylib \
+                 $(MATLAB_ROOT)/bin/$(MATLAB_ARCH)/libmex.dylib \
+                 $(MATLAB_ROOT)/bin/$(MATLAB_ARCH)/libmat.dylib -lm
+  MEX_LDFLAGS := -bundle -Wl,-undefined,dynamic_lookup
+else
+  MATLAB_ROOT := $(shell ls -d /usr/local/MATLAB/R* 2>/dev/null | sort | tail -n1)
+  MATLAB_ARCH := glnxa64
+  MEX_EXT     := mexa64
+  MATLAB_LIBS := -L$(MATLAB_ROOT)/bin/$(MATLAB_ARCH) -lmx -lmex -lmat -lm
+  MEX_LDFLAGS := -shared
+endif
+
+MEX_DEFS := -DMATLAB_MEX_FILE -DMATLAB_DEFAULT_RELEASE=R2018a -DMX_COMPAT_32=0
+MEX_INC  := -I$(MATLAB_ROOT)/extern/include
+# Bake the GCC C++ runtime into the mex so it doesn't depend on Homebrew's libstdc++ at load.
+# Only g++ supports these; clang (libc++) doesn't accept -static-libgcc.
+ifneq (,$(findstring g++,$(notdir $(CXX))))
+  STATIC_RT := -static-libstdc++ -static-libgcc
+else
+  STATIC_RT :=
+endif
+
+# ---------- targets ----------
+KDTREE_DIR := external/kdtree/toolbox
+HDRS       := $(KDTREE_DIR)/KDTree.h $(KDTREE_DIR)/MyHeaps.h
+SRCS       := $(wildcard $(KDTREE_DIR)/*.cpp)
+MEX        := $(SRCS:.cpp=.$(MEX_EXT))
+
+.PHONY: all clean info
+all: $(MEX) bridge
+
+$(KDTREE_DIR)/%.$(MEX_EXT): $(KDTREE_DIR)/%.cpp $(HDRS)
+	$(CXX) $(CXXFLAGS) $(MEX_DEFS) $(MEX_INC) $(MEX_LDFLAGS) $(STATIC_RT) \
+	  $< $(MATLAB_LIBS) -o $@
+
+info:
+	@echo "CXX         = $(CXX)"
+	@echo "MATLAB_ROOT = $(MATLAB_ROOT)"
+	@echo "MEX_EXT     = $(MEX_EXT)"
+	@echo "targets     = $(notdir $(MEX))"
+
+# ============================================================================
+#  Fortran bridge: call BOTH kd-trees (nbodyhpc + taiya) from Fortran, one .cpp.
+#    make -f Makefile_kdtree bridge        # build libkdtree.a + bridge/module objects
+#    make -f Makefile_kdtree bridge-clean
+#
+#  Single TU forces C++20 (nbodyhpc needs std::negation). taiya's headers are
+#  build-PATCHED into $(GEN) so the submodule stays pristine:
+#    - strip C++17-removed `throw(HeapEmptyException)` from MyHeaps.h
+#    - drop `#define MATLAB` / `#include "mex.h"` from KDTree.h (no MATLAB SDK needed)
+# ============================================================================
+FC          := $(shell ls /opt/homebrew/bin/gfortran-* 2>/dev/null | sort -V | tail -1)
+
+NB_DIR      := external/nbodyhpc/kdtree
+NB_LIB      := $(NB_DIR)/build/libkdtree.a
+NB_INC      := -I$(NB_DIR)/src/cpp/include -I$(NB_DIR)/third_party/misc -I$(NB_DIR)/third_party/random123/include
+GEN         := build/kdtree_gen
+# Only the C++ pieces here; the Fortran kdtree_mod/kdtree_mex are owned by the main
+# Makefile (so `make mex` compiles them with the project FFLAGS and the matching gfortran).
+BR_OBJ      := build/kdtree_cwrap.o
+
+.PHONY: bridge bridge-clean
+bridge: $(NB_LIB) $(BR_OBJ)
+	@echo "bridge built: $(BR_OBJ) (+ $(NB_LIB))"
+
+# patched, pristine-submodule copies of taiya's headers:
+#   MyHeaps.h -> strip C++17-removed `throw(HeapEmptyException)` so it builds at C++20.
+#   KDTree.h  -> copied verbatim (it uses mexErrMsgTxt/mexPrintf outside #ifdef MATLAB,
+#               so we keep mex.h and link MATLAB's libmex; the copy just needs to sit
+#               next to the patched MyHeaps.h for its quote-include to pick it up).
+$(GEN)/.patched: $(KDTREE_DIR)/KDTree.h $(KDTREE_DIR)/MyHeaps.h
+	@mkdir -p $(GEN)
+	sed 's/ throw(HeapEmptyException)//g' $(KDTREE_DIR)/MyHeaps.h > $(GEN)/MyHeaps.h
+	cp $(KDTREE_DIR)/KDTree.h $(GEN)/KDTree.h
+	@touch $@
+
+# nbodyhpc static lib (its own CMake: gcc default + SIMDe)
+$(NB_LIB):
+	cd $(NB_DIR) && cmake -B build -DBUILD_TESTING=OFF && cmake --build build --target kdtree -j
+
+build/kdtree_cwrap.o: src/kdtree_cwrap.cpp $(GEN)/.patched
+	@mkdir -p build
+	$(CXX) -std=gnu++20 -O2 -fPIC $(NB_INC) -I$(GEN) $(MEX_INC) -c $< -o $@
+
+build/kdtree_mod.o: src/kdtree_mod.f90
+	@mkdir -p build
+	$(FC) -O2 -fPIC -Jbuild -c $< -o $@
+
+bridge-clean:
+	rm -rf $(GEN) $(BR_OBJ) build/kdtree_mod.mod
+
+clean:
+	rm -f $(MEX)

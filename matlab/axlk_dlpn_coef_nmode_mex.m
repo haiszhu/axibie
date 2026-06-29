@@ -5,3 +5,12 @@ mex_id_ = 'axlk_dlpn_coef_nmode_r64(c i int64_t[x], c i dcomplex[x], c i dcomple
 [C1, C2, C3a, C3b, C4] = AxiStokes3D_mex(mex_id_, nt, tx, tnx, nq, sx, snx, M, C1, C2, C3a, C3b, C4, 1, nt, nt, 1, nq, nq, 1, nt, cm, nt, cm, nt, cm, nt, cm, nt, cm);
 C1=reshape(C1,nt,nq,Mp1); C2=reshape(C2,nt,nq,Mp1); C3a=reshape(C3a,nt,nq,Mp1); C3b=reshape(C3b,nt,nq,Mp1); C4=reshape(C4,nt,nq,Mp1);
 end
+
+% ============================================================
+% kdtree (axk_): build-once / query-ball, backend = 1 (KD_NBODY) | 2 (KD_TAIYA), required.
+%   axk_kdtree_build_mex(backend, pts, leafsize);   % pts is np-by-3 (rows = points, like tin.x')
+%   [idx, nout] = axk_kdtree_ball_mex(qpt, radius, nmax);   % idx: 1-based indices within radius
+%   axk_kdtree_free_mex();
+% ============================================================
+
+% build the tree (state held in the Fortran module until free)

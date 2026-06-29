@@ -273,6 +273,24 @@ Mat=zeros(nt,ns);
 # FORTRAN axt_lagrange_interp_r64(int[1] ns, double[ns] xs, int[1] nt, double[nt] xt, inout double[nt,ns] Mat);
 end
 
+% matrix-free 3D Stokes SLP velocity (replaces Sto3dSLPmat*[Fx;Fy;Fz]):
+% u(3,nt) at targets tx(3,nt) from sources sx(3,ns), weights sw(ns), force density f(ns,3)=[fx fy fz].
+@function u = axt_sto3dslp_eval_mex(tx, sx, sw, f)
+nt=size(tx,2); ns=size(sx,2);
+tx=double(tx); sx=double(sx); sw=double(sw(:)); f=double(f);
+u=zeros(3,nt);
+# FORTRAN axt_sto3dslp_eval_r64(int[1] nt, double[3,nt] tx, int[1] ns, double[3,ns] sx, double[ns] sw, double[ns,3] f, inout double[3,nt] u);
+end
+
+% matrix-free 3D Stokes DLP (stresslet) velocity: u(3,nt) at targets tx(3,nt) from
+% sources sx(3,ns) with normals snx(3,ns), weights sw(ns), force density f(ns,3)=[fx fy fz].
+@function u = axt_sto3ddlp_eval_mex(tx, sx, snx, sw, f)
+nt=size(tx,2); ns=size(sx,2);
+tx=double(tx); sx=double(sx); snx=double(snx); sw=double(sw(:)); f=double(f);
+u=zeros(3,nt);
+# FORTRAN axt_sto3ddlp_eval_r64(int[1] nt, double[3,nt] tx, int[1] ns, double[3,ns] sx, double[3,ns] snx, double[ns] sw, double[ns,3] f, inout double[3,nt] u);
+end
+
 % All-modes Q-side carrier vk=Q_{n-1/2}(chi), ve, n=0..M  (scalar chi)
 @function [vk, ve] = axmg_modal_green_all_far_mex(chi, M)
 chi=double(chi); M=double(M); Mp1=M+1;
@@ -319,4 +337,31 @@ nt=double(nt); nq=double(nq); M=double(M); tx=double(tx(:)); tnx=double(tnx(:));
 C1=zeros(nt,cm); C2=zeros(nt,cm); C3a=zeros(nt,cm); C3b=zeros(nt,cm); C4=zeros(nt,cm);
 # FORTRAN axlk_dlpn_coef_nmode_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] nq, dcomplex[nq] sx, dcomplex[nq] snx, int[1] M, inout double[nt,cm] C1, inout double[nt,cm] C2, inout double[nt,cm] C3a, inout double[nt,cm] C3b, inout double[nt,cm] C4);
 C1=reshape(C1,nt,nq,Mp1); C2=reshape(C2,nt,nq,Mp1); C3a=reshape(C3a,nt,nq,Mp1); C3b=reshape(C3b,nt,nq,Mp1); C4=reshape(C4,nt,nq,Mp1);
+end
+
+% ============================================================
+% kdtree (axk_): build-once / query-ball, backend = 1 (KD_NBODY) | 2 (KD_TAIYA), required.
+%   axk_kdtree_build_mex(backend, pts, leafsize);   % pts is np-by-3 (rows = points, like tin.x')
+%   [idx, nout] = axk_kdtree_ball_mex(qpt, radius, nmax);   % idx: 1-based indices within radius
+%   axk_kdtree_free_mex();
+% ============================================================
+
+% build the tree (state held in the Fortran module until free)
+@function axk_kdtree_build_mex(backend, pts, leafsize)
+backend=double(backend); leafsize=double(leafsize); pts=double(pts);
+np=size(pts,1); ptsT=pts.';   % 3-by-np col-major == interleaved xyz for Fortran pts(3,np)
+# FORTRAN axk_kdtree_build_r64(int[1] backend, int[1] np, double[3,np] ptsT, int[1] leafsize);
+end
+
+% all points within `radius` of qpt(3); returns 1-based indices sliced to the count found
+@function [idx, nout] = axk_kdtree_ball_mex(qpt, radius, nmax)
+qpt=double(qpt(:)); radius=double(radius); nmax=double(nmax);
+idx=zeros(nmax,1); nout=0;
+# FORTRAN axk_kdtree_ball_r64(double[3] qpt, double[1] radius, int[1] nmax, inout int[nmax] idx, inout int[1] nout);
+idx=idx(1:min(nout,nmax))+1;   % 0-based -> 1-based
+end
+
+% release the held tree
+@function axk_kdtree_free_mex()
+# FORTRAN axk_kdtree_free_r64();
 end

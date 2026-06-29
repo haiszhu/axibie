@@ -7,15 +7,41 @@ addpath('../../matlab');
 % Fully Fortran mex: solve via axss_{dlpn,slpn}_blockmat_nmode_mex, eval via axss_{dlp,slp}_blockmat_nmode_mex
 % (each call returns all modes 0..pmodes at once -> index (:,:,m+1) in the per-mode loop).
 
-y1=[0.30;0;0.20]; F1=[1;-0.7;0.5]; y2=[0.32*cos(pi/4);0.32*sin(pi/4);-0.25]; F2=[0.4;0.9;-0.6];
+% ---- geometry switch (mirror the laplace tests: sphere | ellipse | cshape) ----
+shape = 'cshape';                                   % 'sphere' | 'ellipse' | 'cshape'
+p=16;
+if strcmp(shape,'sphere')
+  Z=@(t) sin(t)-1i*cos(t); np_vals=2:16;
+  y1=[0.30;0;0.20]; y2=[0.32*cos(pi/4);0.32*sin(pi/4);-0.25]; gv=linspace(-1.9,1.9,16);
+elseif strcmp(shape,'ellipse')
+  a=2; Z=@(t) a^(-1/3)*sin(t)-1i*a^(2/3)*cos(t); np_vals=2:16;
+  y1=[0.20;0;0.40]; y2=[0.25*cos(pi/4);0.25*sin(pi/4);-0.50]; gv=linspace(-2.4,2.4,18);
+elseif strcmp(shape,'cshape')
+  lam=0.75; Z=@(t) -(1.5+cos(t)).*(-sin(lam*pi*sin(t))+1i*cos(lam*pi*sin(t))); np_vals=6:2:24;
+  y1=[0.70;0;-1.20]; y2=[1.30*cos(pi/4);1.30*sin(pi/4);0.20]; gv=linspace(-3,3,24);
+end
+F1=[1;-0.7;0.5]; F2=[0.4;0.9;-0.6];                 % interior Stokeslet forces (shape-independent)
 uex=@(X) stk(X,y1,F1)+stk(X,y2,F2);
-p=16; np_vals=2:16; errmax=nan(1,numel(np_vals));
+errmax=nan(1,numel(np_vals));
+% ---- exterior 3D target grid (once): outside the revolved meridian, >1e-2 off the surface ----
+mer=Z(linspace(0,pi,400).');
+[GX,GY,GZ]=meshgrid(gv,gv,gv); rhog=hypot(GX(:),GY(:)); zg=GZ(:); ztg=rhog+1i*zg;
+dmer=inf(size(ztg)); for jmer=1:numel(mer), dmer=min(dmer,abs(ztg-mer(jmer))); end
+ext3=(~inpolygon(rhog,zg,real(mer),imag(mer))) & (dmer>1e-2);
+P=[GX(ext3).';GY(ext3).';GZ(ext3).']; M3=size(P,2);
+rho3=hypot(P(1,:),P(2,:)); z3=P(3,:); phi3=atan2(P(2,:),P(1,:)); d3=dmer(ext3).';
+
+% ---- kdtree -----
+backend = 1;
+leafsize = 64;
+pts = [rho3(:), z3(:), zeros(numel(z3(:)),1)];
+axk_kdtree_build_mex(backend, pts, leafsize);
 
 for kk=1:numel(np_vals)
   np=np_vals(kk); pmodes=2*np; nmodes=2*pmodes+1; nang=nmodes; mu=1;
 
   % 1. geometry (sphere) + Neumann data: 3D traction sigma.n on Gamma -> per-mode (azimuthal FFT)
-  s=[]; s.p=p; s.Z=@(t) sin(t)-1i*cos(t); s.tpan=linspace(0,pi,np+1)'; s=quadr(s,[],'p','G');
+  s=[]; s.p=p; s.Z=Z; s.tpan=linspace(0,pi,np+1)'; s=quadr(s,[],'p','G');
   N=numel(s.x);
   s3d=axisym_to_3d_quadrature(real(s.x),imag(s.x),s.ws,nang);
   nr=real(s.nx).'; nz=imag(s.nx).';
@@ -37,29 +63,66 @@ for kk=1:numel(np_vals)
     tau{m+1}=A\rhs;
   end
 
-  % 3. 3d target eval: velocity (D+S)[tau]
-  ng3=16; gv=linspace(-1.9,1.9,ng3); [GX,GY,GZ]=meshgrid(gv,gv,gv);
-  rr=sqrt(GX(:).^2+GY(:).^2+GZ(:).^2); ext3=rr>1+1e-2;
-  P=[GX(ext3).';GY(ext3).';GZ(ext3).']; M3=size(P,2);
-  rho3=hypot(P(1,:),P(2,:)); z3=P(3,:); phi3=atan2(P(2,:),P(1,:));
-  t3=[]; t3.x=(rho3+1i*z3).';
-  ev=@(blk) blk(M3,t3.x(:),p,np,s.x(:),s.nx(:),s.ws(:),s.wxp(:),s.tpan(:),s.xlo(:),s.xhi(:),pmodes,1,0,mu,[]);
-  Dev=ev(@axss_dlp_blockmat_nmode_mex); Sev=ev(@axss_slp_blockmat_nmode_mex);
-  v3r=zeros(pmodes+1,M3); v3p=v3r; v3z=v3r;
+  % 3. near target
+  isnear = false(M3,1);
+  for k = 1:np
+    jj  = (k-1)*p + (1:p);
+    pk  = s.x(jj);
+    qr  = mean(real(pk));  qz = mean(imag(pk));
+    qradii = 1.75*sum(s.ws(jj));
+    idxcin = axk_kdtree_ball_mex([qr, qz, 0], qradii, M3);
+    isnear(idxcin) = true;
+  end
+
+  % 4. 3d target eval: velocity (D+S)[tau]
+  % targets P/rho3/z3/phi3/M3/d3 are precomputed once above (shape-dependent grid)
+  zt = (rho3+1i*z3).';
+  Mn = nnz(isnear);   Mf = nnz(~isnear);
+  ux3=zeros(1,M3); uy3=zeros(1,M3); uz3=zeros(1,M3);
+  % near
+  Aen = axss_dlp_blockmat_nmode_mex(Mn,zt(isnear),p,np,s.x(:),s.nx(:),s.ws(:),s.wxp(:),s.tpan(:),s.xlo(:),s.xhi(:),pmodes,1,0,mu,[]) ...
+      + axss_slp_blockmat_nmode_mex(Mn,zt(isnear),p,np,s.x(:),s.nx(:),s.ws(:),s.wxp(:),s.tpan(:),s.xlo(:),s.xhi(:),pmodes,1,0,mu,[]);
+  vr=zeros(pmodes+1,Mn); vp=vr; vz=vr;
   for m=0:pmodes
-    v=(Dev(:,:,m+1)+Sev(:,:,m+1))*tau{m+1};
-    v3r(m+1,:)=v(1:M3).'; v3p(m+1,:)=v(M3+1:2*M3).'; v3z(m+1,:)=v(2*M3+1:3*M3).';
+    v=Aen(:,:,m+1)*tau{m+1};
+    vr(m+1,:)=v(1:Mn).'; vp(m+1,:)=v(Mn+1:2*Mn).'; vz(m+1,:)=v(2*Mn+1:3*Mn).';
   end
-  ur3=real(v3r(1,:)); up3=real(v3p(1,:)); uz3=real(v3z(1,:));
+  phin = phi3(isnear);
+  urn=real(vr(1,:)); upn=real(vp(1,:)); uzn=real(vz(1,:));
   for m=1:pmodes
-    e=exp(1i*m*phi3);
-    ur3=ur3+2*real(e.*v3r(m+1,:)); up3=up3+2*real(e.*v3p(m+1,:)); uz3=uz3+2*real(e.*v3z(m+1,:));
+    e=exp(1i*m*phin);
+    urn=urn+2*real(e.*vr(m+1,:)); upn=upn+2*real(e.*vp(m+1,:)); uzn=uzn+2*real(e.*vz(m+1,:));
   end
-  ux3=ur3.*cos(phi3)-up3.*sin(phi3); uy3=ur3.*sin(phi3)+up3.*cos(phi3);
+  ux3(isnear)=urn.*cos(phin)-upn.*sin(phin);
+  uy3(isnear)=urn.*sin(phin)+upn.*cos(phin);
+  uz3(isnear)=uzn;
+  % far
+  SR = cell2mat(cellfun(@(c) c(1:N).',      tau,'uni',0));
+  SP = cell2mat(cellfun(@(c) c(N+1:2*N).',  tau,'uni',0));
+  SZ = cell2mat(cellfun(@(c) c(2*N+1:3*N).',tau,'uni',0));
+  Fx=zeros(N,nang); Fy=Fx; Fz=Fx; snx3=zeros(3,N*nang);
+  for i=1:nang
+    th=2*pi*(i-1)/nang;
+    tr=real(SR(1,:)); tp=real(SP(1,:)); tz=real(SZ(1,:));
+    for m=1:pmodes
+      e=exp(1i*m*th);
+      tr=tr+2*real(e*SR(m+1,:)); tp=tp+2*real(e*SP(m+1,:)); tz=tz+2*real(e*SZ(m+1,:));
+    end
+    Fx(:,i)=(tr*cos(th)-tp*sin(th)).';
+    Fy(:,i)=(tr*sin(th)+tp*cos(th)).';
+    Fz(:,i)=tz.';
+    cols=(i-1)*N+(1:N); snx3(1,cols)=nr*cos(th); snx3(2,cols)=nr*sin(th); snx3(3,cols)=nz;
+  end
+  % s3dn=s3d; s3dn.nx=snx3;
+  % ufar = (Sto3dDLPmat(struct('x',P(:,~isnear)),s3dn,mu)+Sto3dSLPmat(struct('x',P(:,~isnear)),s3d))*[Fx(:);Fy(:);Fz(:)];
+  % ux3(~isnear)=ufar(1:Mf).'; uy3(~isnear)=ufar(Mf+1:2*Mf).'; uz3(~isnear)=ufar(2*Mf+1:3*Mf).';
+  ufar = axt_sto3ddlp_eval_mex(P(:,~isnear), s3d.x, snx3, s3d.w, [Fx(:),Fy(:),Fz(:)]) ...
+       + axt_sto3dslp_eval_mex(P(:,~isnear), s3d.x, s3d.w, [Fx(:),Fy(:),Fz(:)]);
+  ux3(~isnear)=ufar(1,:); uy3(~isnear)=ufar(2,:); uz3(~isnear)=ufar(3,:);
 
   % 4. log10 error
   Uex3=uex(P); err3=vecnorm([ux3;uy3;uz3]-Uex3)/max(vecnorm(Uex3));
-  d3=rr(ext3).'-1; inb=d3<0.1; errmax(kk)=max(err3);
+  inb=d3<0.1; errmax(kk)=max(err3);
   fprintf('Stokes combined (D''+S'') all-modes Neumann BVP (Fortran mex): N=%d, np=%d, pmodes=%d, M3=%d\n',N,np,pmodes,M3);
   if any(inb), fprintf('  near band (d<0.1):  max err = %.3e  (%d pts)\n',max(err3(inb)),nnz(inb)); end
   fprintf('  far field (d>=0.1): max err = %.3e  (%d pts)\n',max(err3(~inb)),nnz(~inb));

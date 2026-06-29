@@ -1,0 +1,8 @@
+[submodule "external/nbodyhpc"]
+	path = external/nbodyhpc
+	url = https://github.com/haiszhu/nbodyhpc
+	ignore = untracked
+[submodule "external/kdtree"]
+	path = external/kdtree
+	url = git@github.com:taiya/kdtree.git
+	ignore = untracked
