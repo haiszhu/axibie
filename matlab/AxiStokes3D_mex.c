@@ -1099,12 +1099,17 @@ mxWrapReturnZDef_single   (mxWrapReturn_single_dcomplex, dcomplex,
 #define MWF77_axp_offdiagphysmat_r64 AXP_OFFDIAGPHYSMAT_R64
 #define MWF77_axt_gauss_r64 AXT_GAUSS_R64
 #define MWF77_axt_lagrange_interp_r64 AXT_LAGRANGE_INTERP_R64
+#define MWF77_axt_sto3dslp_eval_r64 AXT_STO3DSLP_EVAL_R64
+#define MWF77_axt_sto3ddlp_eval_r64 AXT_STO3DDLP_EVAL_R64
 #define MWF77_axmg_modal_green_all_far_r64 AXMG_MODAL_GREEN_ALL_FAR_R64
 #define MWF77_axsq_sdspecialquad_r64 AXSQ_SDSPECIALQUAD_R64
 #define MWF77_axlk_slp_coef_nmode_r64 AXLK_SLP_COEF_NMODE_R64
 #define MWF77_axlk_slpn_coef_nmode_r64 AXLK_SLPN_COEF_NMODE_R64
 #define MWF77_axlk_dlp_coef_nmode_r64 AXLK_DLP_COEF_NMODE_R64
 #define MWF77_axlk_dlpn_coef_nmode_r64 AXLK_DLPN_COEF_NMODE_R64
+#define MWF77_axk_kdtree_build_r64 AXK_KDTREE_BUILD_R64
+#define MWF77_axk_kdtree_ball_r64 AXK_KDTREE_BALL_R64
+#define MWF77_axk_kdtree_free_r64 AXK_KDTREE_FREE_R64
 #elif defined(MWF77_UNDERSCORE1)
 #define MWF77_axss_slp_blockmat_r64 axss_slp_blockmat_r64_
 #define MWF77_axss_slp_blockmat_nmode_r64 axss_slp_blockmat_nmode_r64_
@@ -1128,12 +1133,17 @@ mxWrapReturnZDef_single   (mxWrapReturn_single_dcomplex, dcomplex,
 #define MWF77_axp_offdiagphysmat_r64 axp_offdiagphysmat_r64_
 #define MWF77_axt_gauss_r64 axt_gauss_r64_
 #define MWF77_axt_lagrange_interp_r64 axt_lagrange_interp_r64_
+#define MWF77_axt_sto3dslp_eval_r64 axt_sto3dslp_eval_r64_
+#define MWF77_axt_sto3ddlp_eval_r64 axt_sto3ddlp_eval_r64_
 #define MWF77_axmg_modal_green_all_far_r64 axmg_modal_green_all_far_r64_
 #define MWF77_axsq_sdspecialquad_r64 axsq_sdspecialquad_r64_
 #define MWF77_axlk_slp_coef_nmode_r64 axlk_slp_coef_nmode_r64_
 #define MWF77_axlk_slpn_coef_nmode_r64 axlk_slpn_coef_nmode_r64_
 #define MWF77_axlk_dlp_coef_nmode_r64 axlk_dlp_coef_nmode_r64_
 #define MWF77_axlk_dlpn_coef_nmode_r64 axlk_dlpn_coef_nmode_r64_
+#define MWF77_axk_kdtree_build_r64 axk_kdtree_build_r64_
+#define MWF77_axk_kdtree_ball_r64 axk_kdtree_ball_r64_
+#define MWF77_axk_kdtree_free_r64 axk_kdtree_free_r64_
 #elif defined(MWF77_UNDERSCORE0)
 #define MWF77_axss_slp_blockmat_r64 axss_slp_blockmat_r64
 #define MWF77_axss_slp_blockmat_nmode_r64 axss_slp_blockmat_nmode_r64
@@ -1157,12 +1167,17 @@ mxWrapReturnZDef_single   (mxWrapReturn_single_dcomplex, dcomplex,
 #define MWF77_axp_offdiagphysmat_r64 axp_offdiagphysmat_r64
 #define MWF77_axt_gauss_r64 axt_gauss_r64
 #define MWF77_axt_lagrange_interp_r64 axt_lagrange_interp_r64
+#define MWF77_axt_sto3dslp_eval_r64 axt_sto3dslp_eval_r64
+#define MWF77_axt_sto3ddlp_eval_r64 axt_sto3ddlp_eval_r64
 #define MWF77_axmg_modal_green_all_far_r64 axmg_modal_green_all_far_r64
 #define MWF77_axsq_sdspecialquad_r64 axsq_sdspecialquad_r64
 #define MWF77_axlk_slp_coef_nmode_r64 axlk_slp_coef_nmode_r64
 #define MWF77_axlk_slpn_coef_nmode_r64 axlk_slpn_coef_nmode_r64
 #define MWF77_axlk_dlp_coef_nmode_r64 axlk_dlp_coef_nmode_r64
 #define MWF77_axlk_dlpn_coef_nmode_r64 axlk_dlpn_coef_nmode_r64
+#define MWF77_axk_kdtree_build_r64 axk_kdtree_build_r64
+#define MWF77_axk_kdtree_ball_r64 axk_kdtree_ball_r64
+#define MWF77_axk_kdtree_free_r64 axk_kdtree_free_r64
 #else /* f2c convention */
 #define MWF77_axss_slp_blockmat_r64 axss_slp_blockmat_r64_
 #define MWF77_axss_slp_blockmat_nmode_r64 axss_slp_blockmat_nmode_r64_
@@ -1186,12 +1201,17 @@ mxWrapReturnZDef_single   (mxWrapReturn_single_dcomplex, dcomplex,
 #define MWF77_axp_offdiagphysmat_r64 axp_offdiagphysmat_r64_
 #define MWF77_axt_gauss_r64 axt_gauss_r64_
 #define MWF77_axt_lagrange_interp_r64 axt_lagrange_interp_r64_
+#define MWF77_axt_sto3dslp_eval_r64 axt_sto3dslp_eval_r64_
+#define MWF77_axt_sto3ddlp_eval_r64 axt_sto3ddlp_eval_r64_
 #define MWF77_axmg_modal_green_all_far_r64 axmg_modal_green_all_far_r64_
 #define MWF77_axsq_sdspecialquad_r64 axsq_sdspecialquad_r64_
 #define MWF77_axlk_slp_coef_nmode_r64 axlk_slp_coef_nmode_r64_
 #define MWF77_axlk_slpn_coef_nmode_r64 axlk_slpn_coef_nmode_r64_
 #define MWF77_axlk_dlp_coef_nmode_r64 axlk_dlp_coef_nmode_r64_
 #define MWF77_axlk_dlpn_coef_nmode_r64 axlk_dlpn_coef_nmode_r64_
+#define MWF77_axk_kdtree_build_r64 axk_kdtree_build_r64_
+#define MWF77_axk_kdtree_ball_r64 axk_kdtree_ball_r64_
+#define MWF77_axk_kdtree_free_r64 axk_kdtree_free_r64_
 #endif
 
 #ifdef _cplusplus
@@ -1224,12 +1244,17 @@ MWF77_RETURN MWF77_axp_physmat_r64(int64_t*, int64_t*, int64_t*, int64_t*, int64
 MWF77_RETURN MWF77_axp_offdiagphysmat_r64(int64_t*, int64_t*, int64_t*, int64_t*, dcomplex*, double*, dcomplex*, double*, double*, double*, int64_t*, int64_t*, dcomplex*, dcomplex*, double*, dcomplex*, double*, dcomplex*, dcomplex*, double*, double*, int64_t*, int64_t*, int64_t*, double*, int64_t*, dcomplex*, double*, double*, dcomplex*, double*);
 MWF77_RETURN MWF77_axt_gauss_r64(int64_t*, double*, double*, double*);
 MWF77_RETURN MWF77_axt_lagrange_interp_r64(int64_t*, double*, int64_t*, double*, double*);
+MWF77_RETURN MWF77_axt_sto3dslp_eval_r64(int64_t*, double*, int64_t*, double*, double*, double*, double*);
+MWF77_RETURN MWF77_axt_sto3ddlp_eval_r64(int64_t*, double*, int64_t*, double*, double*, double*, double*, double*);
 MWF77_RETURN MWF77_axmg_modal_green_all_far_r64(double*, int64_t*, double*, double*);
 MWF77_RETURN MWF77_axsq_sdspecialquad_r64(int64_t*, dcomplex*, int64_t*, dcomplex*, dcomplex*, dcomplex*, dcomplex*, dcomplex*, int64_t*, double*, dcomplex*, double*, double*, double*, double*);
 MWF77_RETURN MWF77_axlk_slp_coef_nmode_r64(int64_t*, dcomplex*, int64_t*, dcomplex*, int64_t*, double*, double*);
 MWF77_RETURN MWF77_axlk_slpn_coef_nmode_r64(int64_t*, dcomplex*, dcomplex*, int64_t*, dcomplex*, int64_t*, double*, double*, double*);
 MWF77_RETURN MWF77_axlk_dlp_coef_nmode_r64(int64_t*, dcomplex*, int64_t*, dcomplex*, dcomplex*, int64_t*, double*, double*, double*);
 MWF77_RETURN MWF77_axlk_dlpn_coef_nmode_r64(int64_t*, dcomplex*, dcomplex*, int64_t*, dcomplex*, dcomplex*, int64_t*, double*, double*, double*, double*, double*);
+MWF77_RETURN MWF77_axk_kdtree_build_r64(int64_t*, int64_t*, double*, int64_t*);
+MWF77_RETURN MWF77_axk_kdtree_ball_r64(double*, double*, int64_t*, int64_t*, int64_t*);
+MWF77_RETURN MWF77_axk_kdtree_free_r64();
 
 #ifdef _cplusplus
 } /* end extern C */
@@ -7749,12 +7774,353 @@ mw_err_label:
         mexErrMsgTxt(mw_err_txt_);
 }
 
-/* ---- AxiStokes3D.mw: 280 ----
- * axmg_modal_green_all_far_r64(double[1] chi, int64_t[1] M, inout double[Mp1] vk, inout double[Mp1] ve);
+/* ---- AxiStokes3D.mw: 282 ----
+ * axt_sto3dslp_eval_r64(int64_t[1] nt, double[3, nt] tx, int64_t[1] ns, double[3, ns] sx, double[ns] sw, double[ns, 3] f, inout double[3, nt] u);
  */
-static const char* stubids23_ = "axmg_modal_green_all_far_r64(c i double[x], c i int64_t[x], c io double[x], c io double[x])";
+static const char* stubids23_ = "axt_sto3dslp_eval_r64(c i int64_t[x], c i double[xx], c i int64_t[x], c i double[xx], c i double[x], c i double[xx], c io double[xx])";
 
 void mexStub23(int nlhs, mxArray* plhs[],
+              int nrhs, const mxArray* prhs[])
+{
+    const char* mw_err_txt_ = 0;
+    int64_t*    in0_ =0; /* nt         */
+    double*     in1_ =0; /* tx         */
+    int64_t*    in2_ =0; /* ns         */
+    double*     in3_ =0; /* sx         */
+    double*     in4_ =0; /* sw         */
+    double*     in5_ =0; /* f          */
+    double*     in6_ =0; /* u          */
+    mwSize      dim7_;   /* 1          */
+    mwSize      dim8_;   /* 3          */
+    mwSize      dim9_;   /* nt         */
+    mwSize      dim10_;   /* 1          */
+    mwSize      dim11_;   /* 3          */
+    mwSize      dim12_;   /* ns         */
+    mwSize      dim13_;   /* ns         */
+    mwSize      dim14_;   /* ns         */
+    mwSize      dim15_;   /* 3          */
+    mwSize      dim16_;   /* 3          */
+    mwSize      dim17_;   /* nt         */
+
+    dim7_ = (mwSize) mxWrapGetScalar(prhs[7], &mw_err_txt_);
+    dim8_ = (mwSize) mxWrapGetScalar(prhs[8], &mw_err_txt_);
+    dim9_ = (mwSize) mxWrapGetScalar(prhs[9], &mw_err_txt_);
+    dim10_ = (mwSize) mxWrapGetScalar(prhs[10], &mw_err_txt_);
+    dim11_ = (mwSize) mxWrapGetScalar(prhs[11], &mw_err_txt_);
+    dim12_ = (mwSize) mxWrapGetScalar(prhs[12], &mw_err_txt_);
+    dim13_ = (mwSize) mxWrapGetScalar(prhs[13], &mw_err_txt_);
+    dim14_ = (mwSize) mxWrapGetScalar(prhs[14], &mw_err_txt_);
+    dim15_ = (mwSize) mxWrapGetScalar(prhs[15], &mw_err_txt_);
+    dim16_ = (mwSize) mxWrapGetScalar(prhs[16], &mw_err_txt_);
+    dim17_ = (mwSize) mxWrapGetScalar(prhs[17], &mw_err_txt_);
+
+    if (mxGetM(prhs[0])*mxGetN(prhs[0]) != dim7_) {
+        mw_err_txt_ = "Bad argument size: nt";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[1]) != dim8_ ||
+        mxGetN(prhs[1]) != dim9_) {
+        mw_err_txt_ = "Bad argument size: tx";
+        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[2])*mxGetN(prhs[2]) != dim10_) {
+        mw_err_txt_ = "Bad argument size: ns";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[3]) != dim11_ ||
+        mxGetN(prhs[3]) != dim12_) {
+        mw_err_txt_ = "Bad argument size: sx";
+        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[4])*mxGetN(prhs[4]) != dim13_) {
+        mw_err_txt_ = "Bad argument size: sw";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[5]) != dim14_ ||
+        mxGetN(prhs[5]) != dim15_) {
+        mw_err_txt_ = "Bad argument size: f";
+        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[6]) != dim16_ ||
+        mxGetN(prhs[6]) != dim17_) {
+        mw_err_txt_ = "Bad argument size: u";
+        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[0])*mxGetN(prhs[0]) != 0) {
+        in0_ = mxWrapGetArray_int64_t(prhs[0], &mw_err_txt_);
+        if (mw_err_txt_)
+            goto mw_err_label;
+    } else
+        in0_ = NULL;
+
+    if (mxGetM(prhs[1])*mxGetN(prhs[1]) != 0) {
+        if( mxGetClassID(prhs[1]) != mxDOUBLE_CLASS )
+            mw_err_txt_ = "Invalid array argument, mxDOUBLE_CLASS expected";
+        if (mw_err_txt_) goto mw_err_label;
+#if MX_HAS_INTERLEAVED_COMPLEX
+        in1_ = mxGetDoubles(prhs[1]);
+#else
+        in1_ = mxGetPr(prhs[1]);
+#endif
+    } else
+        in1_ = NULL;
+
+    if (mxGetM(prhs[2])*mxGetN(prhs[2]) != 0) {
+        in2_ = mxWrapGetArray_int64_t(prhs[2], &mw_err_txt_);
+        if (mw_err_txt_)
+            goto mw_err_label;
+    } else
+        in2_ = NULL;
+
+    if (mxGetM(prhs[3])*mxGetN(prhs[3]) != 0) {
+        if( mxGetClassID(prhs[3]) != mxDOUBLE_CLASS )
+            mw_err_txt_ = "Invalid array argument, mxDOUBLE_CLASS expected";
+        if (mw_err_txt_) goto mw_err_label;
+#if MX_HAS_INTERLEAVED_COMPLEX
+        in3_ = mxGetDoubles(prhs[3]);
+#else
+        in3_ = mxGetPr(prhs[3]);
+#endif
+    } else
+        in3_ = NULL;
+
+    if (mxGetM(prhs[4])*mxGetN(prhs[4]) != 0) {
+        if( mxGetClassID(prhs[4]) != mxDOUBLE_CLASS )
+            mw_err_txt_ = "Invalid array argument, mxDOUBLE_CLASS expected";
+        if (mw_err_txt_) goto mw_err_label;
+#if MX_HAS_INTERLEAVED_COMPLEX
+        in4_ = mxGetDoubles(prhs[4]);
+#else
+        in4_ = mxGetPr(prhs[4]);
+#endif
+    } else
+        in4_ = NULL;
+
+    if (mxGetM(prhs[5])*mxGetN(prhs[5]) != 0) {
+        if( mxGetClassID(prhs[5]) != mxDOUBLE_CLASS )
+            mw_err_txt_ = "Invalid array argument, mxDOUBLE_CLASS expected";
+        if (mw_err_txt_) goto mw_err_label;
+#if MX_HAS_INTERLEAVED_COMPLEX
+        in5_ = mxGetDoubles(prhs[5]);
+#else
+        in5_ = mxGetPr(prhs[5]);
+#endif
+    } else
+        in5_ = NULL;
+
+    if (mxGetM(prhs[6])*mxGetN(prhs[6]) != 0) {
+        in6_ = mxWrapGetArray_double(prhs[6], &mw_err_txt_);
+        if (mw_err_txt_)
+            goto mw_err_label;
+    } else
+        in6_ = NULL;
+
+    if (mexprofrecord_)
+        mexprofrecord_[23]++;
+    MWF77_axt_sto3dslp_eval_r64(in0_, in1_, in2_, in3_, in4_, in5_, in6_);
+    plhs[0] = mxCreateDoubleMatrix(dim16_, dim17_, mxREAL);
+    mxWrapCopy_double(plhs[0], in6_, dim16_*dim17_);
+
+mw_err_label:
+    if (in0_)  mxFree(in0_);
+    if (in2_)  mxFree(in2_);
+    if (in6_)  mxFree(in6_);
+    if (mw_err_txt_)
+        mexErrMsgTxt(mw_err_txt_);
+}
+
+/* ---- AxiStokes3D.mw: 291 ----
+ * axt_sto3ddlp_eval_r64(int64_t[1] nt, double[3, nt] tx, int64_t[1] ns, double[3, ns] sx, double[3, ns] snx, double[ns] sw, double[ns, 3] f, inout double[3, nt] u);
+ */
+static const char* stubids24_ = "axt_sto3ddlp_eval_r64(c i int64_t[x], c i double[xx], c i int64_t[x], c i double[xx], c i double[xx], c i double[x], c i double[xx], c io double[xx])";
+
+void mexStub24(int nlhs, mxArray* plhs[],
+              int nrhs, const mxArray* prhs[])
+{
+    const char* mw_err_txt_ = 0;
+    int64_t*    in0_ =0; /* nt         */
+    double*     in1_ =0; /* tx         */
+    int64_t*    in2_ =0; /* ns         */
+    double*     in3_ =0; /* sx         */
+    double*     in4_ =0; /* snx        */
+    double*     in5_ =0; /* sw         */
+    double*     in6_ =0; /* f          */
+    double*     in7_ =0; /* u          */
+    mwSize      dim8_;   /* 1          */
+    mwSize      dim9_;   /* 3          */
+    mwSize      dim10_;   /* nt         */
+    mwSize      dim11_;   /* 1          */
+    mwSize      dim12_;   /* 3          */
+    mwSize      dim13_;   /* ns         */
+    mwSize      dim14_;   /* 3          */
+    mwSize      dim15_;   /* ns         */
+    mwSize      dim16_;   /* ns         */
+    mwSize      dim17_;   /* ns         */
+    mwSize      dim18_;   /* 3          */
+    mwSize      dim19_;   /* 3          */
+    mwSize      dim20_;   /* nt         */
+
+    dim8_ = (mwSize) mxWrapGetScalar(prhs[8], &mw_err_txt_);
+    dim9_ = (mwSize) mxWrapGetScalar(prhs[9], &mw_err_txt_);
+    dim10_ = (mwSize) mxWrapGetScalar(prhs[10], &mw_err_txt_);
+    dim11_ = (mwSize) mxWrapGetScalar(prhs[11], &mw_err_txt_);
+    dim12_ = (mwSize) mxWrapGetScalar(prhs[12], &mw_err_txt_);
+    dim13_ = (mwSize) mxWrapGetScalar(prhs[13], &mw_err_txt_);
+    dim14_ = (mwSize) mxWrapGetScalar(prhs[14], &mw_err_txt_);
+    dim15_ = (mwSize) mxWrapGetScalar(prhs[15], &mw_err_txt_);
+    dim16_ = (mwSize) mxWrapGetScalar(prhs[16], &mw_err_txt_);
+    dim17_ = (mwSize) mxWrapGetScalar(prhs[17], &mw_err_txt_);
+    dim18_ = (mwSize) mxWrapGetScalar(prhs[18], &mw_err_txt_);
+    dim19_ = (mwSize) mxWrapGetScalar(prhs[19], &mw_err_txt_);
+    dim20_ = (mwSize) mxWrapGetScalar(prhs[20], &mw_err_txt_);
+
+    if (mxGetM(prhs[0])*mxGetN(prhs[0]) != dim8_) {
+        mw_err_txt_ = "Bad argument size: nt";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[1]) != dim9_ ||
+        mxGetN(prhs[1]) != dim10_) {
+        mw_err_txt_ = "Bad argument size: tx";
+        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[2])*mxGetN(prhs[2]) != dim11_) {
+        mw_err_txt_ = "Bad argument size: ns";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[3]) != dim12_ ||
+        mxGetN(prhs[3]) != dim13_) {
+        mw_err_txt_ = "Bad argument size: sx";
+        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[4]) != dim14_ ||
+        mxGetN(prhs[4]) != dim15_) {
+        mw_err_txt_ = "Bad argument size: snx";
+        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[5])*mxGetN(prhs[5]) != dim16_) {
+        mw_err_txt_ = "Bad argument size: sw";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[6]) != dim17_ ||
+        mxGetN(prhs[6]) != dim18_) {
+        mw_err_txt_ = "Bad argument size: f";
+        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[7]) != dim19_ ||
+        mxGetN(prhs[7]) != dim20_) {
+        mw_err_txt_ = "Bad argument size: u";
+        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[0])*mxGetN(prhs[0]) != 0) {
+        in0_ = mxWrapGetArray_int64_t(prhs[0], &mw_err_txt_);
+        if (mw_err_txt_)
+            goto mw_err_label;
+    } else
+        in0_ = NULL;
+
+    if (mxGetM(prhs[1])*mxGetN(prhs[1]) != 0) {
+        if( mxGetClassID(prhs[1]) != mxDOUBLE_CLASS )
+            mw_err_txt_ = "Invalid array argument, mxDOUBLE_CLASS expected";
+        if (mw_err_txt_) goto mw_err_label;
+#if MX_HAS_INTERLEAVED_COMPLEX
+        in1_ = mxGetDoubles(prhs[1]);
+#else
+        in1_ = mxGetPr(prhs[1]);
+#endif
+    } else
+        in1_ = NULL;
+
+    if (mxGetM(prhs[2])*mxGetN(prhs[2]) != 0) {
+        in2_ = mxWrapGetArray_int64_t(prhs[2], &mw_err_txt_);
+        if (mw_err_txt_)
+            goto mw_err_label;
+    } else
+        in2_ = NULL;
+
+    if (mxGetM(prhs[3])*mxGetN(prhs[3]) != 0) {
+        if( mxGetClassID(prhs[3]) != mxDOUBLE_CLASS )
+            mw_err_txt_ = "Invalid array argument, mxDOUBLE_CLASS expected";
+        if (mw_err_txt_) goto mw_err_label;
+#if MX_HAS_INTERLEAVED_COMPLEX
+        in3_ = mxGetDoubles(prhs[3]);
+#else
+        in3_ = mxGetPr(prhs[3]);
+#endif
+    } else
+        in3_ = NULL;
+
+    if (mxGetM(prhs[4])*mxGetN(prhs[4]) != 0) {
+        if( mxGetClassID(prhs[4]) != mxDOUBLE_CLASS )
+            mw_err_txt_ = "Invalid array argument, mxDOUBLE_CLASS expected";
+        if (mw_err_txt_) goto mw_err_label;
+#if MX_HAS_INTERLEAVED_COMPLEX
+        in4_ = mxGetDoubles(prhs[4]);
+#else
+        in4_ = mxGetPr(prhs[4]);
+#endif
+    } else
+        in4_ = NULL;
+
+    if (mxGetM(prhs[5])*mxGetN(prhs[5]) != 0) {
+        if( mxGetClassID(prhs[5]) != mxDOUBLE_CLASS )
+            mw_err_txt_ = "Invalid array argument, mxDOUBLE_CLASS expected";
+        if (mw_err_txt_) goto mw_err_label;
+#if MX_HAS_INTERLEAVED_COMPLEX
+        in5_ = mxGetDoubles(prhs[5]);
+#else
+        in5_ = mxGetPr(prhs[5]);
+#endif
+    } else
+        in5_ = NULL;
+
+    if (mxGetM(prhs[6])*mxGetN(prhs[6]) != 0) {
+        if( mxGetClassID(prhs[6]) != mxDOUBLE_CLASS )
+            mw_err_txt_ = "Invalid array argument, mxDOUBLE_CLASS expected";
+        if (mw_err_txt_) goto mw_err_label;
+#if MX_HAS_INTERLEAVED_COMPLEX
+        in6_ = mxGetDoubles(prhs[6]);
+#else
+        in6_ = mxGetPr(prhs[6]);
+#endif
+    } else
+        in6_ = NULL;
+
+    if (mxGetM(prhs[7])*mxGetN(prhs[7]) != 0) {
+        in7_ = mxWrapGetArray_double(prhs[7], &mw_err_txt_);
+        if (mw_err_txt_)
+            goto mw_err_label;
+    } else
+        in7_ = NULL;
+
+    if (mexprofrecord_)
+        mexprofrecord_[24]++;
+    MWF77_axt_sto3ddlp_eval_r64(in0_, in1_, in2_, in3_, in4_, in5_, in6_, in7_);
+    plhs[0] = mxCreateDoubleMatrix(dim19_, dim20_, mxREAL);
+    mxWrapCopy_double(plhs[0], in7_, dim19_*dim20_);
+
+mw_err_label:
+    if (in0_)  mxFree(in0_);
+    if (in2_)  mxFree(in2_);
+    if (in7_)  mxFree(in7_);
+    if (mw_err_txt_)
+        mexErrMsgTxt(mw_err_txt_);
+}
+
+/* ---- AxiStokes3D.mw: 298 ----
+ * axmg_modal_green_all_far_r64(double[1] chi, int64_t[1] M, inout double[Mp1] vk, inout double[Mp1] ve);
+ */
+static const char* stubids25_ = "axmg_modal_green_all_far_r64(c i double[x], c i int64_t[x], c io double[x], c io double[x])";
+
+void mexStub25(int nlhs, mxArray* plhs[],
               int nrhs, const mxArray* prhs[])
 {
     const char* mw_err_txt_ = 0;
@@ -7822,7 +8188,7 @@ void mexStub23(int nlhs, mxArray* plhs[],
         in3_ = NULL;
 
     if (mexprofrecord_)
-        mexprofrecord_[23]++;
+        mexprofrecord_[25]++;
     MWF77_axmg_modal_green_all_far_r64(in0_, in1_, in2_, in3_);
     plhs[0] = mxCreateDoubleMatrix(dim6_, 1, mxREAL);
     mxWrapCopy_double(plhs[0], in2_, dim6_);
@@ -7837,12 +8203,12 @@ mw_err_label:
         mexErrMsgTxt(mw_err_txt_);
 }
 
-/* ---- AxiStokes3D.mw: 289 ----
+/* ---- AxiStokes3D.mw: 307 ----
  * axsq_sdspecialquad_r64(int64_t[1] nt, dcomplex[nt] zt, int64_t[1] p, dcomplex[p] zsrc, dcomplex[p] nzsrc, dcomplex[p] wzp, dcomplex[1] za, dcomplex[1] zb, int64_t[1] iside, inout double[p, nt] As, inout dcomplex[p, nt] Ad, inout double[p, nt] A1, inout double[p, nt] A2, inout double[p, nt] A3, inout double[p, nt] A4);
  */
-static const char* stubids24_ = "axsq_sdspecialquad_r64(c i int64_t[x], c i dcomplex[x], c i int64_t[x], c i dcomplex[x], c i dcomplex[x], c i dcomplex[x], c i dcomplex[x], c i dcomplex[x], c i int64_t[x], c io double[xx], c io dcomplex[xx], c io double[xx], c io double[xx], c io double[xx], c io double[xx])";
+static const char* stubids26_ = "axsq_sdspecialquad_r64(c i int64_t[x], c i dcomplex[x], c i int64_t[x], c i dcomplex[x], c i dcomplex[x], c i dcomplex[x], c i dcomplex[x], c i dcomplex[x], c i int64_t[x], c io double[xx], c io dcomplex[xx], c io double[xx], c io double[xx], c io double[xx], c io double[xx])";
 
-void mexStub24(int nlhs, mxArray* plhs[],
+void mexStub26(int nlhs, mxArray* plhs[],
               int nrhs, const mxArray* prhs[])
 {
     const char* mw_err_txt_ = 0;
@@ -8104,7 +8470,7 @@ void mexStub24(int nlhs, mxArray* plhs[],
         in14_ = NULL;
 
     if (mexprofrecord_)
-        mexprofrecord_[24]++;
+        mexprofrecord_[26]++;
     MWF77_axsq_sdspecialquad_r64(in0_, in1_, in2_, in3_, in4_, in5_, in6_, in7_, in8_, in9_, in10_, in11_, in12_, in13_, in14_);
     plhs[0] = mxCreateDoubleMatrix(dim24_, dim25_, mxREAL);
     mxWrapCopy_double(plhs[0], in9_, dim24_*dim25_);
@@ -8139,12 +8505,12 @@ mw_err_label:
         mexErrMsgTxt(mw_err_txt_);
 }
 
-/* ---- AxiStokes3D.mw: 296 ----
+/* ---- AxiStokes3D.mw: 314 ----
  * axlk_slp_coef_nmode_r64(int64_t[1] nt, dcomplex[nt] tx, int64_t[1] nq, dcomplex[nq] sx, int64_t[1] M, inout double[nt, cm] C1, inout double[nt, cm] C2);
  */
-static const char* stubids25_ = "axlk_slp_coef_nmode_r64(c i int64_t[x], c i dcomplex[x], c i int64_t[x], c i dcomplex[x], c i int64_t[x], c io double[xx], c io double[xx])";
+static const char* stubids27_ = "axlk_slp_coef_nmode_r64(c i int64_t[x], c i dcomplex[x], c i int64_t[x], c i dcomplex[x], c i int64_t[x], c io double[xx], c io double[xx])";
 
-void mexStub25(int nlhs, mxArray* plhs[],
+void mexStub27(int nlhs, mxArray* plhs[],
               int nrhs, const mxArray* prhs[])
 {
     const char* mw_err_txt_ = 0;
@@ -8263,7 +8629,7 @@ void mexStub25(int nlhs, mxArray* plhs[],
         in6_ = NULL;
 
     if (mexprofrecord_)
-        mexprofrecord_[25]++;
+        mexprofrecord_[27]++;
     MWF77_axlk_slp_coef_nmode_r64(in0_, in1_, in2_, in3_, in4_, in5_, in6_);
     plhs[0] = mxCreateDoubleMatrix(dim12_, dim13_, mxREAL);
     mxWrapCopy_double(plhs[0], in5_, dim12_*dim13_);
@@ -8282,12 +8648,12 @@ mw_err_label:
         mexErrMsgTxt(mw_err_txt_);
 }
 
-/* ---- AxiStokes3D.mw: 304 ----
+/* ---- AxiStokes3D.mw: 322 ----
  * axlk_slpn_coef_nmode_r64(int64_t[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int64_t[1] nq, dcomplex[nq] sx, int64_t[1] M, inout double[nt, cm] C1, inout double[nt, cm] C2, inout double[nt, cm] C3);
  */
-static const char* stubids26_ = "axlk_slpn_coef_nmode_r64(c i int64_t[x], c i dcomplex[x], c i dcomplex[x], c i int64_t[x], c i dcomplex[x], c i int64_t[x], c io double[xx], c io double[xx], c io double[xx])";
+static const char* stubids28_ = "axlk_slpn_coef_nmode_r64(c i int64_t[x], c i dcomplex[x], c i dcomplex[x], c i int64_t[x], c i dcomplex[x], c i int64_t[x], c io double[xx], c io double[xx], c io double[xx])";
 
-void mexStub26(int nlhs, mxArray* plhs[],
+void mexStub28(int nlhs, mxArray* plhs[],
               int nrhs, const mxArray* prhs[])
 {
     const char* mw_err_txt_ = 0;
@@ -8441,7 +8807,7 @@ void mexStub26(int nlhs, mxArray* plhs[],
         in8_ = NULL;
 
     if (mexprofrecord_)
-        mexprofrecord_[26]++;
+        mexprofrecord_[28]++;
     MWF77_axlk_slpn_coef_nmode_r64(in0_, in1_, in2_, in3_, in4_, in5_, in6_, in7_, in8_);
     plhs[0] = mxCreateDoubleMatrix(dim15_, dim16_, mxREAL);
     mxWrapCopy_double(plhs[0], in6_, dim15_*dim16_);
@@ -8464,12 +8830,12 @@ mw_err_label:
         mexErrMsgTxt(mw_err_txt_);
 }
 
-/* ---- AxiStokes3D.mw: 312 ----
+/* ---- AxiStokes3D.mw: 330 ----
  * axlk_dlp_coef_nmode_r64(int64_t[1] nt, dcomplex[nt] tx, int64_t[1] nq, dcomplex[nq] sx, dcomplex[nq] snx, int64_t[1] M, inout double[nt, cm] C1, inout double[nt, cm] C2, inout double[nt, cm] C3);
  */
-static const char* stubids27_ = "axlk_dlp_coef_nmode_r64(c i int64_t[x], c i dcomplex[x], c i int64_t[x], c i dcomplex[x], c i dcomplex[x], c i int64_t[x], c io double[xx], c io double[xx], c io double[xx])";
+static const char* stubids29_ = "axlk_dlp_coef_nmode_r64(c i int64_t[x], c i dcomplex[x], c i int64_t[x], c i dcomplex[x], c i dcomplex[x], c i int64_t[x], c io double[xx], c io double[xx], c io double[xx])";
 
-void mexStub27(int nlhs, mxArray* plhs[],
+void mexStub29(int nlhs, mxArray* plhs[],
               int nrhs, const mxArray* prhs[])
 {
     const char* mw_err_txt_ = 0;
@@ -8623,7 +8989,7 @@ void mexStub27(int nlhs, mxArray* plhs[],
         in8_ = NULL;
 
     if (mexprofrecord_)
-        mexprofrecord_[27]++;
+        mexprofrecord_[29]++;
     MWF77_axlk_dlp_coef_nmode_r64(in0_, in1_, in2_, in3_, in4_, in5_, in6_, in7_, in8_);
     plhs[0] = mxCreateDoubleMatrix(dim15_, dim16_, mxREAL);
     mxWrapCopy_double(plhs[0], in6_, dim15_*dim16_);
@@ -8646,12 +9012,12 @@ mw_err_label:
         mexErrMsgTxt(mw_err_txt_);
 }
 
-/* ---- AxiStokes3D.mw: 320 ----
+/* ---- AxiStokes3D.mw: 338 ----
  * axlk_dlpn_coef_nmode_r64(int64_t[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int64_t[1] nq, dcomplex[nq] sx, dcomplex[nq] snx, int64_t[1] M, inout double[nt, cm] C1, inout double[nt, cm] C2, inout double[nt, cm] C3a, inout double[nt, cm] C3b, inout double[nt, cm] C4);
  */
-static const char* stubids28_ = "axlk_dlpn_coef_nmode_r64(c i int64_t[x], c i dcomplex[x], c i dcomplex[x], c i int64_t[x], c i dcomplex[x], c i dcomplex[x], c i int64_t[x], c io double[xx], c io double[xx], c io double[xx], c io double[xx], c io double[xx])";
+static const char* stubids30_ = "axlk_dlpn_coef_nmode_r64(c i int64_t[x], c i dcomplex[x], c i dcomplex[x], c i int64_t[x], c i dcomplex[x], c i dcomplex[x], c i int64_t[x], c io double[xx], c io double[xx], c io double[xx], c io double[xx], c io double[xx])";
 
-void mexStub28(int nlhs, mxArray* plhs[],
+void mexStub30(int nlhs, mxArray* plhs[],
               int nrhs, const mxArray* prhs[])
 {
     const char* mw_err_txt_ = 0;
@@ -8858,7 +9224,7 @@ void mexStub28(int nlhs, mxArray* plhs[],
         in11_ = NULL;
 
     if (mexprofrecord_)
-        mexprofrecord_[28]++;
+        mexprofrecord_[30]++;
     MWF77_axlk_dlpn_coef_nmode_r64(in0_, in1_, in2_, in3_, in4_, in5_, in6_, in7_, in8_, in9_, in10_, in11_);
     plhs[0] = mxCreateDoubleMatrix(dim19_, dim20_, mxREAL);
     mxWrapCopy_double(plhs[0], in7_, dim19_*dim20_);
@@ -8884,6 +9250,219 @@ mw_err_label:
     if (in9_)  mxFree(in9_);
     if (in10_)  mxFree(in10_);
     if (in11_)  mxFree(in11_);
+    if (mw_err_txt_)
+        mexErrMsgTxt(mw_err_txt_);
+}
+
+/* ---- AxiStokes3D.mw: 353 ----
+ * axk_kdtree_build_r64(int64_t[1] backend, int64_t[1] np, double[3, np] ptsT, int64_t[1] leafsize);
+ */
+static const char* stubids31_ = "axk_kdtree_build_r64(c i int64_t[x], c i int64_t[x], c i double[xx], c i int64_t[x])";
+
+void mexStub31(int nlhs, mxArray* plhs[],
+              int nrhs, const mxArray* prhs[])
+{
+    const char* mw_err_txt_ = 0;
+    int64_t*    in0_ =0; /* backend    */
+    int64_t*    in1_ =0; /* np         */
+    double*     in2_ =0; /* ptsT       */
+    int64_t*    in3_ =0; /* leafsize   */
+    mwSize      dim4_;   /* 1          */
+    mwSize      dim5_;   /* 1          */
+    mwSize      dim6_;   /* 3          */
+    mwSize      dim7_;   /* np         */
+    mwSize      dim8_;   /* 1          */
+
+    dim4_ = (mwSize) mxWrapGetScalar(prhs[4], &mw_err_txt_);
+    dim5_ = (mwSize) mxWrapGetScalar(prhs[5], &mw_err_txt_);
+    dim6_ = (mwSize) mxWrapGetScalar(prhs[6], &mw_err_txt_);
+    dim7_ = (mwSize) mxWrapGetScalar(prhs[7], &mw_err_txt_);
+    dim8_ = (mwSize) mxWrapGetScalar(prhs[8], &mw_err_txt_);
+
+    if (mxGetM(prhs[0])*mxGetN(prhs[0]) != dim4_) {
+        mw_err_txt_ = "Bad argument size: backend";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[1])*mxGetN(prhs[1]) != dim5_) {
+        mw_err_txt_ = "Bad argument size: np";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[2]) != dim6_ ||
+        mxGetN(prhs[2]) != dim7_) {
+        mw_err_txt_ = "Bad argument size: ptsT";
+        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[3])*mxGetN(prhs[3]) != dim8_) {
+        mw_err_txt_ = "Bad argument size: leafsize";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[0])*mxGetN(prhs[0]) != 0) {
+        in0_ = mxWrapGetArray_int64_t(prhs[0], &mw_err_txt_);
+        if (mw_err_txt_)
+            goto mw_err_label;
+    } else
+        in0_ = NULL;
+
+    if (mxGetM(prhs[1])*mxGetN(prhs[1]) != 0) {
+        in1_ = mxWrapGetArray_int64_t(prhs[1], &mw_err_txt_);
+        if (mw_err_txt_)
+            goto mw_err_label;
+    } else
+        in1_ = NULL;
+
+    if (mxGetM(prhs[2])*mxGetN(prhs[2]) != 0) {
+        if( mxGetClassID(prhs[2]) != mxDOUBLE_CLASS )
+            mw_err_txt_ = "Invalid array argument, mxDOUBLE_CLASS expected";
+        if (mw_err_txt_) goto mw_err_label;
+#if MX_HAS_INTERLEAVED_COMPLEX
+        in2_ = mxGetDoubles(prhs[2]);
+#else
+        in2_ = mxGetPr(prhs[2]);
+#endif
+    } else
+        in2_ = NULL;
+
+    if (mxGetM(prhs[3])*mxGetN(prhs[3]) != 0) {
+        in3_ = mxWrapGetArray_int64_t(prhs[3], &mw_err_txt_);
+        if (mw_err_txt_)
+            goto mw_err_label;
+    } else
+        in3_ = NULL;
+
+    if (mexprofrecord_)
+        mexprofrecord_[31]++;
+    MWF77_axk_kdtree_build_r64(in0_, in1_, in2_, in3_);
+
+mw_err_label:
+    if (in0_)  mxFree(in0_);
+    if (in1_)  mxFree(in1_);
+    if (in3_)  mxFree(in3_);
+    if (mw_err_txt_)
+        mexErrMsgTxt(mw_err_txt_);
+}
+
+/* ---- AxiStokes3D.mw: 360 ----
+ * axk_kdtree_ball_r64(double[3] qpt, double[1] radius, int64_t[1] nmax, inout int64_t[nmax] idx, inout int64_t[1] nout);
+ */
+static const char* stubids32_ = "axk_kdtree_ball_r64(c i double[x], c i double[x], c i int64_t[x], c io int64_t[x], c io int64_t[x])";
+
+void mexStub32(int nlhs, mxArray* plhs[],
+              int nrhs, const mxArray* prhs[])
+{
+    const char* mw_err_txt_ = 0;
+    double*     in0_ =0; /* qpt        */
+    double*     in1_ =0; /* radius     */
+    int64_t*    in2_ =0; /* nmax       */
+    int64_t*    in3_ =0; /* idx        */
+    int64_t*    in4_ =0; /* nout       */
+    mwSize      dim5_;   /* 3          */
+    mwSize      dim6_;   /* 1          */
+    mwSize      dim7_;   /* 1          */
+    mwSize      dim8_;   /* nmax       */
+    mwSize      dim9_;   /* 1          */
+
+    dim5_ = (mwSize) mxWrapGetScalar(prhs[5], &mw_err_txt_);
+    dim6_ = (mwSize) mxWrapGetScalar(prhs[6], &mw_err_txt_);
+    dim7_ = (mwSize) mxWrapGetScalar(prhs[7], &mw_err_txt_);
+    dim8_ = (mwSize) mxWrapGetScalar(prhs[8], &mw_err_txt_);
+    dim9_ = (mwSize) mxWrapGetScalar(prhs[9], &mw_err_txt_);
+
+    if (mxGetM(prhs[0])*mxGetN(prhs[0]) != dim5_) {
+        mw_err_txt_ = "Bad argument size: qpt";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[1])*mxGetN(prhs[1]) != dim6_) {
+        mw_err_txt_ = "Bad argument size: radius";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[2])*mxGetN(prhs[2]) != dim7_) {
+        mw_err_txt_ = "Bad argument size: nmax";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[3])*mxGetN(prhs[3]) != dim8_) {
+        mw_err_txt_ = "Bad argument size: idx";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[4])*mxGetN(prhs[4]) != dim9_) {
+        mw_err_txt_ = "Bad argument size: nout";        goto mw_err_label;
+    }
+
+    if (mxGetM(prhs[0])*mxGetN(prhs[0]) != 0) {
+        if( mxGetClassID(prhs[0]) != mxDOUBLE_CLASS )
+            mw_err_txt_ = "Invalid array argument, mxDOUBLE_CLASS expected";
+        if (mw_err_txt_) goto mw_err_label;
+#if MX_HAS_INTERLEAVED_COMPLEX
+        in0_ = mxGetDoubles(prhs[0]);
+#else
+        in0_ = mxGetPr(prhs[0]);
+#endif
+    } else
+        in0_ = NULL;
+
+    if (mxGetM(prhs[1])*mxGetN(prhs[1]) != 0) {
+        if( mxGetClassID(prhs[1]) != mxDOUBLE_CLASS )
+            mw_err_txt_ = "Invalid array argument, mxDOUBLE_CLASS expected";
+        if (mw_err_txt_) goto mw_err_label;
+#if MX_HAS_INTERLEAVED_COMPLEX
+        in1_ = mxGetDoubles(prhs[1]);
+#else
+        in1_ = mxGetPr(prhs[1]);
+#endif
+    } else
+        in1_ = NULL;
+
+    if (mxGetM(prhs[2])*mxGetN(prhs[2]) != 0) {
+        in2_ = mxWrapGetArray_int64_t(prhs[2], &mw_err_txt_);
+        if (mw_err_txt_)
+            goto mw_err_label;
+    } else
+        in2_ = NULL;
+
+    if (mxGetM(prhs[3])*mxGetN(prhs[3]) != 0) {
+        in3_ = mxWrapGetArray_int64_t(prhs[3], &mw_err_txt_);
+        if (mw_err_txt_)
+            goto mw_err_label;
+    } else
+        in3_ = NULL;
+
+    if (mxGetM(prhs[4])*mxGetN(prhs[4]) != 0) {
+        in4_ = mxWrapGetArray_int64_t(prhs[4], &mw_err_txt_);
+        if (mw_err_txt_)
+            goto mw_err_label;
+    } else
+        in4_ = NULL;
+
+    if (mexprofrecord_)
+        mexprofrecord_[32]++;
+    MWF77_axk_kdtree_ball_r64(in0_, in1_, in2_, in3_, in4_);
+    plhs[0] = mxCreateDoubleMatrix(dim8_, 1, mxREAL);
+    mxWrapCopy_int64_t(plhs[0], in3_, dim8_);
+    plhs[1] = mxCreateDoubleMatrix(dim9_, 1, mxREAL);
+    mxWrapCopy_int64_t(plhs[1], in4_, dim9_);
+
+mw_err_label:
+    if (in2_)  mxFree(in2_);
+    if (in3_)  mxFree(in3_);
+    if (in4_)  mxFree(in4_);
+    if (mw_err_txt_)
+        mexErrMsgTxt(mw_err_txt_);
+}
+
+/* ---- AxiStokes3D.mw: 366 ----
+ * axk_kdtree_free_r64();
+ */
+static const char* stubids33_ = "axk_kdtree_free_r64()";
+
+void mexStub33(int nlhs, mxArray* plhs[],
+              int nrhs, const mxArray* prhs[])
+{
+    const char* mw_err_txt_ = 0;
+    if (mexprofrecord_)
+        mexprofrecord_[33]++;
+    MWF77_axk_kdtree_free_r64();
+
+mw_err_label:
     if (mw_err_txt_)
         mexErrMsgTxt(mw_err_txt_);
 }
@@ -8959,12 +9538,22 @@ void mexFunction(int nlhs, mxArray* plhs[],
         mexStub27(nlhs,plhs, nrhs-1,prhs+1);
     else if (strcmp(id, stubids28_) == 0)
         mexStub28(nlhs,plhs, nrhs-1,prhs+1);
+    else if (strcmp(id, stubids29_) == 0)
+        mexStub29(nlhs,plhs, nrhs-1,prhs+1);
+    else if (strcmp(id, stubids30_) == 0)
+        mexStub30(nlhs,plhs, nrhs-1,prhs+1);
+    else if (strcmp(id, stubids31_) == 0)
+        mexStub31(nlhs,plhs, nrhs-1,prhs+1);
+    else if (strcmp(id, stubids32_) == 0)
+        mexStub32(nlhs,plhs, nrhs-1,prhs+1);
+    else if (strcmp(id, stubids33_) == 0)
+        mexStub33(nlhs,plhs, nrhs-1,prhs+1);
     else if (strcmp(id, "*profile on*") == 0) {
         if (!mexprofrecord_) {
-            mexprofrecord_ = (int*) malloc(29 * sizeof(int));
+            mexprofrecord_ = (int*) malloc(34 * sizeof(int));
             mexLock();
         }
-        memset(mexprofrecord_, 0, 29 * sizeof(int));
+        memset(mexprofrecord_, 0, 34 * sizeof(int));
     } else if (strcmp(id, "*profile off*") == 0) {
         if (mexprofrecord_) {
             free(mexprofrecord_);
@@ -8996,12 +9585,17 @@ void mexFunction(int nlhs, mxArray* plhs[],
         mexPrintf("%d calls to AxiStokes3D.mw:252\n", mexprofrecord_[20]);
         mexPrintf("%d calls to AxiStokes3D.mw:266\n", mexprofrecord_[21]);
         mexPrintf("%d calls to AxiStokes3D.mw:273\n", mexprofrecord_[22]);
-        mexPrintf("%d calls to AxiStokes3D.mw:280\n", mexprofrecord_[23]);
-        mexPrintf("%d calls to AxiStokes3D.mw:289\n", mexprofrecord_[24]);
-        mexPrintf("%d calls to AxiStokes3D.mw:296\n", mexprofrecord_[25]);
-        mexPrintf("%d calls to AxiStokes3D.mw:304\n", mexprofrecord_[26]);
-        mexPrintf("%d calls to AxiStokes3D.mw:312\n", mexprofrecord_[27]);
-        mexPrintf("%d calls to AxiStokes3D.mw:320\n", mexprofrecord_[28]);
+        mexPrintf("%d calls to AxiStokes3D.mw:282\n", mexprofrecord_[23]);
+        mexPrintf("%d calls to AxiStokes3D.mw:291\n", mexprofrecord_[24]);
+        mexPrintf("%d calls to AxiStokes3D.mw:298\n", mexprofrecord_[25]);
+        mexPrintf("%d calls to AxiStokes3D.mw:307\n", mexprofrecord_[26]);
+        mexPrintf("%d calls to AxiStokes3D.mw:314\n", mexprofrecord_[27]);
+        mexPrintf("%d calls to AxiStokes3D.mw:322\n", mexprofrecord_[28]);
+        mexPrintf("%d calls to AxiStokes3D.mw:330\n", mexprofrecord_[29]);
+        mexPrintf("%d calls to AxiStokes3D.mw:338\n", mexprofrecord_[30]);
+        mexPrintf("%d calls to AxiStokes3D.mw:353\n", mexprofrecord_[31]);
+        mexPrintf("%d calls to AxiStokes3D.mw:360\n", mexprofrecord_[32]);
+        mexPrintf("%d calls to AxiStokes3D.mw:366\n", mexprofrecord_[33]);
     } else if (strcmp(id, "*profile log*") == 0) {
         FILE* logfp;
         if (nrhs != 2 || mxGetString(prhs[1], id, sizeof(id)) != 0)
@@ -9033,12 +9627,17 @@ void mexFunction(int nlhs, mxArray* plhs[],
         fprintf(logfp, "%d calls to AxiStokes3D.mw:252\n", mexprofrecord_[20]);
         fprintf(logfp, "%d calls to AxiStokes3D.mw:266\n", mexprofrecord_[21]);
         fprintf(logfp, "%d calls to AxiStokes3D.mw:273\n", mexprofrecord_[22]);
-        fprintf(logfp, "%d calls to AxiStokes3D.mw:280\n", mexprofrecord_[23]);
-        fprintf(logfp, "%d calls to AxiStokes3D.mw:289\n", mexprofrecord_[24]);
-        fprintf(logfp, "%d calls to AxiStokes3D.mw:296\n", mexprofrecord_[25]);
-        fprintf(logfp, "%d calls to AxiStokes3D.mw:304\n", mexprofrecord_[26]);
-        fprintf(logfp, "%d calls to AxiStokes3D.mw:312\n", mexprofrecord_[27]);
-        fprintf(logfp, "%d calls to AxiStokes3D.mw:320\n", mexprofrecord_[28]);
+        fprintf(logfp, "%d calls to AxiStokes3D.mw:282\n", mexprofrecord_[23]);
+        fprintf(logfp, "%d calls to AxiStokes3D.mw:291\n", mexprofrecord_[24]);
+        fprintf(logfp, "%d calls to AxiStokes3D.mw:298\n", mexprofrecord_[25]);
+        fprintf(logfp, "%d calls to AxiStokes3D.mw:307\n", mexprofrecord_[26]);
+        fprintf(logfp, "%d calls to AxiStokes3D.mw:314\n", mexprofrecord_[27]);
+        fprintf(logfp, "%d calls to AxiStokes3D.mw:322\n", mexprofrecord_[28]);
+        fprintf(logfp, "%d calls to AxiStokes3D.mw:330\n", mexprofrecord_[29]);
+        fprintf(logfp, "%d calls to AxiStokes3D.mw:338\n", mexprofrecord_[30]);
+        fprintf(logfp, "%d calls to AxiStokes3D.mw:353\n", mexprofrecord_[31]);
+        fprintf(logfp, "%d calls to AxiStokes3D.mw:360\n", mexprofrecord_[32]);
+        fprintf(logfp, "%d calls to AxiStokes3D.mw:366\n", mexprofrecord_[33]);
         fclose(logfp);
     } else
         mexErrMsgTxt("Unknown identifier");

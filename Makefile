@@ -7,8 +7,8 @@
 PROJECT := AxiStokes3D
 PP      := ax
 
-FC := gfortran-15
-CC := gcc-15
+FC := $(shell ls /opt/homebrew/bin/gfortran-* 2>/dev/null | sort -V | tail -1)
+CC := $(shell ls /opt/homebrew/bin/gcc-[0-9]* 2>/dev/null | sort -V | tail -1)
 AR := ar
 MW := $(HOME)/mwrap/mwrap
 MWFLAGS := -c99complex -i8 -mex
@@ -67,7 +67,10 @@ PUBLIC_SOURCES := $(SRC_DIR)/axistokes3d_mod.f90 \
                   $(SRC_DIR)/axissymlap_specialquad_mod.f90 \
                   $(SRC_DIR)/axissymlap_specialquad_mex.f90 \
                   $(SRC_DIR)/axissym_physop_mod.f90 \
-                  $(SRC_DIR)/axissym_physop_mex.f90
+                  $(SRC_DIR)/axissym_physop_mex.f90 \
+                  $(SRC_DIR)/axissym_nmodehelpers_mex.f90 \
+                  $(SRC_DIR)/kdtree_mod.f90 \
+                  $(SRC_DIR)/kdtree_mex.f90
 PUBLIC_OBJECTS := $(patsubst $(SRC_DIR)/%.f90,$(BLD_DIR)/%.o,$(PUBLIC_SOURCES))
 
 PUB_LIB     := $(BLD_DIR)/lib$(PROJECT).a
@@ -104,6 +107,8 @@ $(BLD_DIR)/axissymlap_specialquad_mod.o: $(BLD_DIR)/axilaplace3d_mod.o $(BLD_DIR
 $(BLD_DIR)/axissymlap_specialquad_mex.o: $(BLD_DIR)/axissymlap_specialquad_mod.o
 $(BLD_DIR)/axissym_physop_mod.o: $(BLD_DIR)/axistokes3d_mod.o $(BLD_DIR)/axissymlap_specialquad_mod.o $(BLD_DIR)/axissymstok_specialquad_mod.o
 $(BLD_DIR)/axissym_physop_mex.o: $(BLD_DIR)/axissym_physop_mod.o
+$(BLD_DIR)/axissym_nmodehelpers_mex.o: $(BLD_DIR)/axistokes3d_mod.o $(BLD_DIR)/axisym_modal_green_mod.o $(BLD_DIR)/specialquad_mod.o
+$(BLD_DIR)/kdtree_mex.o: $(BLD_DIR)/kdtree_mod.o
 
 $(PUB_LIB): $(PUBLIC_OBJECTS)
 	$(AR) rcs $@ $^
@@ -113,6 +118,14 @@ $(MEX_C): $(MW_SRC) | $(BLD_DIR)
 	cd $(MATLAB_DIR) && $(MW) $(MWFLAGS) $(PROJECT)_mex -c $(PROJECT)_mex.c $(PROJECT).mw
 	perl -pi -e 's/_{2,}/_/g' $(MEX_C)
 
+# kdtree C++ bridge + nbodyhpc static lib (built by `make -f Makefile_kdtree`).
+KDTREE_CWRAP := $(BLD_DIR)/kdtree_cwrap.o
+KDTREE_LIB   := external/nbodyhpc/kdtree/build/libkdtree.a
+# Static gcc C++/runtime archives linked POSITIONALLY (the mex's -undefined dynamic_lookup
+# otherwise defers std::thread::join etc. to MATLAB's flat namespace and load fails).
+STDCXX_A     := $(shell $(CC) -print-file-name=libstdc++.a)
+LIBGCC_A     := $(shell $(CC) -print-file-name=libgcc.a)
+
 # Links the prebuilt support lib (must exist in $(BLD_DIR)); make errors loudly if it is missing.
 $(MEX_OUT): $(PUB_LIB) $(SEC_LIB) $(SEC_LIB_LAP) $(MEX_C)
 	$(CC) $(MEX_LDFLAGS) -fPIC \
@@ -120,8 +133,9 @@ $(MEX_OUT): $(PUB_LIB) $(SEC_LIB) $(SEC_LIB_LAP) $(MEX_C)
 	  -I$(MATLAB_ROOT)/extern/include \
 	  $(MEX_C) \
 	  -L$(BLD_DIR) -l$(PROJECT) -laxissymstok_kernelsplit -laxissymlap_kernelsplit \
+	  $(KDTREE_CWRAP) $(KDTREE_LIB) \
 	  $(MATLAB_LIBS) $(LAPACK_LIBS) \
-	  -lgfortran -lm \
+	  $(STDCXX_A) $(LIBGCC_A) -lpthread -lgfortran -lm \
 	  -o $(MEX_OUT)
 
 clean:

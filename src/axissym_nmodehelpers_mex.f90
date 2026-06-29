@@ -39,3 +39,21 @@ subroutine axsq_sdspecialquad_r64(nt, zt, p, zsrc, nzsrc, wzp, za, zb, iside, As
   complex(8), intent(inout) :: Ad(p,nt)
   call sq(nt, zt, p, zsrc, nzsrc, wzp, za, zb, iside, As, Ad, A1, A2, A3, A4)
 end subroutine axsq_sdspecialquad_r64
+
+subroutine axt_sto3dslp_eval_r64(nt, tx, ns, sx, sw, f, u)
+  use axistokes3d_mod, only: ev => sto3dslp_eval_r64
+  implicit none
+  integer(8), intent(in)    :: nt, ns
+  real(8),    intent(in)    :: tx(3,nt), sx(3,ns), sw(ns), f(ns,3)
+  real(8),    intent(inout) :: u(3,nt)
+  call ev(nt, tx, ns, sx, sw, f, u)
+end subroutine axt_sto3dslp_eval_r64
+
+subroutine axt_sto3ddlp_eval_r64(nt, tx, ns, sx, snx, sw, f, u)
+  use axistokes3d_mod, only: ev => sto3ddlp_eval_r64
+  implicit none
+  integer(8), intent(in)    :: nt, ns
+  real(8),    intent(in)    :: tx(3,nt), sx(3,ns), snx(3,ns), sw(ns), f(ns,3)
+  real(8),    intent(inout) :: u(3,nt)
+  call ev(nt, tx, ns, sx, snx, sw, f, u)
+end subroutine axt_sto3ddlp_eval_r64

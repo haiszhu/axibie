@@ -178,4 +178,72 @@ contains
     end do
   end subroutine lagrange_interp_r64
 
+  ! ------------------------------------------------------------------
+  ! sto3dslp_eval  (matrix-free 3D Stokes single-layer velocity)
+  ! Same kernel as Sto3dSLPmat (utils/Sto3dSLPmat.m), without forming the
+  ! dense 3M x 3N matrix:
+  !   u_i(x) = 1/(8 pi) sum_s w_s [ f_i/r + (f.d) d_i / r^3 ],  d = x - y_s.
+  ! tx(3,nt) targets, sx(3,ns) sources, sw(ns) weights, f(ns,3)=[fx fy fz] density,
+  ! u(3,nt) velocity.  (mu = 1, matching Sto3dSLPmat.)
+  ! ------------------------------------------------------------------
+  subroutine sto3dslp_eval_r64(nt, tx, ns, sx, sw, f, u)
+    integer(8), intent(in)    :: nt, ns
+    real(r64),  intent(in)    :: tx(3,nt), sx(3,ns), sw(ns), f(ns,3)
+    real(r64),  intent(inout) :: u(3,nt)
+    integer(8) :: it, is
+    real(r64)  :: d1, d2, d3, r2, ir, ir3, fd, w, ux, uy, uz, c
+
+    c = 1.0_r64 / (8.0_r64 * acos(-1.0_r64))
+    !$omp parallel do default(shared) schedule(static) &
+    !$omp   private(it, is, d1, d2, d3, r2, ir, ir3, fd, w, ux, uy, uz)
+    do it = 1, nt
+      ux = 0.0_r64; uy = 0.0_r64; uz = 0.0_r64
+      do is = 1, ns
+        d1 = tx(1,it) - sx(1,is); d2 = tx(2,it) - sx(2,is); d3 = tx(3,it) - sx(3,is)
+        r2 = d1*d1 + d2*d2 + d3*d3
+        ir = 1.0_r64 / sqrt(r2);  ir3 = ir / r2
+        w  = sw(is)
+        fd = d1*f(is,1) + d2*f(is,2) + d3*f(is,3)
+        ux = ux + w*(f(is,1)*ir + fd*d1*ir3)
+        uy = uy + w*(f(is,2)*ir + fd*d2*ir3)
+        uz = uz + w*(f(is,3)*ir + fd*d3*ir3)
+      end do
+      u(1,it) = c*ux;  u(2,it) = c*uy;  u(3,it) = c*uz
+    end do
+    !$omp end parallel do
+  end subroutine sto3dslp_eval_r64
+
+  ! ------------------------------------------------------------------
+  ! sto3ddlp_eval  (matrix-free 3D Stokes double-layer / stresslet velocity)
+  ! Same kernel as Sto3dDLPmat (utils/Sto3dDLPmat.m), no dense matrix:
+  !   u_i(x) = 3/(4 pi) sum_s w_s (d.n)(d.f) d_i / r^5,  d = x - y_s, n = source normal.
+  ! tx(3,nt) targets, sx(3,ns) sources, snx(3,ns) source normals, sw(ns) weights,
+  ! f(ns,3)=[fx fy fz] density, u(3,nt) velocity.  (mu-independent.)
+  ! ------------------------------------------------------------------
+  subroutine sto3ddlp_eval_r64(nt, tx, ns, sx, snx, sw, f, u)
+    integer(8), intent(in)    :: nt, ns
+    real(r64),  intent(in)    :: tx(3,nt), sx(3,ns), snx(3,ns), sw(ns), f(ns,3)
+    real(r64),  intent(inout) :: u(3,nt)
+    integer(8) :: it, is
+    real(r64)  :: d1, d2, d3, r2, ir, ir5, dn, df, g, ux, uy, uz, c
+
+    c = 3.0_r64 / (4.0_r64 * acos(-1.0_r64))
+    !$omp parallel do default(shared) schedule(static) &
+    !$omp   private(it, is, d1, d2, d3, r2, ir, ir5, dn, df, g, ux, uy, uz)
+    do it = 1, nt
+      ux = 0.0_r64; uy = 0.0_r64; uz = 0.0_r64
+      do is = 1, ns
+        d1 = tx(1,it) - sx(1,is); d2 = tx(2,it) - sx(2,is); d3 = tx(3,it) - sx(3,is)
+        r2 = d1*d1 + d2*d2 + d3*d3
+        ir = 1.0_r64 / sqrt(r2);  ir5 = ir / (r2*r2)
+        dn = d1*snx(1,is) + d2*snx(2,is) + d3*snx(3,is)
+        df = d1*f(is,1) + d2*f(is,2) + d3*f(is,3)
+        g  = sw(is) * dn * df * ir5
+        ux = ux + g*d1;  uy = uy + g*d2;  uz = uz + g*d3
+      end do
+      u(1,it) = c*ux;  u(2,it) = c*uy;  u(3,it) = c*uz
+    end do
+    !$omp end parallel do
+  end subroutine sto3ddlp_eval_r64
+
 end module axistokes3d_mod
