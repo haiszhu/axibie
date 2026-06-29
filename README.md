@@ -16,6 +16,8 @@ Prerequisites: MATLAB (with its MEX compiler SDK), a recent `gfortran` (the [`Ma
 Build the Fortran compute layer and the MEX gateway from the repository root:
 
 ```sh
+git submodule update --init --recursive
+make -f Makefile_kdtree
 make mex
 ```
 
@@ -53,23 +55,23 @@ u = A * ones(numel(s.x),1);                        % single-layer potential of a
 
 1. The Pozrikidis
 
-2. Guo, Hanliang, Hai Zhu, Ruowen Liu, Marc Bonnet, and Shravan Veerapaneni. 2021. “Optimal Slip Velocities of Micro-Swimmers with Arbitrary Axisymmetric Shapes.” *Journal of Fluid Mechanics* 910.
+2. Hanliang Guo, Hai Zhu, Ruowen Liu, Marc Bonnet, and Shravan Veerapaneni. 2021. “Optimal Slip Velocities of Micro-Swimmers with Arbitrary Axisymmetric Shapes.” *Journal of Fluid Mechanics* 910.
 
-3. Hao, Sijia, Alex H Barnett, Per-Gunnar Martinsson, and P Young. 2014. “High-Order Accurate Methods for Nyström Discretization of Integral Equations on Smooth Curves in the Plane.” *Advances in Computational Mathematics* 40 (1): 245–72.
+3. Sijia Hao, Alex H Barnett, Per-Gunnar Martinsson, and P Young. 2014. “High-Order Accurate Methods for Nyström Discretization of Integral Equations on Smooth Curves in the Plane.” *Advances in Computational Mathematics* 40 (1): 245–72.
 
-4. Helsing, Johan, and Anders Karlsson. 2014. “An Explicit Kernel-Split Panel-Based Nyström Scheme for Integral Equations on Axially Symmetric Surfaces.” *Journal of Computational Physics* 272: 686–703.
+4. Johan Helsing, and Anders Karlsson. 2014. “An Explicit Kernel-Split Panel-Based Nyström Scheme for Integral Equations on Axially Symmetric Surfaces.” *Journal of Computational Physics* 272: 686–703.
 
-5. Veerapaneni, Shravan K, Denis Gueyffier, George Biros, and Denis Zorin. 2009. “A Numerical Method for Simulating the Dynamics of 3d Axisymmetric Vesicles Suspended in Viscous Flows.” *Journal of Computational Physics* 228 (19): 7233–49.
+5. Shravan Veerapaneni, Denis Gueyffier, George Biros, and Denis Zorin. 2009. “A Numerical Method for Simulating the Dynamics of 3d Axisymmetric Vesicles Suspended in Viscous Flows.” *Journal of Computational Physics* 228 (19): 7233–49.
 
-6. Wu, Bowei, Hai Zhu, Alex Barnett, and Shravan Veerapaneni. 2020. “Solution of Stokes Flow in Complex Nonsmooth 2d Geometries via a Linear-Scaling High-Order Adaptive Integral Equation Scheme.” *Journal of Computational Physics* 410: 109361.
+6. Bowei Wu, Hai Zhu, Alex Barnett, and Shravan Veerapaneni. 2020. “Solution of Stokes Flow in Complex Nonsmooth 2d Geometries via a Linear-Scaling High-Order Adaptive Integral Equation Scheme.” *Journal of Computational Physics* 410: 109361.
+
+7. James Garritano, Yuval Kluger, Vladimir Rokhlin, Kirill Serkh. 2022. "On the efficient evaluation of the azimuthal Fourier components of the Green's function for Helmholtz's equation in cylindrical coordinates." *Journal of Computational Physics* 471: 111585.
 
 
 ## To do list
 
-* (generic DLPn to go, 0th mode done) Implement high order Fourier modes to enable nonsymmetric potential and flow simulation
-* (do we need this, yes) Implement multiple partciles + possible interaction with confined geometry
+* (need to debug DLPn) Implement high order Fourier modes to enable nonsymmetric potential and flow simulation
+* (prototype done, need cleanup) Implement multiple partciles + possible interaction with confined geometry
 * (what is SLPnn, DLPnn? Azz in Dspecialquad for 2D?) Laplace case is a by-product, why not
-* (do we need this, yes) Accelerate via FMM?
-* (later) Is complexification & kernel-split doable here? worth investigation... 
-* (is LLM by itself capable to derive this? Not yet; With literature/kernel-split skills? Not yet; With 0th mode code/tex as reference, then derive generic? Still not yet; With step by step inline instruction & human involved debugging? yes... eww... so still useful at this point) exact split formula stay private for now 
-
+* (prototype done) Accelerate via FMM3D/PVFMM?
+* (need to learn) 3d flow visualization
