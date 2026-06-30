@@ -70,8 +70,9 @@ u = A * ones(numel(s.x),1);                        % single-layer potential of a
 
 ## To do list
 
-* (need to debug DLPn) Implement high order Fourier modes to enable nonsymmetric potential and flow simulation
-* (prototype done, need cleanup) Implement multiple partciles + possible interaction with confined geometry
+* (debug DLPn done, need more testing) Implement high order Fourier modes to enable nonsymmetric potential and flow simulation
+* (prototype done, need cleanup and memory footprint reduction) Implement multiple partciles + possible interaction with confined geometry
 * (what is SLPnn, DLPnn? Azz in Dspecialquad for 2D?) Laplace case is a by-product, why not
-* (prototype done) Accelerate via FMM3D/PVFMM?
+* (prototype done) Accelerate via FMM3D/PVFMM/DMK
 * (need to learn) 3d flow visualization
+* (do we need variation in centerline/not axisymmetric any more) CSBQ
