@@ -273,6 +273,23 @@ Mat=zeros(nt,ns);
 # FORTRAN axt_lagrange_interp_r64(int[1] ns, double[ns] xs, int[1] nt, double[nt] xt, inout double[nt,ns] Mat);
 end
 
+% Real matrix × complex vector in Fortran arithmetic: y(m) = A(m,n) * x(n).
+% Matches the block builders' arithmetic (-ffp-contract=off, no FMA), unlike MATLAB BLAS.
+@function y = axt_rmatcz_mex(m, n, A, x)
+m=double(m); n=double(n); A=double(A); x=double(x(:));
+y=complex(zeros(m,1));
+# FORTRAN axt_rmatcz_r64(int[1] m, int[1] n, double[m,n] A, dcomplex[n] x, inout dcomplex[m] y);
+end
+
+% Evaluate Lagrange interpolant yout(j)=sum_k Mat(j,k)*yc(k) in Fortran arithmetic.
+% xs(ns) nodes, yc(ns) complex values at nodes, xt(nt) eval points → yout(nt) complex.
+% matmul done in Fortran so arithmetic matches the block builders' internal ec2=matmul(IPe2,xc).
+@function yout = axt_lagrange_eval_mex(ns, xs, yc, nt, xt)
+ns=double(ns); nt=double(nt); xs=double(xs(:)); xt=double(xt(:)); yc=double(yc(:));
+yout=complex(zeros(nt,1));
+# FORTRAN axt_lagrange_eval_r64(int[1] ns, double[ns] xs, dcomplex[ns] yc, int[1] nt, double[nt] xt, inout dcomplex[nt] yout);
+end
+
 % matrix-free 3D Stokes SLP velocity (replaces Sto3dSLPmat*[Fx;Fy;Fz]):
 % u(3,nt) at targets tx(3,nt) from sources sx(3,ns), weights sw(ns), force density f(ns,3)=[fx fy fz].
 @function u = axt_sto3dslp_eval_mex(tx, sx, sw, f)
@@ -337,6 +354,66 @@ nt=double(nt); nq=double(nq); M=double(M); tx=double(tx(:)); tnx=double(tnx(:));
 C1=zeros(nt,cm); C2=zeros(nt,cm); C3a=zeros(nt,cm); C3b=zeros(nt,cm); C4=zeros(nt,cm);
 # FORTRAN axlk_dlpn_coef_nmode_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] nq, dcomplex[nq] sx, dcomplex[nq] snx, int[1] M, inout double[nt,cm] C1, inout double[nt,cm] C2, inout double[nt,cm] C3a, inout double[nt,cm] C3b, inout double[nt,cm] C4);
 C1=reshape(C1,nt,nq,Mp1); C2=reshape(C2,nt,nq,Mp1); C3a=reshape(C3a,nt,nq,Mp1); C3b=reshape(C3b,nt,nq,Mp1); C4=reshape(C4,nt,nq,Mp1);
+end
+
+% ============================================================
+% Stokes kernel-split coef mexes (axsk_): n-mode close-eval split coefficients.
+% Same compiled split as the Fortran builders, for utils/axss_*_blockmat_nmode.m.
+% Outputs are dcomplex, shape (3*nt, 3*nq, M+1).
+% ============================================================
+
+% SLP n-mode split coefs: C1(log), C2(smooth), C3(Cauchy)
+@function [C1, C2, C3] = axsk_slp_coef_nmode_mex(nt, tx, nq, sx, M, mu)
+nt=double(nt); nq=double(nq); M=double(M); mu=double(mu); tx=double(tx(:)); sx=double(sx(:));
+Mp1=M+1; nt3=3*nt; c3m=3*nq*Mp1;
+C1=complex(zeros(nt3,c3m)); C2=complex(zeros(nt3,c3m)); C3=complex(zeros(nt3,c3m));
+# FORTRAN axsk_slp_coef_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] nq, dcomplex[nq] sx, int[1] M, double[1] mu, inout dcomplex[nt3,c3m] C1, inout dcomplex[nt3,c3m] C2, inout dcomplex[nt3,c3m] C3);
+C1=reshape(C1,nt3,3*nq,Mp1); C2=reshape(C2,nt3,3*nq,Mp1); C3=reshape(C3,nt3,3*nq,Mp1);
+end
+
+% SLPn n-mode split coefs (target normal tnx): C1,C2,C3,C4
+@function [C1, C2, C3, C4] = axsk_slpn_coef_nmode_mex(nt, tx, tnx, nq, sx, M, mu)
+nt=double(nt); nq=double(nq); M=double(M); mu=double(mu); tx=double(tx(:)); tnx=double(tnx(:)); sx=double(sx(:));
+Mp1=M+1; nt3=3*nt; c3m=3*nq*Mp1;
+C1=complex(zeros(nt3,c3m)); C2=complex(zeros(nt3,c3m)); C3=complex(zeros(nt3,c3m)); C4=complex(zeros(nt3,c3m));
+# FORTRAN axsk_slpn_coef_nmode_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] nq, dcomplex[nq] sx, int[1] M, double[1] mu, inout dcomplex[nt3,c3m] C1, inout dcomplex[nt3,c3m] C2, inout dcomplex[nt3,c3m] C3, inout dcomplex[nt3,c3m] C4);
+C1=reshape(C1,nt3,3*nq,Mp1); C2=reshape(C2,nt3,3*nq,Mp1); C3=reshape(C3,nt3,3*nq,Mp1); C4=reshape(C4,nt3,3*nq,Mp1);
+end
+
+% DLP n-mode split coefs (source normal snx): C1,C2,C3,C4
+@function [C1, C2, C3, C4] = axsk_dlp_coef_nmode_mex(nt, tx, nq, sx, snx, M, mu)
+nt=double(nt); nq=double(nq); M=double(M); mu=double(mu); tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:));
+Mp1=M+1; nt3=3*nt; c3m=3*nq*Mp1;
+C1=complex(zeros(nt3,c3m)); C2=complex(zeros(nt3,c3m)); C3=complex(zeros(nt3,c3m)); C4=complex(zeros(nt3,c3m));
+# FORTRAN axsk_dlp_coef_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] nq, dcomplex[nq] sx, dcomplex[nq] snx, int[1] M, double[1] mu, inout dcomplex[nt3,c3m] C1, inout dcomplex[nt3,c3m] C2, inout dcomplex[nt3,c3m] C3, inout dcomplex[nt3,c3m] C4);
+C1=reshape(C1,nt3,3*nq,Mp1); C2=reshape(C2,nt3,3*nq,Mp1); C3=reshape(C3,nt3,3*nq,Mp1); C4=reshape(C4,nt3,3*nq,Mp1);
+end
+
+% DLPn n-mode split coefs (both normals): C1,C2,C3,C4,C5
+@function [C1, C2, C3, C4, C5] = axsk_dlpn_coef_nmode_mex(nt, tx, tnx, nq, sx, snx, M, mu)
+nt=double(nt); nq=double(nq); M=double(M); mu=double(mu); tx=double(tx(:)); tnx=double(tnx(:)); sx=double(sx(:)); snx=double(snx(:));
+Mp1=M+1; nt3=3*nt; c3m=3*nq*Mp1;
+C1=complex(zeros(nt3,c3m)); C2=complex(zeros(nt3,c3m)); C3=complex(zeros(nt3,c3m)); C4=complex(zeros(nt3,c3m)); C5=complex(zeros(nt3,c3m));
+# FORTRAN axsk_dlpn_coef_nmode_r64(int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] nq, dcomplex[nq] sx, dcomplex[nq] snx, int[1] M, double[1] mu, inout dcomplex[nt3,c3m] C1, inout dcomplex[nt3,c3m] C2, inout dcomplex[nt3,c3m] C3, inout dcomplex[nt3,c3m] C4, inout dcomplex[nt3,c3m] C5);
+C1=reshape(C1,nt3,3*nq,Mp1); C2=reshape(C2,nt3,3*nq,Mp1); C3=reshape(C3,nt3,3*nq,Mp1); C4=reshape(C4,nt3,3*nq,Mp1); C5=reshape(C5,nt3,3*nq,Mp1);
+end
+
+% SLP pressure n-mode split coefs (scalar target): C1(log), C2(smooth), C3(Cauchy); rows nt, no mu
+@function [C1, C2, C3] = axsk_slppres_coef_nmode_mex(nt, tx, nq, sx, M)
+nt=double(nt); nq=double(nq); M=double(M); tx=double(tx(:)); sx=double(sx(:));
+Mp1=M+1; c3m=3*nq*Mp1;
+C1=complex(zeros(nt,c3m)); C2=complex(zeros(nt,c3m)); C3=complex(zeros(nt,c3m));
+# FORTRAN axsk_slppres_coef_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] nq, dcomplex[nq] sx, int[1] M, inout dcomplex[nt,c3m] C1, inout dcomplex[nt,c3m] C2, inout dcomplex[nt,c3m] C3);
+C1=reshape(C1,nt,3*nq,Mp1); C2=reshape(C2,nt,3*nq,Mp1); C3=reshape(C3,nt,3*nq,Mp1);
+end
+
+% DLP (stresslet) pressure n-mode split coefs (scalar target): C1(log),C2(smooth),C3(Cauchy),C4(deriv-Cauchy); rows nt, no mu, uses source normal snx
+@function [C1, C2, C3, C4] = axsk_dlppres_coef_nmode_mex(nt, tx, nq, sx, snx, M)
+nt=double(nt); nq=double(nq); M=double(M); tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:));
+Mp1=M+1; c3m=3*nq*Mp1;
+C1=complex(zeros(nt,c3m)); C2=complex(zeros(nt,c3m)); C3=complex(zeros(nt,c3m)); C4=complex(zeros(nt,c3m));
+# FORTRAN axsk_dlppres_coef_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] nq, dcomplex[nq] sx, dcomplex[nq] snx, int[1] M, inout dcomplex[nt,c3m] C1, inout dcomplex[nt,c3m] C2, inout dcomplex[nt,c3m] C3, inout dcomplex[nt,c3m] C4);
+C1=reshape(C1,nt,3*nq,Mp1); C2=reshape(C2,nt,3*nq,Mp1); C3=reshape(C3,nt,3*nq,Mp1); C4=reshape(C4,nt,3*nq,Mp1);
 end
 
 % ============================================================

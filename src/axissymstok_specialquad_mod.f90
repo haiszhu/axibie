@@ -905,7 +905,7 @@ contains
     complex(r64), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
     real(r64),    intent(in)    :: sws(p*np), tpan(np+1)
     complex(r64), intent(inout) :: A(nt, 3*np*p, M+1)
-    integer(8), parameter :: Ksub = 4
+    integer(8), parameter :: Ksub = 2
     integer(8) :: q, nso, i, j, jp, iq, ia, l, b, c, pq, qo, ne, npa, nk, nkc, jj, cols, md
     real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, vk, ve, Fn, An, dFn
     real(r64)  :: vka(0:M), vea(0:M), Fna(0:M), Ana(0:M), dFna(0:M), vkmat(p,0:M), vemat(p,0:M)
@@ -962,7 +962,7 @@ contains
       do jp = 1, p; sumwso = sumwso + sws(cols+jp); end do
       nk = 0
       do i = 1, nt
-        ikq(i) = (abs(tx(i)-sxlo(pq)) + abs(tx(i)-sxhi(pq))) < 1.85_r64*sumwso
+        ikq(i) = (abs(tx(i)-sxlo(pq)) + abs(tx(i)-sxhi(pq))) < 2.0_r64*sumwso
         if (ikq(i)) then; nk = nk + 1; nidx(nk) = i; znear(nk) = tx(i); end if
       end do
       ! ---- outer far: inlined carrier coefficients PK*VK + PE*VE on the coarse original nodes ----
@@ -1016,7 +1016,7 @@ contains
         sumwsc = sum(wsp)
         nkc = 0
         do i = 1, nk
-          ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 1.5_r64*sumwsc
+          ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 2.5_r64*sumwsc
           if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
         end do
         ! ---- inner near: (private) pressure split coef -> Slog/Dval assembly, fold q->p_sub (IPqc) ----
@@ -1094,7 +1094,7 @@ contains
     complex(r64), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
     real(r64),    intent(in)    :: sws(p*np), tpan(np+1)
     complex(r64), intent(inout) :: A(nt, 3*np*p, M+1)
-    integer(8), parameter :: Ksub = 4, nv = 160
+    integer(8), parameter :: Ksub = 2, nv = 160
     integer(8) :: q, nso, i, j, jp, iq, ia, l, b, c, pq, qo, ne, npa, nk, nkc, jj, cols, md, iv
     real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti
     real(r64)  :: st1, stN, tm, denom, rlo, rhi, tgi, split, nrs, nzs, cv, sv, r2v, ndr, rcv, fac, vphi
@@ -1151,7 +1151,7 @@ contains
       do jp = 1, p; sumwso = sumwso + sws(cols+jp); end do
       nk = 0
       do i = 1, nt
-        ikq(i) = (abs(tx(i)-sxlo(pq)) + abs(tx(i)-sxhi(pq))) < 1.85_r64*sumwso
+        ikq(i) = (abs(tx(i)-sxlo(pq)) + abs(tx(i)-sxhi(pq))) < 2.0_r64*sumwso
         if (ikq(i)) then; nk = nk + 1; nidx(nk) = i; znear(nk) = tx(i); end if
       end do
       ! ---- outer far: carrier-free azimuthal ring integral on the coarse original nodes ----
@@ -1207,7 +1207,7 @@ contains
         sumwsc = sum(wsp)
         nkc = 0
         do i = 1, nk
-          ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 1.5_r64*sumwsc
+          ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 2.5_r64*sumwsc
           if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
         end do
         ! ---- inner near: (private) stresslet-pressure split coef -> 4-bucket assembly, fold q->p_sub ----

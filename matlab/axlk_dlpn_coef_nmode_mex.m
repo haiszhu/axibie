@@ -7,10 +7,9 @@ C1=reshape(C1,nt,nq,Mp1); C2=reshape(C2,nt,nq,Mp1); C3a=reshape(C3a,nt,nq,Mp1); 
 end
 
 % ============================================================
-% kdtree (axk_): build-once / query-ball, backend = 1 (KD_NBODY) | 2 (KD_TAIYA), required.
-%   axk_kdtree_build_mex(backend, pts, leafsize);   % pts is np-by-3 (rows = points, like tin.x')
-%   [idx, nout] = axk_kdtree_ball_mex(qpt, radius, nmax);   % idx: 1-based indices within radius
-%   axk_kdtree_free_mex();
+% Stokes kernel-split coef mexes (axsk_): n-mode close-eval split coefficients.
+% Same compiled split as the Fortran builders, for utils/axss_*_blockmat_nmode.m.
+% Outputs are dcomplex, shape (3*nt, 3*nq, M+1).
 % ============================================================
 
-% build the tree (state held in the Fortran module until free)
+% SLP n-mode split coefs: C1(log), C2(smooth), C3(Cauchy)
