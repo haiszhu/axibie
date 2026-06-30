@@ -1,4 +1,7 @@
 clearvars; format short e;
+addpath('/Users/hzhu/Documents/Github/axibie/utils');
+addpath('../../utils');
+addpath('../../matlab');
 
 % MULTI-particle Stokes SLP Dirichlet BVP via the Fortran operators, CLOSE-CORRECTION architecture,
 % over an h-refinement of the panel count np (p fixed). Stokes sibling of

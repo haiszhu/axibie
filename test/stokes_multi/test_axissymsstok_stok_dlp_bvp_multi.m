@@ -1,4 +1,7 @@
 clearvars; format short e;
+addpath('/Users/hzhu/Documents/Github/axibie/utils');
+addpath('../../utils');
+addpath('../../matlab');
 
 % MULTI-particle Stokes DLP exterior-Dirichlet BVP via the Fortran operators, CLOSE-CORRECTION,
 % h-refinement of np (p fixed). COMBINED-FIELD representation (D+S)[sigma] (mirror omega3

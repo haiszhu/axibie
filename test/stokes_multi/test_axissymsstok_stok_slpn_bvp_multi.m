@@ -1,4 +1,7 @@
 clearvars; format short e;
+addpath('/Users/hzhu/Documents/Github/axibie/utils');
+addpath('../../utils');
+addpath('../../matlab');
 
 % MULTI-particle Stokes SLPn (S') exterior-Neumann BVP via the Fortran operators, CLOSE-CORRECTION,
 % h-refinement of np (p fixed). Mirror omega3 test_StoSLPnAxiPhysMat0: pure single-layer traction

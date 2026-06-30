@@ -61,4 +61,15 @@ source normals; the field is evaluated as the `(S+D)` velocity.
 |---|---|
 | ![DLPn convergence](imgs/axissymsstok_stok_dlpn_multi_convergence.png) | ![DLPn 3D error](imgs/axissymsstok_stok_dlpn_multi_error.png) |
 
-**Bug somewhere (under investigation).** 
+This DLPn test uses particle separation **1.8** (the other Stokes/Laplace layers use 1.6). At 1.8 it
+**converges to the close-eval floor**: `~6e-3` (`np=2`) → `~3–5e-9` (`np=7,8`), like the other layers
+(corroborated by the fully-mex `multi0` solve at 1.8, rel `7.67e-9`). The hypersingular `D'` is the only
+gap-sensitive layer: at the **1.6** separation (gap `~0.05`) the `D'` close-eval under-resolves and the
+field stalls at `~1e-5`, whereas DLP/SLPn converge fine at 1.6.
+
+**Open (figure out later):** *why* 1.6 fails for `D'` specifically is not yet confirmed — most likely
+azimuthal/meridian resolution at the `~0.05` tight gap (the same stall appears for both the mex and the
+MATLAB blocks), but this still needs to be pinned down.
+
+**Fixed in d74e81b (DLP pres) 5335760 (SLP pres):** related to both SLPn and DLPn, then turns out to be related to SLP pres and DLP pres
+SLP pres kernel split formula was wrong, DLP pres was mostly parameter tweak...

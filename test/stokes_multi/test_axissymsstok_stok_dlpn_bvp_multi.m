@@ -1,4 +1,7 @@
 clearvars; format short e;
+addpath('/Users/hzhu/Documents/Github/axibie/utils');
+addpath('/Users/hzhu/Documents/Github/AxiStokes3D/utils');
+addpath('/Users/hzhu/Documents/Github/AxiStokes3D/matlab');
 
 % MULTI-particle Stokes DLPn (D') exterior-Neumann BVP via the Fortran operators, CLOSE-CORRECTION,
 % h-refinement of np (p fixed). Mirror omega3 test_StoDLPnAxiPhysMat0: COMBINED-FIELD representation
@@ -121,16 +124,17 @@ for kk=1:numel(np_vals)
   clim([-16 -4]); axis equal; view(35,18); grid on; colormap('jet');
   xlabel('x'); ylabel('y'); zlabel('z'); title('2-particle Stokes DLPn (S''+D'', close-correction): 3D velocity error (last refinement)');
 end
+figure(2),ylim([-1 3])
+
+% cmp = getPyPlot_cMap('rainbow', [], [], '"/Users/hzhu/.pyenv/versions/3.11.13/bin/python"');
+% colormap(cmp)
 
 % --- convergence plot: max field error vs panel count ---
 figure(1),clf; semilogy(np_vals,errmax,'o-k'); grid on; xlabel('n_p'); ylabel('max field err');
 title('multi-particle Stokes DLPn (S''+D'', close-correction): h-refinement, p=16, M=2 n_p');
 
-% cmp = getPyPlot_cMap('rainbow', [], [], '"/Users/hzhu/.pyenv/versions/3.11.13/bin/python"');
-% colormap(cmp)
-% 
-% exportgraphics(figure(1),'axissymsstok_stok_dlpn_multi_convergence.png','Resolution',200)
-% exportgraphics(figure(2),'axissymsstok_stok_dlpn_multi_error.png','Resolution',200)
+exportgraphics(figure(1),'axissymsstok_stok_dlpn_multi_convergence.png','Resolution',200)
+exportgraphics(figure(2),'axissymsstok_stok_dlpn_multi_error.png','Resolution',200)
 
 
 function T = slptrac(Xt, Nt, xs, ws)
