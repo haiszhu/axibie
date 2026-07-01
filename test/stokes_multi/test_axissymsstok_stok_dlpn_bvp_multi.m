@@ -15,7 +15,6 @@ addpath('/Users/hzhu/Documents/Github/AxiStokes3D/matlab');
 
 p=16; np_vals=2:8; errmax=nan(1,numel(np_vals)); mu=1.0;
 rot=@(u,th) cos(th)*eye(3)+sin(th)*[0 -u(3) u(2); u(3) 0 -u(1); -u(2) u(1) 0]+(1-cos(th))*(u*u');
-cmi=@(m) sparse([3*(1:m)-2 3*(1:m)-1 3*(1:m)].', [1:m m+(1:m) 2*m+(1:m)].', 1, 3*m, 3*m);  % comp-major(m) -> node-interleaved
 Zf={@(t) 0.5*sin(t)-1i*1.0*cos(t), @(t) 1.0*sin(t)-1i*0.5*cos(t)}; ac=[0.5 1.0; 1.0 0.5];
 stk=@(P,y,Fv)(1/(8*pi))*( Fv./vecnorm(P-y) + (Fv.'*(P-y)).*(P-y)./vecnorm(P-y).^3 );    % interior Stokeslet velocity
 yloc={[0.10 0.05; 0 0.05; 0.20 -0.30],[0.20 -0.10; 0 0.15; 0.10 -0.10]};
@@ -27,7 +26,7 @@ for kk=1:numel(np_vals)
   rng(1);
 
   % 2 particles, random pose; 3D node positions X{k} and 3D node normals NX{k}
-  C=cell(2,1); R=cell(2,1); X=cell(2,1); NX=cell(2,1); sq=cell(2,1); geo=cell(2,1); Tc=cell(2,1); selfop=cell(2,1);
+  C=cell(2,1); R=cell(2,1); X=cell(2,1); NX=cell(2,1); sq=cell(2,1); geo=cell(2,1); selfop=cell(2,1);
   for k=1:2
     s=[]; s.p=p; s.Z=Zf{k}; s.tpan=linspace(0,pi,np+1)'; s=quadr(s,[],'p','G');
     d=randn(3,1); C{k}=(k-1)*1.6*d/norm(d); uu=randn(3,1); uu=uu/norm(uu); R{k}=rot(uu,2*pi*rand);
@@ -38,9 +37,8 @@ for kk=1:numel(np_vals)
     g=[]; g.sx=s.x(:); g.snx=s.nx(:); g.sws=s.ws(:); g.swxp=s.wxp(:); g.tpan=s.tpan(:); g.sxlo=s.xlo(:); g.sxhi=s.xhi(:);
     parc=0; for kj=1:np, parc=max(parc,sum(g.sws((kj-1)*p+(1:p)))); end
     g.rnear=max(max(real(g.sx))*sqrt(2*(chi_crit-1)), 2*parc); geo{k}=g;
-    [AbSn,Fa,Finv,~,T]=axp_physmat_mex(2,2,3,p,np,g.sx,g.snx,g.sws,g.swxp,g.tpan,g.sxlo,g.sxhi,M,iside,iclosed,mu,R{k}); % SLPn (-1/2 I + S')
-    [AbDn,~ ,~  ,~,~]=axp_physmat_mex(2,4,3,p,np,g.sx,g.snx,g.sws,g.swxp,g.tpan,g.sxlo,g.sxhi,M,iside,iclosed,mu,R{k}); % DLPn (D')
-    Tc{k}=T; selfop{k}=real(T*(Finv*(AbSn+AbDn)*Fa)*T.');       % combined (S'+D') lab node-interleaved self operator
+    selfop{k}=axp_physmat_mex(2,2,3,p,np,g.sx,g.snx,g.sws,g.swxp,g.tpan,g.sxlo,g.sxhi,M,iside,iclosed,mu,R{k}) ... % SLPn (-1/2 I + S')
+            + axp_physmat_mex(2,4,3,p,np,g.sx,g.snx,g.sws,g.swxp,g.tpan,g.sxlo,g.sxhi,M,iside,iclosed,mu,R{k});    % + DLPn (D') -> combined (S'+D') lab node-interleaved self op
   end
   Nnod=numel(geo{1}.sx)*nphi; Ndof=3*Nnod;
   Xall=[X{1} X{2}]; Nall=[NX{1} NX{2}]; wall=[sq{1}.w sq{2}.w]; Mtot=2*Nnod;
@@ -49,15 +47,13 @@ for kk=1:numel(np_vals)
   % interior Stokeslets -> exact exterior velocity uex (eval) and exact surface traction t_ex (Neumann data)
   Y=zeros(3,0); Fg=zeros(3,0); for k=1:2, Y=[Y, R{k}*yloc{k}+C{k}]; Fg=[Fg, R{k}*Floc{k}]; end
   uex=@(P) stk(P,Y(:,1),Fg(:,1))+stk(P,Y(:,2),Fg(:,2))+stk(P,Y(:,3),Fg(:,3))+stk(P,Y(:,4),Fg(:,4));
-  Dnv=@(t,xs,ws,ns) real(Sto3dDLPmat(t, struct('x',xs,'w',ws,'nx',ns), mu) + Sto3dSLPmat(t, struct('x',xs,'w',ws)));  % (D+S) velocity
+  Dnv=@(t,xs,ws,ns) real(Sto3dDLPmat_il(t, struct('x',xs,'w',ws,'nx',ns), mu) + Sto3dSLPmat_il(t, struct('x',xs,'w',ws)));  % (D+S) velocity
 
-  Picm=cmi(Mtot);
   I=[]; J=[]; V=[];                                            % COO triplets for the sparse correction operator
 
   % --- (2) self DIFFERENCE correction: (accurate (S'+D') self) - (naive (S'+D') self, diag 0) ---
   for k=1:2
-    Pik=cmi(Nnod);
-    Sns=Pik*sdtrac(X{k},NX{k},X{k},sq{k}.w,NX{k},mu)*Pik.'; Sns=zeroselfblk(Sns,Nnod);
+    Sns=sdtrac(X{k},NX{k},X{k},sq{k}.w,NX{k},mu); Sns=zeroselfblk(Sns,Nnod);
     D=selfop{k}-Sns;
     [jj,ii]=meshgrid(blk{k}, blk{k}); I=[I;ii(:)]; J=[J;jj(:)]; V=[V;D(:)];
   end
@@ -67,15 +63,16 @@ for kk=1:numel(np_vals)
     gs=geo{pq}; other=setdiff(1:Mtot, nodeblk{pq});
     nb=~cellfun(@isempty, rangesearch(X{pq}', Xall(:,other)', gs.rnear));
     cand=other(nb); if isempty(cand), continue; end
-    Pn=Xall(:,cand); phir=atan2(Pn(2,:),Pn(1,:)); txn=(hypot(Pn(1,:),Pn(2,:))+1i*Pn(3,:)).'; tphin=phir.';
-    NPc=Nall(:,cand);
-    nrho=NPc(1,:).*cos(phir)+NPc(2,:).*sin(phir); nphic=-NPc(1,:).*sin(phir)+NPc(2,:).*cos(phir);
-    tnxc=(nrho+1i*NPc(3,:)).'; tnphic=nphic.';
-    [BSn,Fs,nm]=axp_offdiagphysmat_mex(2,2,3,numel(cand),txn,tphin,[0;0;0],eye(3),p,np,gs.sx,gs.snx,gs.sws,gs.swxp,gs.tpan,gs.sxlo,gs.sxhi,C{pq},R{pq},M,iside,iclosed,mu,0,tnxc,tnphic);
-    [BDn,~ ,~ ]=axp_offdiagphysmat_mex(2,4,3,numel(cand),txn,tphin,[0;0;0],eye(3),p,np,gs.sx,gs.snx,gs.sws,gs.swxp,gs.tpan,gs.sxlo,gs.sxhi,C{pq},R{pq},M,iside,iclosed,mu,0,tnxc,tnphic);
-    ncand=numel(cand); cn=find(nm); nrc=cand(cn); rr=[cn; ncand+cn; 2*ncand+cn];
-    close_ni=real(cmi(numel(cn))*((BSn(rr,:)+BDn(rr,:))*Fs)*Tc{pq}.');
-    naive_ni=real(cmi(numel(cn))*sdtrac(Xall(:,nrc),Nall(:,nrc),X{pq},sq{pq}.w,NX{pq},mu)*cmi(Nnod).');
+    Pn=Xall(:,cand); NPc=Nall(:,cand);                        % 3D lab target positions + normals (traction)
+    ns=Nnod; xcs=[zeros(2,numel(gs.sx)); imag(gs.sx).']; nsc=numel(gs.sx);
+    ASn=[]; B2=[]; F2=[]; nearn=[];
+    [ASn,B2,F2,nearn]=axp_offdiagphysmat_mex(2,2,3, numel(cand), Pn, NPc, [0;0;0],eye(3), zeros(3,1),1,0, ...
+        ns, X{pq}, NX{pq}, sq{pq}.w, C{pq},R{pq}, xcs, nsc, gs.sx,gs.snx,gs.sws,gs.swxp, p,np, gs.tpan, 0, M,iside,iclosed,mu, 0, ASn,B2,F2,nearn);
+    ADn=[]; [ADn,B2,F2,~]=axp_offdiagphysmat_mex(2,4,3, numel(cand), Pn, NPc, [0;0;0],eye(3), zeros(3,1),1,0, ...
+        ns, X{pq}, NX{pq}, sq{pq}.w, C{pq},R{pq}, xcs, nsc, gs.sx,gs.snx,gs.sws,gs.swxp, p,np, gs.tpan, 0, M,iside,iclosed,mu, 0, ADn,B2,F2,nearn);
+    cn=find(nearn); nrc=cand(cn); rri=reshape([3*cn-2 3*cn-1 3*cn].',[],1);  % interlocked near rows
+    close_ni=real(ASn(rri,:)+ADn(rri,:));                     % At lab->lab, interlocked -> use directly (no Qmap)
+    naive_ni=sdtrac(Xall(:,nrc),Nall(:,nrc),X{pq},sq{pq}.w,NX{pq},mu);   % node-interleaved
     tdof=reshape([3*nrc-2; 3*nrc-1; 3*nrc],[],1);
     D=close_ni-naive_ni;
     [jj,ii]=meshgrid(blk{pq}, tdof); I=[I;ii(:)]; J=[J;jj(:)]; V=[V;D(:)];
@@ -83,9 +80,8 @@ for kk=1:numel(np_vals)
   Scorr=sparse(I, J, V, 2*Ndof, 2*Ndof, numel(V));
 
   % --- Neumann traction data + solve (combined full-rank: backslash) ---
-  trac_cm=slptrac(Xall,Nall,Y,ones(1,size(Y,2)))*[Fg(1,:).';Fg(2,:).';Fg(3,:).'];   % exact surface traction of uex (S' on Stokeslets)
-  g=Picm*trac_cm;
-  S = Picm*sdtrac(Xall,Nall,Xall,wall,Nall,mu)*Picm.';        % naive full (S'+D') traction, lab node-interleaved
+  g=slptrac(Xall,Nall,Y,ones(1,size(Y,2)))*Fg(:);            % exact surface traction of uex (S' on Stokeslets), node-interleaved
+  S = sdtrac(Xall,Nall,Xall,wall,Nall,mu);                    % naive full (S'+D') traction, lab node-interleaved
   S = zeroselfblk(S, Mtot);
   sigma = (S + Scorr) \ g;                                    % combined (S'+D') is full-rank
 
@@ -96,21 +92,25 @@ for kk=1:numel(np_vals)
   Pe=P(:,ext); Me=size(Pe,2); dmin=dmin(ext);
 
   % --- field eval: u = (S+D)[sigma] -> naive (D+S) + per-source near (SLP+DLP value) close correction ---
-  ucm=Dnv(struct('x',Pe), Xall, wall, Nall)*(Picm.'*sigma);
+  ucm=Dnv(struct('x',Pe), Xall, wall, Nall)*sigma;
   for pq=1:2
     gs=geo{pq};
     cand=find(~cellfun(@isempty, rangesearch(X{pq}', Pe', gs.rnear))); if isempty(cand), continue; end
-    Pn=Pe(:,cand); txn=(hypot(Pn(1,:),Pn(2,:))+1i*Pn(3,:)).'; tphin=atan2(Pn(2,:),Pn(1,:)).';
-    [BD,Fs,nm]=axp_offdiagphysmat_mex(2,3,3,numel(cand),txn,tphin,[0;0;0],eye(3),p,np,gs.sx,gs.snx,gs.sws,gs.swxp,gs.tpan,gs.sxlo,gs.sxhi,C{pq},R{pq},M,iside,iclosed,mu,0);
-    [BS,~ ,~ ]=axp_offdiagphysmat_mex(2,1,3,numel(cand),txn,tphin,[0;0;0],eye(3),p,np,gs.sx,gs.snx,gs.sws,gs.swxp,gs.tpan,gs.sxlo,gs.sxhi,C{pq},R{pq},M,iside,iclosed,mu,0);
-    ncand=numel(cand); cn=find(nm); sig_ni=sigma(blk{pq});
-    uclose=real((BD+BS)*(Fs*(Tc{pq}.'*sig_ni)));
-    unaive=Dnv(struct('x',Pn), X{pq}, sq{pq}.w, NX{pq})*(cmi(Nnod).'*sig_ni);
+    Pn=Pe(:,cand);                                            % 3D lab target positions (value: no target normal)
+    ns=Nnod; xcs=[zeros(2,numel(gs.sx)); imag(gs.sx).']; nsc=numel(gs.sx); Ntz=zeros(3,numel(cand)); Nsz=zeros(3,ns);
+    AtD=[]; B2=[]; F2=[]; nearn=[];
+    [AtD,B2,F2,nearn]=axp_offdiagphysmat_mex(2,3,3, numel(cand), Pn, Ntz, [0;0;0],eye(3), zeros(3,1),1,0, ...
+        ns, X{pq}, Nsz, sq{pq}.w, C{pq},R{pq}, xcs, nsc, gs.sx,gs.snx,gs.sws,gs.swxp, p,np, gs.tpan, 0, M,iside,iclosed,mu, 0, AtD,B2,F2,nearn);
+    AtS=[]; [AtS,B2,F2,~]=axp_offdiagphysmat_mex(2,1,3, numel(cand), Pn, Ntz, [0;0;0],eye(3), zeros(3,1),1,0, ...
+        ns, X{pq}, Nsz, sq{pq}.w, C{pq},R{pq}, xcs, nsc, gs.sx,gs.snx,gs.sws,gs.swxp, p,np, gs.tpan, 0, M,iside,iclosed,mu, 0, AtS,B2,F2,nearn);
+    cn=find(nearn); sig_ni=sigma(blk{pq});
+    uclose=real((AtD+AtS)*sig_ni);                            % At lab->lab -> feed lab density directly (no Qmap)
+    unaive=Dnv(struct('x',Pn), X{pq}, sq{pq}.w, NX{pq})*sig_ni;   % node-interleaved
     for cc=1:3
-      ucm((cc-1)*Me+cand(cn)) = ucm((cc-1)*Me+cand(cn)) - unaive((cc-1)*ncand+cn) + uclose((cc-1)*ncand+cn);
+      ucm(3*(cand(cn)-1)+cc) = ucm(3*(cand(cn)-1)+cc) - unaive(3*(cn-1)+cc) + uclose(3*(cn-1)+cc);
     end
   end
-  U=[ucm(1:Me).'; ucm(Me+1:2*Me).'; ucm(2*Me+1:3*Me).'];
+  U=reshape(ucm,3,Me);                                         % node-interleaved 3M -> 3 x M
   err=vecnorm(U-uex(Pe)).'/max(vecnorm(uex(Pe))); inb=dmin.'<0.1; errmax(kk)=max(err);
   fprintf('np=%2d  N=%5d/part  M=%2d  M3=%5d :  near(d<0.1) %.2e   far(d>=0.1) %.2e\n', ...
           np, Ndof, M, Me, max([err(inb);0]), max(err(~inb)));
@@ -126,6 +126,9 @@ for kk=1:numel(np_vals)
 end
 figure(2),ylim([-1 3])
 
+% cmp = getPyPlot_cMap('rainbow', [], [], '/Users/hzhu/.venvs/mpl/bin/python'); 
+% colormap(cmp)
+
 % cmp = getPyPlot_cMap('rainbow', [], [], '"/Users/hzhu/.pyenv/versions/3.11.13/bin/python"');
 % colormap(cmp)
 
@@ -138,15 +141,15 @@ exportgraphics(figure(2),'axissymsstok_stok_dlpn_multi_error.png','Resolution',2
 
 
 function T = slptrac(Xt, Nt, xs, ws)
-% S' (single-layer traction) operator: target traction from a source struct.  Needs target normals Nt.
-[~,T] = Sto3dSLPmat(struct('x',Xt,'nx',Nt), struct('x',xs,'w',ws)); T = real(T);
+% S' (single-layer traction) operator, node-interleaved: target traction from a source struct.  Needs target normals Nt.
+[~,T] = Sto3dSLPmat_il(struct('x',Xt,'nx',Nt), struct('x',xs,'w',ws));
 end
 
 function T = sdtrac(Xt, Nt, xs, ws, Ns, mu)
-% combined (S'+D') traction: S' (target normal Nt) + D' (target normal Nt AND source normal Ns).
-[~,Ts] = Sto3dSLPmat(struct('x',Xt,'nx',Nt), struct('x',xs,'w',ws));
-[~,Td] = Sto3dDLPmat(struct('x',Xt,'nx',Nt), struct('x',xs,'w',ws,'nx',Ns), mu);
-T = real(Ts + Td);
+% combined (S'+D') traction, node-interleaved: S' (target normal Nt) + D' (target normal Nt AND source normal Ns).
+[~,Ts] = Sto3dSLPmat_il(struct('x',Xt,'nx',Nt), struct('x',xs,'w',ws));
+[~,Td] = Sto3dDLPmat_il(struct('x',Xt,'nx',Nt), struct('x',xs,'w',ws,'nx',Ns), mu);
+T = Ts + Td;
 end
 
 function A = zeroselfblk(A, m)
