@@ -30,11 +30,13 @@ contains
   ! (NOTE this increment: iphys=1 laplace fully implemented; iphys=2 stokes pinv = next increment.)
   ! ==================================================================================================
   subroutine axissym_physmat_r64(iphys, ilayer, nc, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, &
-                                 M, iside, iclosed, mu, R, &
+                                 M, iside, iclosed, mu, R, xA, &
                                  iAb, jAb, xAb, iAi, jAi, xAi, iF, jF, xF, iFi, jFi, xFi, iT, jT, xT)
     integer(8),   intent(in)    :: iphys, ilayer, nc, p, np, M, iside, iclosed
     complex(r64), intent(in)    :: sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
     real(r64),    intent(in)    :: sws(p*np), tpan(np+1), mu, R(3,3)
+    ! xA = real(T*(Finv*Ab*F)*T') : assembled SELF operator, dense, LAB node-interleaved order (point-major)
+    real(r64),    intent(inout) :: xA(nc*p*np*(2*M+1), nc*p*np*(2*M+1))
     ! CSR: i* = row_ptr (length N+1, N = nc*p*np*(2*M+1)) ; j* = col index ; x* = value
     real(r64),    intent(inout) :: iAb(nc*p*np*(2*M+1)+1), jAb((2*M+1)*(nc*p*np)**2)
     complex(r64), intent(inout) :: xAb((2*M+1)*(nc*p*np)**2)
@@ -47,14 +49,15 @@ contains
     real(r64),    intent(inout) :: iT(nc*p*np*(2*M+1)+1), jT(nc*nc*p*np*(2*M+1))
     real(r64),    intent(inout) :: xT(nc*nc*p*np*(2*M+1))
 
-    integer(8) :: Nmer, rr, nphi, Nful, md, n, k, i, jc, ka, kb, ii, aa, bb, iloc, node, gr, ptr
+    integer(8) :: Nmer, rr, nphi, Nful, md, n, k, i, jc, ka, kb, ii, aa, bb, iloc, node, gr, ptr, d
     real(r64)  :: twopi, phib, na
     complex(r64) :: ic
-    real(r64), allocatable    :: Ar(:,:,:), RQall(:,:,:)
-    complex(r64), allocatable :: A(:,:,:), Ai(:,:,:), W(:,:), Winv(:,:)
+    real(r64), allocatable    :: Ar(:,:,:), RQall(:,:,:), tnphi0(:), Pnode(:,:,:), RQ(:,:,:)
+    complex(r64), allocatable :: A(:,:,:), Ai(:,:,:), W(:,:), Winv(:,:), Cblk(:,:)
     real(r64) :: Q(3,3)
 
     Nmer = p*np; rr = nc*Nmer; nphi = 2*M+1; Nful = rr*nphi
+    allocate(tnphi0(Nmer)); tnphi0 = 0.0_r64            ! SELF target: azimuthal normal n_theta = 0 (meridian normal)
     twopi = 2.0_r64*acos(-1.0_r64); ic = (0.0_r64, 1.0_r64)
 
     ! ---- per-mode block stack A(:,:,0..M) (complex; Laplace real promoted) ----
@@ -72,9 +75,9 @@ contains
     else
       select case (ilayer)
       case (1); call axissymstok_slp_blockmat_nmode_r64 (Nmer, sx,      p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
-      case (2); call axissymstok_slpn_blockmat_nmode_r64(Nmer, sx, snx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
+      case (2); call axissymstok_slpn_blockmat_nmode_r64(Nmer, sx, snx, tnphi0, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
       case (3); call axissymstok_dlp_blockmat_nmode_r64 (Nmer, sx,      p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
-      case (4); call axissymstok_dlpn_blockmat_nmode_r64(Nmer, sx, snx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
+      case (4); call axissymstok_dlpn_blockmat_nmode_r64(Nmer, sx, snx, tnphi0, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
       end select
     end if
 
@@ -167,6 +170,57 @@ contains
       deallocate(RQall)
     end if
 
+    ! ---- dense assembled SELF operator xA = real(T*(Finv*Ab*F)*T') in LAB node-interleaved order ----
+    !   azimuth-block-circulant P: Pcyl(d) = (1/nphi) sum_{n=-M..M} exp(i n d*dphi) A_n (A_n conj for n<0);
+    !   reorder cyl-comp-major -> node-interleaved (Pnode); rotate per node by RQ = R*rotz(phi):
+    !   xA[node-blk (i,I),(jc,J)] = RQ_i * Pnode(d=mod(i-jc,nphi))[I,J] * RQ_jc^T   (nc=1 -> RQ=1).
+    allocate(Pnode(rr, rr, nphi), Cblk(rr, rr), RQ(nc, nc, nphi))
+    do d = 0, nphi-1
+      phib = twopi*real(d, r64)/real(nphi, r64)
+      Cblk = (0.0_r64, 0.0_r64)
+      do k = 1, nphi
+        n = k - (M+1); md = abs(n) + 1
+        if (n >= 0) then
+          Cblk = Cblk + exp(ic*real(n, r64)*phib)*A(:,:,md)
+        else
+          Cblk = Cblk + exp(ic*real(n, r64)*phib)*conjg(A(:,:,md))
+        end if
+      end do
+      do jc = 1, Nmer                    ! col meridian node (jloc)
+        do bb = 0, nc-1                   ! col component
+          do i = 1, Nmer                  ! row meridian node (iloc)
+            do aa = 0, nc-1               ! row component
+              Pnode((i-1)*nc+aa+1, (jc-1)*nc+bb+1, d+1) = &
+                real(Cblk(aa*Nmer+i, bb*Nmer+jc), r64) / real(nphi, r64)
+            end do
+          end do
+        end do
+      end do
+    end do
+    do ii = 1, nphi                       ! per-azimuth rotation RQ = R*rotz(phi) (nc=1 -> 1)
+      if (nc == 1) then
+        RQ(1,1,ii) = 1.0_r64
+      else
+        phib = twopi*real(ii-1, r64)/real(nphi, r64)
+        Q = 0.0_r64
+        Q(1,1) = cos(phib); Q(1,2) = -sin(phib)
+        Q(2,1) = sin(phib); Q(2,2) =  cos(phib); Q(3,3) = 1.0_r64
+        RQ(:,:,ii) = matmul(R, Q)
+      end if
+    end do
+    do i = 1, nphi                        ! azimuth row block
+      do jc = 1, nphi                     ! azimuth col block
+        d = mod(i - jc + nphi, nphi)
+        do ii = 1, Nmer                   ! row meridian node I
+          do k = 1, Nmer                  ! col meridian node J
+            xA((i-1)*rr+(ii-1)*nc+1:(i-1)*rr+ii*nc, (jc-1)*rr+(k-1)*nc+1:(jc-1)*rr+k*nc) = &
+              matmul(RQ(:,:,i), matmul(Pnode((ii-1)*nc+1:ii*nc, (k-1)*nc+1:k*nc, d+1), transpose(RQ(:,:,jc))))
+          end do
+        end do
+      end do
+    end do
+    deallocate(Pnode, Cblk, RQ)
+
     deallocate(A, Ai, W, Winv)
   end subroutine axissym_physmat_r64
 
@@ -180,27 +234,33 @@ contains
   !   operator action on a source physical density:  u_target(near) = real( B * (F * sigma) ).
   ! (NOTE this increment: only iphys=1,ilayer=1 laplace SLP implemented.)
   ! ==================================================================================================
-  subroutine axissym_offdiagphysmat_r64(iphys, ilayer, nc, nt, tx, tphi, tnx, tnphi, Ct, Rt, &
+  ! Full-3D LAB-geometry interface (mirror MATLAB axp_offdiagphysmat): TARGET given as Xt,Nt (LAB);
+  ! source-frame reduction from (Cs,Rs).  SLPn (ilayer=2) uses ONE general-normal call -> sigma.n,
+  ! INTERLOCKED B rows.  Other layers keep their old block-major internals (TODO).  sxlo/sxhi are
+  ! derived in the mex .mw wrapper and passed in; the interlocked F reindex + At=real(B*F) are done there too.
+  subroutine axissym_offdiagphysmat_r64(iphys, ilayer, nc, nt, ns, Xt, Ntg, Ct, Rt, &
                                         p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, Cs, Rs, &
                                         M, iside, iclosed, mu, iforce, &
-                                        B, iF, jF, xF, near)
-    integer(8),   intent(in)    :: iphys, ilayer, nc, nt, p, np, M, iside, iclosed, iforce
-    complex(r64), intent(in)    :: tx(nt), tnx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
-    real(r64),    intent(in)    :: tphi(nt), tnphi(nt), Ct(3), Rt(3,3), Cs(3), Rs(3,3), sws(p*np), tpan(np+1), mu
+                                        At, B, iF, jF, xF, near)
+    integer(8),   intent(in)    :: iphys, ilayer, nc, nt, ns, p, np, M, iside, iclosed, iforce
+    complex(r64), intent(in)    :: sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
+    real(r64),    intent(in)    :: Xt(3,nt), Ntg(3,nt), Ct(3), Rt(3,3), Cs(3), Rs(3,3), sws(p*np), tpan(np+1), mu
+    real(r64),    intent(inout) :: At(nc*nt, nc*ns)                          ! physical-space eval matrix, real(B*F), interlocked
     complex(r64), intent(inout) :: B(nc*nt, nc*p*np*(2*M+1))
     real(r64),    intent(inout) :: iF(nc*p*np*(2*M+1)+1), jF((2*M+1)**2*(nc*p*np))
     complex(r64), intent(inout) :: xF((2*M+1)**2*(nc*p*np))
     real(r64),    intent(inout) :: near(nt)
 
-    integer(8) :: Nmer, ncN, nphi, i, j, k, n, kk, md, nnear, ka, kb, ptr, cnt
+    integer(8) :: Nmer, ncN, nphi, i, j, k, n, kk, md, nnear, ka, kb, ptr, cnt, sp, comp, iblk, irow, iang
     integer(8), allocatable :: idn(:)
-    real(r64)    :: twopi, gate, tol, chi_crit, panlen, rti, zti, chimin, chival, phib, na, rhoi, zi, phii, thi, cc, ss
-    real(r64)    :: nr, nz, nph, nrho, nthe
-    complex(r64) :: ic, e, ar, ap, az, vx, vy, vz
+    real(r64)    :: twopi, gate, tol, chi_crit, panlen, rti, zti, chimin, chival, phib, na, thi, cc, ss
+    real(r64)    :: nrho, nthe, Qs(3,3), vcyl(3), phis, cph, sph                      ! At source cyl->lab per-node rotation
+    complex(r64) :: ic, e, ar, ap, az, vx, vy, vz, acc
     complex(r64) :: srr, str, szr, srz, stz, szz, stt, pp, Tr, Tt, Tz                 ! Stokes traction stress assembly
-    real(r64)    :: RtsR(3,3), dC(3), P3(3), xt3(3), Nl(3), nbf(3)
+    real(r64)    :: xt3(3), nbf(3)
     real(r64),    allocatable :: th(:), thn(:), taz(:), nrhoa(:), nthea(:), nzza(:), Ar3(:,:,:), Av3(:,:,:)
-    complex(r64), allocatable :: txm(:), txmn(:), tnxn(:), eone(:), eimg(:), W(:,:), Ast(:,:,:), Asz(:,:,:), Apr(:,:,:)
+    complex(r64), allocatable :: txm(:), txmn(:), tnxn(:), tnxn2(:), eone(:), eimg(:), W(:,:), Ast(:,:,:), Asz(:,:,:), Apr(:,:,:)
+    real(r64),    allocatable :: tnp2(:)
     logical,      allocatable :: nearl(:)
     logical :: trac
 
@@ -212,13 +272,10 @@ contains
     twopi = 2.0_r64*acos(-1.0_r64); ic = (0.0_r64,1.0_r64)
     gate = 1.75_r64; tol = 1.0e-13_r64; chi_crit = cosh(log(1.0_r64/tol)/real(M, r64))
 
-    ! ---- map all targets into the SOURCE frame: txm (meridian rho+iz) + th (azimuth) ----
-    RtsR = matmul(transpose(Rs), Rt); dC = matmul(transpose(Rs), Ct - Cs)
+    ! ---- map all targets (LAB Xt) into the SOURCE frame: txm (meridian rho+iz) + th (azimuth) ----
     allocate(txm(nt), th(nt), nearl(nt))
     do i = 1, nt
-      rhoi = real(tx(i)); zi = aimag(tx(i)); phii = tphi(i)
-      P3 = [rhoi*cos(phii), rhoi*sin(phii), zi]
-      xt3 = matmul(RtsR, P3) + dC
+      xt3 = matmul(transpose(Rs), Xt(:,i) - Cs)                                     ! target LAB -> source Cart
       txm(i) = cmplx(hypot(xt3(1), xt3(2)), xt3(3), r64)
       th(i)  = atan2(xt3(2), xt3(1))
     end do
@@ -267,9 +324,7 @@ contains
         do i = 1, nt
           if (.not. nearl(i)) cycle
           cnt = cnt + 1
-          nr = real(tnx(i)); nz = aimag(tnx(i)); nph = tnphi(i); phii = tphi(i)
-          Nl = [nr*cos(phii) - nph*sin(phii), nr*sin(phii) + nph*cos(phii), nz]   ! target cyl normal -> target Cart
-          nbf = matmul(RtsR, Nl)                                                   ! -> source frame (rotation only)
+          nbf = matmul(transpose(Rs), Ntg(:,i))                                    ! target LAB normal -> source frame (rotation only)
           thi = thn(cnt)
           nrho = nbf(1)*cos(thi) + nbf(2)*sin(thi)                                 ! meridian radial component
           nthe = -nbf(1)*sin(thi) + nbf(2)*cos(thi)                                ! azimuthal component
@@ -323,47 +378,55 @@ contains
               ar = Ast(i, j, md); ap = Ast(nnear+i, j, md); az = Ast(2*nnear+i, j, md)
               if (n < 0) then; ar = conjg(ar); ap = conjg(ap); az = conjg(az); end if
               vx = e*(cc*ar - ss*ap); vy = e*(ss*ar + cc*ap); vz = e*az
-              B(idn(i),      (kk-1)*3*Nmer + j) = Rs(1,1)*vx + Rs(1,2)*vy + Rs(1,3)*vz
-              B(nt+idn(i),   (kk-1)*3*Nmer + j) = Rs(2,1)*vx + Rs(2,2)*vy + Rs(2,3)*vz
-              B(2*nt+idn(i), (kk-1)*3*Nmer + j) = Rs(3,1)*vx + Rs(3,2)*vy + Rs(3,3)*vz
+              B(nc*(idn(i)-1)+1, (kk-1)*ncN + j) = Rs(1,1)*vx + Rs(1,2)*vy + Rs(1,3)*vz   ! INTERLOCKED rows
+              B(nc*(idn(i)-1)+2, (kk-1)*ncN + j) = Rs(2,1)*vx + Rs(2,2)*vy + Rs(2,3)*vz
+              B(nc*(idn(i)-1)+3, (kk-1)*ncN + j) = Rs(3,1)*vx + Rs(3,2)*vy + Rs(3,3)*vz
             end do
           end do
         end do
         deallocate(Ast)
-      else                                                    ! ===== STOKES (nc=3) SLPn/DLPn traction: stress assembly + sigma_thth =====
-        allocate(Ast(3*nnear,3*Nmer,M+1), Asz(3*nnear,3*Nmer,M+1), Apr(nnear,3*Nmer,M+1), eone(nnear), eimg(nnear))
-        eone = (1.0_r64,0.0_r64); eimg = (0.0_r64,1.0_r64)    ! tnx=e_rho (sigma.e_rho) and tnx=e_z (sigma.e_z)
-        if (ilayer == 2) then                                 ! SLPn: single-layer traction + SLP pressure
-          call axissymstok_slpn_blockmat_nmode_r64(nnear, txmn, eone, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, Ast)
-          call axissymstok_slpn_blockmat_nmode_r64(nnear, txmn, eimg, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, Asz)
-          call axissymstok_slppres_blockmat_nmode_r64(nnear, txmn, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, Apr)
-        else                                                  ! DLPn: double-layer traction + DLP (stresslet) pressure
-          call axissymstok_dlpn_blockmat_nmode_r64(nnear, txmn, eone, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, Ast)
-          call axissymstok_dlpn_blockmat_nmode_r64(nnear, txmn, eimg, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, Asz)
-          call axissymstok_dlppres_blockmat_nmode_r64(nnear, txmn, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, Apr)
-        end if
+      else if (ilayer == 2) then                              ! ===== STOKES SLPn traction: ONE general-normal call -> sigma.n, INTERLOCKED B =====
+        allocate(Ast(3*nnear,3*Nmer,M+1), tnxn2(nnear), tnp2(nnear))
+        do i = 1, nnear
+          tnxn2(i) = cmplx(nrhoa(i), nzza(i), r64); tnp2(i) = nthea(i)            ! target normal (source frame): meridian n_rho+i*n_z, azimuthal n_theta
+        end do
+        call axissymstok_slpn_blockmat_nmode_r64(nnear, txmn, tnxn2, tnp2, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, Ast)
         do kk = 1, nphi
           n = kk - (M+1); md = abs(n) + 1
           do i = 1, nnear
             thi = thn(i); e = exp(ic*real(n,r64)*thi); cc = cos(thi); ss = sin(thi)
-            nrho = nrhoa(i); nthe = nthea(i)
             do j = 1, 3*Nmer
-              srr = Ast(i,j,md);        str = Ast(nnear+i,j,md);   szr = Ast(2*nnear+i,j,md)    ! sigma.e_rho cols
-              srz = Asz(i,j,md);        stz = Asz(nnear+i,j,md);   szz = Asz(2*nnear+i,j,md)    ! sigma.e_z   cols
-              pp  = Apr(i,j,md)
-              stt = -3.0_r64*pp - srr - szz                                                    ! sigma_thth from the trace
-              Tr  = nrho*srr + nthe*str + nzza(i)*srz                                           ! traction = sigma . n (src-cyl)
-              Tt  = nrho*str + nthe*stt + nzza(i)*stz
-              Tz  = nrho*szr + nthe*stz + nzza(i)*szz
+              Tr = Ast(i,j,md); Tt = Ast(nnear+i,j,md); Tz = Ast(2*nnear+i,j,md)  ! t_rho, t_theta, t_z direct (sigma.n)
               if (n < 0) then; Tr = conjg(Tr); Tt = conjg(Tt); Tz = conjg(Tz); end if
               vx = e*(cc*Tr - ss*Tt); vy = e*(ss*Tr + cc*Tt); vz = e*Tz
-              B(idn(i),      (kk-1)*3*Nmer + j) = Rs(1,1)*vx + Rs(1,2)*vy + Rs(1,3)*vz
-              B(nt+idn(i),   (kk-1)*3*Nmer + j) = Rs(2,1)*vx + Rs(2,2)*vy + Rs(2,3)*vz
-              B(2*nt+idn(i), (kk-1)*3*Nmer + j) = Rs(3,1)*vx + Rs(3,2)*vy + Rs(3,3)*vz
+              B(nc*(idn(i)-1)+1, (kk-1)*ncN + j) = Rs(1,1)*vx + Rs(1,2)*vy + Rs(1,3)*vz   ! INTERLOCKED rows
+              B(nc*(idn(i)-1)+2, (kk-1)*ncN + j) = Rs(2,1)*vx + Rs(2,2)*vy + Rs(2,3)*vz
+              B(nc*(idn(i)-1)+3, (kk-1)*ncN + j) = Rs(3,1)*vx + Rs(3,2)*vy + Rs(3,3)*vz
             end do
           end do
         end do
-        deallocate(Ast, Asz, Apr, eone, eimg)
+        deallocate(Ast, tnxn2, tnp2)
+      else                                                    ! ===== STOKES DLPn traction: ONE general-normal call -> sigma.n, INTERLOCKED B =====
+        allocate(Ast(3*nnear,3*Nmer,M+1), tnxn2(nnear), tnp2(nnear))
+        do i = 1, nnear
+          tnxn2(i) = cmplx(nrhoa(i), nzza(i), r64); tnp2(i) = nthea(i)            ! target normal (source frame): meridian n_rho+i*n_z, azimuthal n_theta
+        end do
+        call axissymstok_dlpn_blockmat_nmode_r64(nnear, txmn, tnxn2, tnp2, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, Ast)
+        do kk = 1, nphi
+          n = kk - (M+1); md = abs(n) + 1
+          do i = 1, nnear
+            thi = thn(i); e = exp(ic*real(n,r64)*thi); cc = cos(thi); ss = sin(thi)
+            do j = 1, 3*Nmer
+              Tr = Ast(i,j,md); Tt = Ast(nnear+i,j,md); Tz = Ast(2*nnear+i,j,md)  ! t_rho, t_theta, t_z direct (sigma.n)
+              if (n < 0) then; Tr = conjg(Tr); Tt = conjg(Tt); Tz = conjg(Tz); end if
+              vx = e*(cc*Tr - ss*Tt); vy = e*(ss*Tr + cc*Tt); vz = e*Tz
+              B(nc*(idn(i)-1)+1, (kk-1)*ncN + j) = Rs(1,1)*vx + Rs(1,2)*vy + Rs(1,3)*vz   ! INTERLOCKED rows
+              B(nc*(idn(i)-1)+2, (kk-1)*ncN + j) = Rs(2,1)*vx + Rs(2,2)*vy + Rs(2,3)*vz
+              B(nc*(idn(i)-1)+3, (kk-1)*ncN + j) = Rs(3,1)*vx + Rs(3,2)*vy + Rs(3,3)*vz
+            end do
+          end do
+        end do
+        deallocate(Ast, tnxn2, tnp2)
       end if
       if (trac) deallocate(tnxn, taz, nrhoa, nthea, nzza)
       deallocate(idn, txmn, thn)
@@ -388,6 +451,37 @@ contains
           ptr = ptr + 1
           jF(ptr) = (kb-1)*ncN + i; xF(ptr) = W(ka, kb)
         end do
+      end do
+    end do
+    ! ---- physical-space dense eval matrix At = real(B*F), source cols INTERLOCKED, then rotate source cyl -> LAB ----
+    !   interlocked source col cc=(sp-1)*nc+comp; F picks B's angle-blocks: At_cyl(:,cc)=real(sum_ka B(:,(ka-1)*ncN+iblk) W(ka,iang)).
+    !   for nc=3 the node's 3 cyl source comps are rotated to lab by Qs = Rs*rotz(phi_iang) (At = At_cyl*Qs', symmetric to the target Rs fold),
+    !   so At is lab->lab: the caller feeds a LAB-Cartesian source density directly (no external per-node rotation).
+    do sp = 1, ns
+      iang = (sp-1)/Nmer + 1                                     ! source azimuthal block (1..nphi)
+      j    = mod(sp-1, Nmer) + 1                                 ! source meridian node
+      if (nc == 3) then
+        phis = twopi*real(iang-1,r64)/real(nphi,r64); cph = cos(phis); sph = sin(phis)
+        Qs(:,1) =  Rs(:,1)*cph + Rs(:,2)*sph                     ! Qs = Rs * rotz(phi) : source cyl -> lab
+        Qs(:,2) = -Rs(:,1)*sph + Rs(:,2)*cph
+        Qs(:,3) =  Rs(:,3)
+      end if
+      do irow = 1, nc*nt
+        do comp = 1, nc
+          iblk = (comp-1)*Nmer + j
+          acc = (0.0_r64, 0.0_r64)
+          do ka = 1, nphi
+            acc = acc + B(irow, (ka-1)*ncN + iblk) * W(ka, iang)
+          end do
+          vcyl(comp) = real(acc)                                 ! source-cyl component
+        end do
+        if (nc == 3) then                                        ! At_lab(:,3k) = sum_m vcyl(m)*Qs(k,m)  (= At_cyl * Qs')
+          At(irow, (sp-1)*3 + 1) = vcyl(1)*Qs(1,1) + vcyl(2)*Qs(1,2) + vcyl(3)*Qs(1,3)
+          At(irow, (sp-1)*3 + 2) = vcyl(1)*Qs(2,1) + vcyl(2)*Qs(2,2) + vcyl(3)*Qs(2,3)
+          At(irow, (sp-1)*3 + 3) = vcyl(1)*Qs(3,1) + vcyl(2)*Qs(3,2) + vcyl(3)*Qs(3,3)
+        else
+          At(irow, (sp-1)*nc + 1) = vcyl(1)                      ! nc=1 (Laplace): scalar source, no rotation
+        end if
       end do
     end do
     deallocate(txm, th, nearl, W)

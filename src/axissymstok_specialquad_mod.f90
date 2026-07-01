@@ -570,13 +570,18 @@ contains
     deallocate(tin, tt_az, ww_az, cl, ci, zc, zcn, C1, C2, C3, C4, As, Ad, A1, A2, A3, A4, Gcl, Gp, ff)
   end subroutine axissymstok_slpn_blockmat_r64
 
-  subroutine axissymstok_slpn_blockmat_nmode_r64(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
+  ! GENERAL 3D target normal:  t = sigma.n = n_rho(sigma.e_rho) + n_theta(sigma.e_theta) + n_z(sigma.e_z),
+  ! with sigma_thth = -3 p - sigma_rr - sigma_zz.  tnx = n_rho+i*n_z (meridian), tnphi = n_theta (azimuthal).
+  ! tnphi = 0 (SELF / on-surface) => the theta term drops => A is EXACTLY sigma.(meridian n); no branching.
+  ! ib=1 pass builds Br = sigma.e_rho (nr=1,nz=0); ib=2 builds Bz = sigma.e_z (nr=0,nz=1), sharing carrier +
+  ! special quad.  Pressure P is INLINED (its own Ksub=2 two-level loop).  Then sigma.n is assembled.
+  subroutine axissymstok_slpn_blockmat_nmode_r64(nt, tx, tnx, tnphi, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
     integer(8),   intent(in)    :: nt, p, np, M, iside, iclosed
     complex(r64), intent(in)    :: tx(nt), tnx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
-    real(r64),    intent(in)    :: sws(p*np), tpan(np+1), mu
+    real(r64),    intent(in)    :: sws(p*np), tpan(np+1), mu, tnphi(nt)
     complex(r64), intent(inout) :: A(3*nt, 3*np*p, M+1)
     integer(8), parameter :: Ksub = 4
-    integer(8) :: q, pq, nso, i, j, jp, iq, ia, l, e, md, ar, b, c, qo, ne, npa, nk, nkc, jj, cols
+    integer(8) :: q, pq, nso, i, j, jp, iq, ia, l, e, md, ar, b, c, qo, ne, npa, nk, nkc, jj, cols, ib, nep, npap
     real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, nr, nz, vk, ve, Fn, An, dFn, rn, n2, ifn2
     real(r64)  :: vka(0:M), vea(0:M), Fna(0:M), Ana(0:M), dFna(0:M), vkmat(p,0:M), vemat(p,0:M)
     complex(r64) :: coK(9), coE(9), pcs(27), pcsm(27,p)   ! pcs/pcsm = md-indep far coK/coE pieces (inlined per node, see the far blocks)
@@ -591,9 +596,14 @@ contains
     real(r64),    allocatable :: tin(:)
     integer(8),   allocatable :: joa(:), ci(:), nidx(:)
     logical,      allocatable :: ikq(:), ikc(:)
-    complex(r64), allocatable :: zc(:), zcn(:), znear(:), znearn(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:), Gcq(:,:), Gpc(:,:)
+    complex(r64), allocatable :: zc(:), zcn(:), znear(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:), Gcq(:,:), Gpc(:,:)
     real(r64),    allocatable :: As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:)
     complex(r64), allocatable :: Ad(:,:)
+    complex(r64), allocatable :: Br(:,:,:), Bz(:,:,:), Pmat(:,:,:), PC1(:,:,:), PC2(:,:,:), PC3(:,:,:), ff(:,:)
+    real(r64),    allocatable :: tinp(:)
+    integer(8),   allocatable :: joap(:)
+    complex(r64) :: Brr, Brt, Brz, Bzr, Bzt, Bzz, Ppr, Stt
+    real(r64)    :: nthv
     q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
     call gauss_r64(p,     tglp, wglp, Dp)
     call gauss_r64(2_8*p, tglq, wglq, Dq)
@@ -628,10 +638,10 @@ contains
       end do
       joa(c) = qo
     end do
-    allocate(ci(nt), zc(nt), zcn(nt), nidx(nt), znear(nt), znearn(nt), ikq(nt), ikc(nt))
+    allocate(ci(nt), zc(nt), zcn(nt), nidx(nt), znear(nt), ikq(nt), ikc(nt))
     allocate(C1(3*nt,3*q,M+1), C2(3*nt,3*q,M+1), C3(3*nt,3*q,M+1), C4(3*nt,3*q,M+1))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
-    A = (0.0_r64,0.0_r64)
+    allocate(Br(3*nt,3*nso,M+1), Bz(3*nt,3*nso,M+1)); Br = (0.0_r64,0.0_r64); Bz = (0.0_r64,0.0_r64)
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
       cols = (pq-1)*p
       sumwso = 0.0_r64
@@ -641,16 +651,18 @@ contains
       nk = 0
       do i = 1, nt
         ikq(i) = (abs(tx(i)-sxlo(pq)) + abs(tx(i)-sxhi(pq))) < 1.85_r64*sumwso
-        if (ikq(i)) then; nk = nk + 1; nidx(nk) = i; znear(nk) = tx(i); znearn(nk) = tnx(i); end if
+        if (ikq(i)) then; nk = nk + 1; nidx(nk) = i; znear(nk) = tx(i); end if
       end do
-      ! ---- outer far: naive slpn9far (negated) on the COARSE original nodes, TARGET normals ----
+      ! ---- outer far: slpn9far (negated) on the COARSE original nodes; ib=1 e_rho -> Br, ib=2 e_z -> Bz ----
       do i = 1, nt
         if (ikq(i)) cycle
-        rt = real(tx(i),r64); zti = aimag(tx(i)); nr = real(tnx(i),r64); nz = aimag(tnx(i))
+        rt = real(tx(i),r64); zti = aimag(tx(i))
         do jp = 1, p
           jj = cols + jp; rhop = real(sx(jj),r64); zh = zti - aimag(sx(jj)); ws = sws(jj)
           rho = rt; rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call modal_green_all_far_r64(chi, M, vka, vea)        ! all modes ONCE per node
+          call modal_green_all_far_r64(chi, M, vka, vea)        ! carrier ONCE per node (shared across ib=1,2)
+          do ib = 1, 2                                          ! ib=1: e_rho (nr=1,nz=0)->Br;  ib=2: e_z (nr=0,nz=1)->Bz
+          if (ib == 1) then; nr = 1.0_r64; nz = 0.0_r64; else; nr = 0.0_r64; nz = 1.0_r64; end if
           ! ---- md-INDEPENDENT pieces of the slpn far coK/coE coefficients (inlined, computed ONCE per node) ----
           ! coK linear in n2(=mode^2) with at most a 1/(4n2-1)=ifn2 factor; the do-md loop then assembles:
           !   coK diag(1,3,5,7,9)=p0+n2*p2   coK cross(2,4,6,8)=n*p1   coE(1,5)=ifn2*(p0+n2*p2)
@@ -722,9 +734,16 @@ contains
             Be_rr(jp) = -(coK(1)*vk+coE(1)*ve)*ws;  Be_rt(jp) = -(coK(2)*vk+coE(2)*ve)*ws;  Be_rz(jp) = -(coK(3)*vk+coE(3)*ve)*ws
             Be_tr(jp) = -(coK(4)*vk+coE(4)*ve)*ws;  Be_tt(jp) = -(coK(5)*vk+coE(5)*ve)*ws;  Be_tz(jp) = -(coK(6)*vk+coE(6)*ve)*ws
             Be_zr(jp) = -(coK(7)*vk+coE(7)*ve)*ws;  Be_zt(jp) = -(coK(8)*vk+coE(8)*ve)*ws;  Be_zz(jp) = -(coK(9)*vk+coE(9)*ve)*ws
-            A(0*nt+i, 0*nso+jj, md+1) = Be_rr(jp);  A(0*nt+i, 1*nso+jj, md+1) = Be_rt(jp);  A(0*nt+i, 2*nso+jj, md+1) = Be_rz(jp)
-            A(1*nt+i, 0*nso+jj, md+1) = Be_tr(jp);  A(1*nt+i, 1*nso+jj, md+1) = Be_tt(jp);  A(1*nt+i, 2*nso+jj, md+1) = Be_tz(jp)
-            A(2*nt+i, 0*nso+jj, md+1) = Be_zr(jp);  A(2*nt+i, 1*nso+jj, md+1) = Be_zt(jp);  A(2*nt+i, 2*nso+jj, md+1) = Be_zz(jp)
+            if (ib == 1) then
+              Br(0*nt+i, 0*nso+jj, md+1) = Be_rr(jp);  Br(0*nt+i, 1*nso+jj, md+1) = Be_rt(jp);  Br(0*nt+i, 2*nso+jj, md+1) = Be_rz(jp)
+              Br(1*nt+i, 0*nso+jj, md+1) = Be_tr(jp);  Br(1*nt+i, 1*nso+jj, md+1) = Be_tt(jp);  Br(1*nt+i, 2*nso+jj, md+1) = Be_tz(jp)
+              Br(2*nt+i, 0*nso+jj, md+1) = Be_zr(jp);  Br(2*nt+i, 1*nso+jj, md+1) = Be_zt(jp);  Br(2*nt+i, 2*nso+jj, md+1) = Be_zz(jp)
+            else
+              Bz(0*nt+i, 0*nso+jj, md+1) = Be_rr(jp);  Bz(0*nt+i, 1*nso+jj, md+1) = Be_rt(jp);  Bz(0*nt+i, 2*nso+jj, md+1) = Be_rz(jp)
+              Bz(1*nt+i, 0*nso+jj, md+1) = Be_tr(jp);  Bz(1*nt+i, 1*nso+jj, md+1) = Be_tt(jp);  Bz(1*nt+i, 2*nso+jj, md+1) = Be_tz(jp)
+              Bz(2*nt+i, 0*nso+jj, md+1) = Be_zr(jp);  Bz(2*nt+i, 1*nso+jj, md+1) = Be_zt(jp);  Bz(2*nt+i, 2*nso+jj, md+1) = Be_zz(jp)
+            end if
+          end do
           end do
         end do
       end do
@@ -757,56 +776,63 @@ contains
         nkc = 0
         do i = 1, nk
           ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 1.5_r64*sumwsc
-          if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); zcn(nkc) = znearn(i); end if
+          if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
         end do
-        ! ---- inner near: 2p S' close (coef + sdspecialquad), fold q->p_sub (IP2) -> p_coarse (Lc) ----
+        ! ---- inner near: 2p S' close (sdspecialquad ONCE; coef per ib=1 e_rho / ib=2 e_z), fold q->p_sub -> p_coarse ----
         if (nkc > 0) then
-          call axissymstok_slpn_coef_nmode_r64(nkc, zc(1:nkc), zcn(1:nkc), q, Yq, M, mu, &
-               C1(1:3*nkc,1:3*q,:), C2(1:3*nkc,1:3*q,:), C3(1:3*nkc,1:3*q,:), C4(1:3*nkc,1:3*q,:))
           call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, zac, zbc, iside, &
                As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
-          do md = 0, M
-            do e = 1, 9
-              ar = (e-1)/3 + 1; b = mod(e-1,3) + 1
-              do iq = 1, q
-                do ia = 1, nkc
-                  cc1 = C1(3*(ia-1)+ar, 3*(iq-1)+b, md+1); cc2 = C2(3*(ia-1)+ar, 3*(iq-1)+b, md+1)
-                  cc3 = C3(3*(ia-1)+ar, 3*(iq-1)+b, md+1); cc4 = C4(3*(ia-1)+ar, 3*(iq-1)+b, md+1)
-                  Slog = cmplx(As(iq,ia),0.0_r64,r64); Dval = Ad(iq,ia); Dz = cmplx(A1(iq,ia),-A2(iq,ia),r64)
-                  if (mod(e,2) == 0) then
-                    Acau =  ic*twopi*aimag(Dval*(cc3/nvq(iq)))
-                    Ahy  = -ic*twopi*aimag(Dz  *(cc4/nvq(iq)))
-                  else
-                    Acau = cmplx(twopi*real(Dval*(cc3/nvq(iq)), r64), 0.0_r64, r64)
-                    Ahy  = cmplx(-twopi*real(Dz *(cc4/nvq(iq)), r64), 0.0_r64, r64)
-                  end if
-                  Gcq(ia,iq) = twopi*cc1*Slog + cc2*wsq(iq) + Acau + Ahy
+          do ib = 1, 2                                          ! ib=1: e_rho normal (1,0)->Br; ib=2: e_z normal (0,1)->Bz
+            if (ib == 1) then; zcn(1:nkc) = (1.0_r64,0.0_r64); else; zcn(1:nkc) = (0.0_r64,1.0_r64); end if
+            call axissymstok_slpn_coef_nmode_r64(nkc, zc(1:nkc), zcn(1:nkc), q, Yq, M, mu, &
+                 C1(1:3*nkc,1:3*q,:), C2(1:3*nkc,1:3*q,:), C3(1:3*nkc,1:3*q,:), C4(1:3*nkc,1:3*q,:))
+            do md = 0, M
+              do e = 1, 9
+                ar = (e-1)/3 + 1; b = mod(e-1,3) + 1
+                do iq = 1, q
+                  do ia = 1, nkc
+                    cc1 = C1(3*(ia-1)+ar, 3*(iq-1)+b, md+1); cc2 = C2(3*(ia-1)+ar, 3*(iq-1)+b, md+1)
+                    cc3 = C3(3*(ia-1)+ar, 3*(iq-1)+b, md+1); cc4 = C4(3*(ia-1)+ar, 3*(iq-1)+b, md+1)
+                    Slog = cmplx(As(iq,ia),0.0_r64,r64); Dval = Ad(iq,ia); Dz = cmplx(A1(iq,ia),-A2(iq,ia),r64)
+                    if (mod(e,2) == 0) then
+                      Acau =  ic*twopi*aimag(Dval*(cc3/nvq(iq)))
+                      Ahy  = -ic*twopi*aimag(Dz  *(cc4/nvq(iq)))
+                    else
+                      Acau = cmplx(twopi*real(Dval*(cc3/nvq(iq)), r64), 0.0_r64, r64)
+                      Ahy  = cmplx(-twopi*real(Dz *(cc4/nvq(iq)), r64), 0.0_r64, r64)
+                    end if
+                    Gcq(ia,iq) = twopi*cc1*Slog + cc2*wsq(iq) + Acau + Ahy
+                  end do
                 end do
+                Gpc(1:nkc,1:p) = matmul(Gcq(1:nkc,1:q), IPqc)
+                if (ib == 1) then                              ! fold Gpc into (row (ar-1)*nt, col (b-1)*nso) of Br
+                  do ia = 1, nkc; do l = 1, p
+                    Br((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) = Br((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) + Gpc(ia,l)
+                  end do; end do
+                else                                           ! ... into Bz
+                  do ia = 1, nkc; do l = 1, p
+                    Bz((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) = Bz((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) + Gpc(ia,l)
+                  end do; end do
+                end if
               end do
-              Gpc(1:nkc,1:p) = matmul(Gcq(1:nkc,1:q), IPqc)
-              select case (e)                                  ! fold Gpc into the (row,col) 3x3 block of A
-              case (1); do ia=1,nkc; do l=1,p; A(0*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) = A(0*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_rr
-              case (2); do ia=1,nkc; do l=1,p; A(0*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) = A(0*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_rt
-              case (3); do ia=1,nkc; do l=1,p; A(0*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) = A(0*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_rz
-              case (4); do ia=1,nkc; do l=1,p; A(1*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) = A(1*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_tr
-              case (5); do ia=1,nkc; do l=1,p; A(1*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) = A(1*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_tt
-              case (6); do ia=1,nkc; do l=1,p; A(1*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) = A(1*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_tz
-              case (7); do ia=1,nkc; do l=1,p; A(2*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) = A(2*nt+nidx(ci(ia)), 0*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_zr
-              case (8); do ia=1,nkc; do l=1,p; A(2*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) = A(2*nt+nidx(ci(ia)), 1*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_zt
-              case (9); do ia=1,nkc; do l=1,p; A(2*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) = A(2*nt+nidx(ci(ia)), 2*nso+cols+l, md+1) + Gpc(ia,l); end do; end do  ! Be_zz
-              end select
             end do
           end do
         end if
-        ! ---- inner far: naive slpn9far (negated) on the FINER subpanel nodes, TARGET normals, fold via Lc ----
+        ! ---- inner far: slpn9far (negated) on the FINER subpanel nodes; ib=1 e_rho -> Br, ib=2 e_z -> Bz, fold via Lc ----
         do i = 1, nk
           if (ikc(i)) cycle
-          rt = real(znear(i),r64); zti = aimag(znear(i)); nr = real(znearn(i),r64); nz = aimag(znearn(i))
-          do jp = 1, p                                          ! carrier_all ONCE per node (was M+1 modal_green_r64 calls)
+          rt = real(znear(i),r64); zti = aimag(znear(i))
+          do jp = 1, p                                          ! carrier ONCE per node (shared across ib=1,2)
             rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp)); rho = rt
             rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
             call modal_green_all_far_r64(chi, M, vka, vea)
             vkmat(jp,0:M) = vka(0:M); vemat(jp,0:M) = vea(0:M)
+          end do
+          do ib = 1, 2                                          ! ib=1: e_rho (nr=1,nz=0)->Br;  ib=2: e_z (nr=0,nz=1)->Bz
+          if (ib == 1) then; nr = 1.0_r64; nz = 0.0_r64; else; nr = 0.0_r64; nz = 1.0_r64; end if
+          do jp = 1, p
+            rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp)); rho = rt
+            rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
             ! ---- md-indep far coK/coE pieces, inlined ONCE per node (see outer-far block for the pcs layout) ----
             block
               real(r64) :: ipi, r15, r25
@@ -875,22 +901,206 @@ contains
               Be_tr(jp) = -(coK(4)*vk+coE(4)*ve)*wsp(jp);  Be_tt(jp) = -(coK(5)*vk+coE(5)*ve)*wsp(jp);  Be_tz(jp) = -(coK(6)*vk+coE(6)*ve)*wsp(jp)
               Be_zr(jp) = -(coK(7)*vk+coE(7)*ve)*wsp(jp);  Be_zt(jp) = -(coK(8)*vk+coE(8)*ve)*wsp(jp);  Be_zz(jp) = -(coK(9)*vk+coE(9)*ve)*wsp(jp)
             end do
-            do l = 1, p                                        ! fold each named block (sum over subpanel nodes via Lc) into A
-              A(0*nt+nidx(i), 0*nso+cols+l, md+1) = A(0*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_rr(1:p)*Lc(:,l))   ! Be_rr
-              A(0*nt+nidx(i), 1*nso+cols+l, md+1) = A(0*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_rt(1:p)*Lc(:,l))   ! Be_rt
-              A(0*nt+nidx(i), 2*nso+cols+l, md+1) = A(0*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_rz(1:p)*Lc(:,l))   ! Be_rz
-              A(1*nt+nidx(i), 0*nso+cols+l, md+1) = A(1*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_tr(1:p)*Lc(:,l))   ! Be_tr
-              A(1*nt+nidx(i), 1*nso+cols+l, md+1) = A(1*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_tt(1:p)*Lc(:,l))   ! Be_tt
-              A(1*nt+nidx(i), 2*nso+cols+l, md+1) = A(1*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_tz(1:p)*Lc(:,l))   ! Be_tz
-              A(2*nt+nidx(i), 0*nso+cols+l, md+1) = A(2*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_zr(1:p)*Lc(:,l))   ! Be_zr
-              A(2*nt+nidx(i), 1*nso+cols+l, md+1) = A(2*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_zt(1:p)*Lc(:,l))   ! Be_zt
-              A(2*nt+nidx(i), 2*nso+cols+l, md+1) = A(2*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_zz(1:p)*Lc(:,l))   ! Be_zz
+            if (ib == 1) then                                  ! fold subpanel nodes (via Lc) into Br
+              do l = 1, p
+                Br(0*nt+nidx(i), 0*nso+cols+l, md+1) = Br(0*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_rr(1:p)*Lc(:,l))
+                Br(0*nt+nidx(i), 1*nso+cols+l, md+1) = Br(0*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_rt(1:p)*Lc(:,l))
+                Br(0*nt+nidx(i), 2*nso+cols+l, md+1) = Br(0*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_rz(1:p)*Lc(:,l))
+                Br(1*nt+nidx(i), 0*nso+cols+l, md+1) = Br(1*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_tr(1:p)*Lc(:,l))
+                Br(1*nt+nidx(i), 1*nso+cols+l, md+1) = Br(1*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_tt(1:p)*Lc(:,l))
+                Br(1*nt+nidx(i), 2*nso+cols+l, md+1) = Br(1*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_tz(1:p)*Lc(:,l))
+                Br(2*nt+nidx(i), 0*nso+cols+l, md+1) = Br(2*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_zr(1:p)*Lc(:,l))
+                Br(2*nt+nidx(i), 1*nso+cols+l, md+1) = Br(2*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_zt(1:p)*Lc(:,l))
+                Br(2*nt+nidx(i), 2*nso+cols+l, md+1) = Br(2*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_zz(1:p)*Lc(:,l))
+              end do
+            else                                               ! ... into Bz
+              do l = 1, p
+                Bz(0*nt+nidx(i), 0*nso+cols+l, md+1) = Bz(0*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_rr(1:p)*Lc(:,l))
+                Bz(0*nt+nidx(i), 1*nso+cols+l, md+1) = Bz(0*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_rt(1:p)*Lc(:,l))
+                Bz(0*nt+nidx(i), 2*nso+cols+l, md+1) = Bz(0*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_rz(1:p)*Lc(:,l))
+                Bz(1*nt+nidx(i), 0*nso+cols+l, md+1) = Bz(1*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_tr(1:p)*Lc(:,l))
+                Bz(1*nt+nidx(i), 1*nso+cols+l, md+1) = Bz(1*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_tt(1:p)*Lc(:,l))
+                Bz(1*nt+nidx(i), 2*nso+cols+l, md+1) = Bz(1*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_tz(1:p)*Lc(:,l))
+                Bz(2*nt+nidx(i), 0*nso+cols+l, md+1) = Bz(2*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_zr(1:p)*Lc(:,l))
+                Bz(2*nt+nidx(i), 1*nso+cols+l, md+1) = Bz(2*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_zt(1:p)*Lc(:,l))
+                Bz(2*nt+nidx(i), 2*nso+cols+l, md+1) = Bz(2*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_zz(1:p)*Lc(:,l))
+              end do
+            end if
+          end do
+          end do
+        end do
+      end do
+    end do
+    ! ===================== inlined SLP PRESSURE (Ksub=2) -> Pmat; enters sigma.n only via nth*Stt, skip when tnphi==0 =====================
+    allocate(Pmat(nt,3*nso,M+1)); Pmat = (0.0_r64,0.0_r64)
+    if (any(tnphi /= 0.0_r64)) then
+    allocate(tinp(np*2+1+512)); nep = 0
+    do j = 1, np
+      do i = 0, 1
+        nep = nep+1; tinp(nep) = tpan(j) + (tpan(j+1)-tpan(j))*real(i,r64)/2.0_r64
+      end do
+    end do
+    nep = nep+1; tinp(nep) = tpan(np+1)
+    do while (tinp(2) > st1)
+      split = 0.5_r64*(tinp(1)+tinp(2)); do i = nep, 2, -1; tinp(i+1) = tinp(i); end do; tinp(2) = split; nep = nep+1
+    end do
+    do while (tinp(nep-1) < stN)
+      split = 0.5_r64*(tinp(nep)+tinp(nep-1)); tinp(nep+1) = tinp(nep); tinp(nep) = split; nep = nep+1
+    end do
+    npap = nep-1
+    allocate(joap(npap))
+    do c = 1, npap
+      tm = 0.5_r64*(tinp(c)+tinp(c+1)); qo = 1
+      do j = 1, np
+        if (tm >= tpan(j) .and. tm < tpan(j+1)) qo = j
+      end do
+      joap(c) = qo
+    end do
+    allocate(PC1(nt,3*q,M+1), PC2(nt,3*q,M+1), PC3(nt,3*q,M+1), ff(p,3))
+    do pq = 1, np                                                   ! ===== outer level: original panel pq =====
+      cols = (pq-1)*p
+      sumwso = 0.0_r64
+      do jp = 1, p; sumwso = sumwso + sws(cols+jp); end do
+      nk = 0
+      do i = 1, nt
+        ikq(i) = (abs(tx(i)-sxlo(pq)) + abs(tx(i)-sxhi(pq))) < 2.0_r64*sumwso     ! pressure outer near gate = 2.0
+        if (ikq(i)) then; nk = nk + 1; nidx(nk) = i; znear(nk) = tx(i); end if
+      end do
+      ! ---- outer far: inlined PK*VK + PE*VE carrier on the coarse original nodes ----
+      do i = 1, nt
+        if (ikq(i)) cycle
+        rt = real(tx(i),r64); zti = aimag(tx(i)); rho = rt
+        do jp = 1, p
+          jj = cols + jp; rhop = real(sx(jj),r64); zh = zti - aimag(sx(jj)); ws = sws(jj)
+          rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+          call modal_green_all_far_r64(chi, M, vka, vea)               ! bit-identical vk/ve to modal_green_all
+          do md = 0, M
+            vk = vka(md); ve = vea(md)
+            block
+              real(r64) :: t2, t4, t6, t7, t8, rnf
+              complex(r64) :: PKf(3), PEf(3)
+              t2=rho*rhop; t4=1.0_r64/acos(-1.0_r64); t6=1.0_r64/(chi-1.0_r64)
+              t7=1.0_r64/t2**1.5_r64; t8=(t4/sqrt(t2))/4.0_r64; rnf=real(md,r64)
+              PKf(1)=cmplx(-t8,0.0_r64,r64); PEf(1)=cmplx(rhop*t4*t6*t7*(rhop-chi*rho)*(-0.25_r64),0.0_r64,r64)
+              PKf(2)=rnf*t4/sqrt(t2)*(-0.5_r64)*ic; PEf(2)=(0.0_r64,0.0_r64)
+              PKf(3)=(0.0_r64,0.0_r64); PEf(3)=cmplx(rhop*t4*t6*t7*zh/4.0_r64,0.0_r64,r64)
+              do b = 1, 3
+                Pmat(i, (b-1)*nso+jj, md+1) = (PKf(b)*vk + PEf(b)*ve)*ws
+              end do
+            end block
+          end do
+        end do
+      end do
+      if (nk == 0) cycle
+      ! ---- outer near: recurse into the Ksub=2(+dyadic) subpanels of pq, inner re-detect ----
+      do c = 1, npap
+        if (joap(c) /= pq) cycle
+        denom = tpan(pq+1) - tpan(pq)
+        do i = 1, p
+          tgi = tinp(c) + (1.0_r64+tglp(i))/2.0_r64*(tinp(c+1)-tinp(c))
+          rk(i) = (2.0_r64*tgi - (tpan(pq)+tpan(pq+1)))/denom
+        end do
+        call lagrange_interp_r64(p, tglp, p, rk, Lc)
+        Ypb = matmul(Lc, xc(:,pq))
+        rlo = (2.0_r64*tinp(c)   - (tpan(pq)+tpan(pq+1)))/denom
+        rhi = (2.0_r64*tinp(c+1) - (tpan(pq)+tpan(pq+1)))/denom
+        re2(1) = rlo; re2(2) = rhi
+        call lagrange_interp_r64(p, tglp, 2_8, re2, IPe2)
+        ec2 = matmul(IPe2, xc(:,pq)); zac = ec2(1); zbc = ec2(2)
+        IPqc = matmul(IP2, Lc)
+        Yq = matmul(IP2, Ypb); dYq = matmul(Dq, Yq)
+        do iq = 1, q
+          spd = abs(dYq(iq)); nvq(iq) = -ic*dYq(iq)/spd; wsq(iq) = wglq(iq)*spd; wxpq(iq) = dYq(iq)*wglq(iq)
+        end do
+        dYp = matmul(Dp, Ypb)
+        do jp = 1, p; wsp(jp) = wglp(jp)*abs(dYp(jp)); end do
+        sumwsc = sum(wsp)
+        nkc = 0
+        do i = 1, nk
+          ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 2.5_r64*sumwsc     ! pressure inner near gate = 2.5
+          if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
+        end do
+        ! ---- inner near: (private) pressure split coef -> Slog/Dval assembly, fold q->p_sub (IPqc) ----
+        if (nkc > 0) then
+          call axissymstok_slppres_coef_nmode_r64(nkc, zc(1:nkc), q, Yq, M, &
+               PC1(1:nkc,1:3*q,:), PC2(1:nkc,1:3*q,:), PC3(1:nkc,1:3*q,:))
+          call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, zac, zbc, iside, &
+               As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
+          do md = 0, M
+            do b = 1, 3
+              do iq = 1, q
+                do ia = 1, nkc
+                  cc1 = PC1(ia, 3*(iq-1)+b, md+1); cc2 = PC2(ia, 3*(iq-1)+b, md+1); cc3 = PC3(ia, 3*(iq-1)+b, md+1)
+                  Slog = cmplx(As(iq,ia),0.0_r64,r64); Dval = Ad(iq,ia)
+                  Gcq(ia,iq) = twopi*cc1*Slog + cc2*wsq(iq) + cmplx(twopi*real(Dval*(cc3/nvq(iq)),r64),0.0_r64,r64)
+                end do
+              end do
+              Gpc(1:nkc,1:p) = matmul(Gcq(1:nkc,1:q), IPqc)
+              do ia = 1, nkc
+                do l = 1, p
+                  Pmat(nidx(ci(ia)), (b-1)*nso+cols+l, md+1) = Pmat(nidx(ci(ia)), (b-1)*nso+cols+l, md+1) + Gpc(ia,l)
+                end do
+              end do
+            end do
+          end do
+        end if
+        ! ---- inner far: inlined carrier coefficients on the FINER subpanel nodes, fold via Lc ----
+        do i = 1, nk
+          if (ikc(i)) cycle
+          rt = real(znear(i),r64); zti = aimag(znear(i)); rho = rt
+          do jp = 1, p
+            rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp))
+            rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+            call modal_green_all_far_r64(chi, M, vka, vea)
+            vkmat(jp,0:M) = vka(0:M); vemat(jp,0:M) = vea(0:M)
+          end do
+          do md = 0, M
+            do jp = 1, p
+              rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp))
+              rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
+              vk = vkmat(jp,md); ve = vemat(jp,md)
+              block
+                real(r64) :: t2, t4, t6, t7, t8, rnf
+                complex(r64) :: PKf(3), PEf(3)
+                t2=rho*rhop; t4=1.0_r64/acos(-1.0_r64); t6=1.0_r64/(chi-1.0_r64)
+                t7=1.0_r64/t2**1.5_r64; t8=(t4/sqrt(t2))/4.0_r64; rnf=real(md,r64)
+                PKf(1)=cmplx(-t8,0.0_r64,r64); PEf(1)=cmplx(rhop*t4*t6*t7*(rhop-chi*rho)*(-0.25_r64),0.0_r64,r64)
+                PKf(2)=rnf*t4/sqrt(t2)*(-0.5_r64)*ic; PEf(2)=(0.0_r64,0.0_r64)
+                PKf(3)=(0.0_r64,0.0_r64); PEf(3)=cmplx(rhop*t4*t6*t7*zh/4.0_r64,0.0_r64,r64)
+                do b = 1, 3
+                  ff(jp,b) = (PKf(b)*vk + PEf(b)*ve)*wsp(jp)
+                end do
+              end block
+            end do
+            do b = 1, 3
+              do l = 1, p
+                Pmat(nidx(i), (b-1)*nso+cols+l, md+1) = Pmat(nidx(i), (b-1)*nso+cols+l, md+1) + sum(ff(1:p,b)*Lc(:,l))
+              end do
             end do
           end do
         end do
       end do
     end do
-    deallocate(tin, joa, ci, zc, zcn, nidx, znear, znearn, ikq, ikc, C1, C2, C3, C4, As, Ad, A1, A2, A3, A4, Gcq, Gpc)
+    deallocate(tinp, joap, PC1, PC2, PC3, ff)
+    end if
+    ! ===================== assemble sigma.n = nr*(sigma.e_rho) + nth*(sigma.e_theta) + nz*(sigma.e_z) =====================
+    ! rows (ar-1)*nt = (t_rho,t_theta,t_z); sigma_thth = -3 p - sigma_rr - sigma_zz.  tnphi=0 -> theta term drops.
+    do md = 0, M
+      do j = 1, 3*nso
+        do i = 1, nt
+          nr = real(tnx(i),r64); nz = aimag(tnx(i)); nthv = tnphi(i)
+          Brr = Br(0*nt+i,j,md+1); Brt = Br(1*nt+i,j,md+1); Brz = Br(2*nt+i,j,md+1)   ! sigma.e_rho (rho,theta,z)
+          Bzr = Bz(0*nt+i,j,md+1); Bzt = Bz(1*nt+i,j,md+1); Bzz = Bz(2*nt+i,j,md+1)   ! sigma.e_z   (rho,theta,z)
+          Ppr = Pmat(i,j,md+1)
+          Stt = -3.0_r64*Ppr - Brr - Bzz
+          A(0*nt+i,j,md+1) = nr*Brr + nthv*Brt + nz*Bzr   ! t_rho
+          A(1*nt+i,j,md+1) = nr*Brt + nthv*Stt + nz*Bzt   ! t_theta
+          A(2*nt+i,j,md+1) = nr*Brz + nthv*Bzt + nz*Bzz   ! t_z
+        end do
+      end do
+    end do
+    deallocate(tin, joa, ci, zc, zcn, nidx, znear, ikq, ikc, C1, C2, C3, C4, As, Ad, A1, A2, A3, A4, Gcq, Gpc)
+    deallocate(Br, Bz, Pmat)
   end subroutine axissymstok_slpn_blockmat_nmode_r64
 
   ! ==================================================================================================
@@ -2103,13 +2313,13 @@ contains
     deallocate(cc1, cc2, cc3, cc4, cc5, asq, adq, a1q, a2q, a3q, a4q, tt_az, ww_az)
   end subroutine axissymstok_dlpn_blockmat_r64
 
-  subroutine axissymstok_dlpn_blockmat_nmode_r64(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
+  subroutine axissymstok_dlpn_blockmat_nmode_r64(nt, tx, tnx, tnphi, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
     integer(8),   intent(in)    :: nt, p, np, M, iside, iclosed
     complex(r64), intent(in)    :: tx(nt), tnx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
-    real(r64),    intent(in)    :: sws(p*np), tpan(np+1), mu
+    real(r64),    intent(in)    :: sws(p*np), tpan(np+1), mu, tnphi(nt)
     complex(r64), intent(inout) :: A(3*nt, 3*np*p, M+1)
-    integer(8), parameter :: Ksub = 4
-    integer(8) :: qq, nso, i, j, jp, iq, ia, l, e, md, ar, b, c, qo, ne, npa, nk, nkc, jj, cols
+    integer(8), parameter :: Ksub = 4, nv = 160
+    integer(8) :: qq, nso, i, j, jp, iq, ia, l, e, md, ar, b, c, qo, ne, npa, nk, nkc, jj, cols, ib, nep, npap, iv
     real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, nrp, nzp, vk, ve, Fn, An, dFn, rn, nrt, nzt
     real(r64)  :: vka(0:M), vea(0:M), Fna(0:M), Ana(0:M), dFna(0:M), vkmat(p,0:M), vemat(p,0:M)
     real(r64)  :: st1, stN, tm, denom, rlo, rhi, tgi, split
@@ -2129,6 +2339,13 @@ contains
                     Be_tr(p), Be_tt(p), Be_tz(p), &
                     Be_zr(p), Be_zt(p), Be_zz(p)
     real(r64)  :: n2, ifn2, n4, nr, nz
+    complex(r64), allocatable :: Br(:,:,:), Bz(:,:,:), Pmat(:,:,:), PC1(:,:,:), PC2(:,:,:), PC3(:,:,:), PC4(:,:,:)
+    real(r64),    allocatable :: tinp(:)
+    integer(8),   allocatable :: joap(:)
+    complex(r64) :: Brr, Brt, Brz, Bzr, Bzt, Bzz, Ppr, Stt
+    real(r64)    :: nthv
+    complex(r64) :: Pr(M+1), Pp(M+1), Pz(M+1), ev, ir3, ir5, cq, hq, nYp(p)
+    real(r64)    :: nrs, nzs, cv, sv, r2v, ndr, rcv, fac, vphi
     qq = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); pi = acos(-1.0_r64); twopi = 2.0_r64*pi
     call gauss_r64(p,     tglp, wglp, Dp)
     call gauss_r64(2_8*p, tglq, wglq, Dq)
@@ -2162,10 +2379,10 @@ contains
       end do
       joa(c) = qo
     end do
-    allocate(ci(nt), zc(nt), zcn(nt), nidx(nt), znear(nt), znearn(nt), ikq(nt), ikc(nt))
+    allocate(ci(nt), zc(nt), zcn(nt), nidx(nt), znear(nt), ikq(nt), ikc(nt))
     allocate(C1(3*nt,3*qq,M+1), C2(3*nt,3*qq,M+1), C3(3*nt,3*qq,M+1), C4(3*nt,3*qq,M+1), C5(3*nt,3*qq,M+1))
     allocate(As(qq,nt), Ad(qq,nt), A1(qq,nt), A2(qq,nt), A3(qq,nt), A4(qq,nt), Gcq(nt,qq), Gpc(nt,p), ff(p,9))
-    A = (0.0_r64,0.0_r64)
+    allocate(Br(3*nt,3*nso,M+1), Bz(3*nt,3*nso,M+1)); Br = (0.0_r64,0.0_r64); Bz = (0.0_r64,0.0_r64)
     do qo = 1, np
       cols = (qo-1)*p
       do i = 1, p
@@ -2178,17 +2395,18 @@ contains
       nk = 0
       do i = 1, nt
         ikq(i) = (abs(tx(i)-sxlo(qo)) + abs(tx(i)-sxhi(qo))) < 1.85_r64*sumwso
-        if (ikq(i)) then; nk = nk + 1; nidx(nk) = i; znear(nk) = tx(i); znearn(nk) = tnx(i); end if
+        if (ikq(i)) then; nk = nk + 1; nidx(nk) = i; znear(nk) = tx(i); end if
       end do
       do i = 1, nt
         if (ikq(i)) cycle
-        rt = real(tx(i),r64); zti = aimag(tx(i)); nrt = real(tnx(i),r64); nzt = aimag(tnx(i))
+        rt = real(tx(i),r64); zti = aimag(tx(i))
         do jp = 1, p
           jj = cols + jp; rhop = real(sx(jj),r64); zh = zti - aimag(sx(jj)); ws = sws(jj)
           nrp = real(snx(jj),r64); nzp = aimag(snx(jj)); rho = rt
           rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call modal_green_all_far_r64(chi, M, vka, vea)        ! vk/ve only (D' far recipe)
-          nr = nrt; nz = nzt                                    ! target normal feeds the D' coK/coE pieces
+          call modal_green_all_far_r64(chi, M, vka, vea)        ! carrier ONCE per node (shared across ib=1,2)
+          do ib = 1, 2                                          ! ib=1: e_rho (nr=1,nz=0)->Br;  ib=2: e_z (nr=0,nz=1)->Bz
+          if (ib == 1) then; nr = 1.0_r64; nz = 0.0_r64; else; nr = 0.0_r64; nz = 1.0_r64; end if
           block
             real(r64) :: ipi, t2, t3, t4, t5, t6, t7, t8, t9, t10, t15, t16, t18, t19, t22, t27, t28, t20, t25, t26, t29, t30, t31, t32
             real(r64) :: t33, t34, t36, t37, t41, t42, t43, t44, t45, t46, t47, t48, t49, t50, t51, t52, t54, t55, t56, t57, t58, t60
@@ -2554,9 +2772,16 @@ contains
             Be_rr(jp) = (coK(1)*vk+coE(1)*ve)*ws;  Be_rt(jp) = (coK(2)*vk+coE(2)*ve)*ws;  Be_rz(jp) = (coK(3)*vk+coE(3)*ve)*ws
             Be_tr(jp) = (coK(4)*vk+coE(4)*ve)*ws;  Be_tt(jp) = (coK(5)*vk+coE(5)*ve)*ws;  Be_tz(jp) = (coK(6)*vk+coE(6)*ve)*ws
             Be_zr(jp) = (coK(7)*vk+coE(7)*ve)*ws;  Be_zt(jp) = (coK(8)*vk+coE(8)*ve)*ws;  Be_zz(jp) = (coK(9)*vk+coE(9)*ve)*ws
-            A(0*nt+i, 0*nso+jj, md+1) = Be_rr(jp);  A(0*nt+i, 1*nso+jj, md+1) = Be_rt(jp);  A(0*nt+i, 2*nso+jj, md+1) = Be_rz(jp)
-            A(1*nt+i, 0*nso+jj, md+1) = Be_tr(jp);  A(1*nt+i, 1*nso+jj, md+1) = Be_tt(jp);  A(1*nt+i, 2*nso+jj, md+1) = Be_tz(jp)
-            A(2*nt+i, 0*nso+jj, md+1) = Be_zr(jp);  A(2*nt+i, 1*nso+jj, md+1) = Be_zt(jp);  A(2*nt+i, 2*nso+jj, md+1) = Be_zz(jp)
+            if (ib == 1) then
+              Br(0*nt+i, 0*nso+jj, md+1) = Be_rr(jp);  Br(0*nt+i, 1*nso+jj, md+1) = Be_rt(jp);  Br(0*nt+i, 2*nso+jj, md+1) = Be_rz(jp)
+              Br(1*nt+i, 0*nso+jj, md+1) = Be_tr(jp);  Br(1*nt+i, 1*nso+jj, md+1) = Be_tt(jp);  Br(1*nt+i, 2*nso+jj, md+1) = Be_tz(jp)
+              Br(2*nt+i, 0*nso+jj, md+1) = Be_zr(jp);  Br(2*nt+i, 1*nso+jj, md+1) = Be_zt(jp);  Br(2*nt+i, 2*nso+jj, md+1) = Be_zz(jp)
+            else
+              Bz(0*nt+i, 0*nso+jj, md+1) = Be_rr(jp);  Bz(0*nt+i, 1*nso+jj, md+1) = Be_rt(jp);  Bz(0*nt+i, 2*nso+jj, md+1) = Be_rz(jp)
+              Bz(1*nt+i, 0*nso+jj, md+1) = Be_tr(jp);  Bz(1*nt+i, 1*nso+jj, md+1) = Be_tt(jp);  Bz(1*nt+i, 2*nso+jj, md+1) = Be_tz(jp)
+              Bz(2*nt+i, 0*nso+jj, md+1) = Be_zr(jp);  Bz(2*nt+i, 1*nso+jj, md+1) = Be_zt(jp);  Bz(2*nt+i, 2*nso+jj, md+1) = Be_zz(jp)
+            end if
+          end do
           end do
         end do
       end do
@@ -2588,16 +2813,18 @@ contains
         nkc = 0
         do i = 1, nk
           ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 1.5_r64*sumwsc
-          if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); zcn(nkc) = znearn(i); end if
+          if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
         end do
         if (nkc > 0) then
-          call axissymstok_dlpn_coef_nmode_r64(nkc, zc(1:nkc), zcn(1:nkc), qq, Yq, nvq, M, mu, &
-               C1(1:3*nkc,1:3*qq,:), C2(1:3*nkc,1:3*qq,:), C3(1:3*nkc,1:3*qq,:), C4(1:3*nkc,1:3*qq,:), C5(1:3*nkc,1:3*qq,:))
           call sdspecialquad_r64(nkc, zc(1:nkc), qq, Yq, nvq, wxpq, zac, zbc, iside, &
                As(1:qq,1:nkc), Ad(1:qq,1:nkc), A1(1:qq,1:nkc), A2(1:qq,1:nkc), A3(1:qq,1:nkc), A4(1:qq,1:nkc))
-          do md = 0, M
-            do e = 1, 9
-              ar = (e-1)/3 + 1; b = mod(e-1,3) + 1
+          do ib = 1, 2                                          ! ib=1: e_rho normal (1,0)->Br; ib=2: e_z normal (0,1)->Bz
+            if (ib == 1) then; zcn(1:nkc) = (1.0_r64,0.0_r64); else; zcn(1:nkc) = (0.0_r64,1.0_r64); end if
+            call axissymstok_dlpn_coef_nmode_r64(nkc, zc(1:nkc), zcn(1:nkc), qq, Yq, nvq, M, mu, &
+                 C1(1:3*nkc,1:3*qq,:), C2(1:3*nkc,1:3*qq,:), C3(1:3*nkc,1:3*qq,:), C4(1:3*nkc,1:3*qq,:), C5(1:3*nkc,1:3*qq,:))
+            do md = 0, M
+              do e = 1, 9
+                ar = (e-1)/3 + 1; b = mod(e-1,3) + 1
               do iq = 1, qq
                 do ia = 1, nkc
                   cc1 = C1(3*(ia-1)+ar, 3*(iq-1)+b, md+1); cc2 = C2(3*(ia-1)+ar, 3*(iq-1)+b, md+1)
@@ -2618,25 +2845,34 @@ contains
                 end do
               end do
               Gpc(1:nkc,1:p) = matmul(Gcq(1:nkc,1:qq), IPqc)
-              do ia = 1, nkc
-                do l = 1, p
-                  A((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) = &
-                    A((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) + Gpc(ia,l)
-                end do
-              end do
+              if (ib == 1) then
+                do ia = 1, nkc; do l = 1, p
+                  Br((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) = Br((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) + Gpc(ia,l)
+                end do; end do
+              else
+                do ia = 1, nkc; do l = 1, p
+                  Bz((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) = Bz((ar-1)*nt+nidx(ci(ia)), (b-1)*nso+cols+l, md+1) + Gpc(ia,l)
+                end do; end do
+              end if
             end do
+          end do
           end do
         end if
         do i = 1, nk
           if (ikc(i)) cycle
-          rt = real(znear(i),r64); zti = aimag(znear(i)); nrt = real(znearn(i),r64); nzt = aimag(znearn(i))
-          do jp = 1, p                                          ! carrier_all + md-indep D' pieces ONCE per node
+          rt = real(znear(i),r64); zti = aimag(znear(i))
+          do jp = 1, p                                          ! carrier ONCE per node (shared across ib=1,2)
             rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp)); rho = rt
-            nrp = real(-ic*dYp(jp)/abs(dYp(jp)),r64); nzp = aimag(-ic*dYp(jp)/abs(dYp(jp)))
-            nr = nrt; nz = nzt
             rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
             call modal_green_all_far_r64(chi, M, vka, vea)
             vkmat(jp,0:M) = vka(0:M); vemat(jp,0:M) = vea(0:M)
+          end do
+          do ib = 1, 2                                          ! ib=1: e_rho (nr=1,nz=0)->Br;  ib=2: e_z (nr=0,nz=1)->Bz
+          if (ib == 1) then; nr = 1.0_r64; nz = 0.0_r64; else; nr = 0.0_r64; nz = 1.0_r64; end if
+          do jp = 1, p
+            rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp)); rho = rt
+            nrp = real(-ic*dYp(jp)/abs(dYp(jp)),r64); nzp = aimag(-ic*dYp(jp)/abs(dYp(jp)))
+            rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
             block
               real(r64) :: ipi, t2, t3, t4, t5, t6, t7, t8, t9, t10, t15, t16, t18, t19, t22, t27, t28, t20, t25, t26, t29, t30, t31, t32
               real(r64) :: t33, t34, t36, t37, t41, t42, t43, t44, t45, t46, t47, t48, t49, t50, t51, t52, t54, t55, t56, t57, t58, t60
@@ -3004,21 +3240,205 @@ contains
               Be_tr(jp) = (coK(4)*vk+coE(4)*ve)*wsp(jp);  Be_tt(jp) = (coK(5)*vk+coE(5)*ve)*wsp(jp);  Be_tz(jp) = (coK(6)*vk+coE(6)*ve)*wsp(jp)
               Be_zr(jp) = (coK(7)*vk+coE(7)*ve)*wsp(jp);  Be_zt(jp) = (coK(8)*vk+coE(8)*ve)*wsp(jp);  Be_zz(jp) = (coK(9)*vk+coE(9)*ve)*wsp(jp)
             end do
-            do l = 1, p                                        ! fold each named block (sum over subpanel nodes via Lc) into A
-              A(0*nt+nidx(i), 0*nso+cols+l, md+1) = A(0*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_rr(1:p)*Lc(:,l))
-              A(0*nt+nidx(i), 1*nso+cols+l, md+1) = A(0*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_rt(1:p)*Lc(:,l))
-              A(0*nt+nidx(i), 2*nso+cols+l, md+1) = A(0*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_rz(1:p)*Lc(:,l))
-              A(1*nt+nidx(i), 0*nso+cols+l, md+1) = A(1*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_tr(1:p)*Lc(:,l))
-              A(1*nt+nidx(i), 1*nso+cols+l, md+1) = A(1*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_tt(1:p)*Lc(:,l))
-              A(1*nt+nidx(i), 2*nso+cols+l, md+1) = A(1*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_tz(1:p)*Lc(:,l))
-              A(2*nt+nidx(i), 0*nso+cols+l, md+1) = A(2*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_zr(1:p)*Lc(:,l))
-              A(2*nt+nidx(i), 1*nso+cols+l, md+1) = A(2*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_zt(1:p)*Lc(:,l))
-              A(2*nt+nidx(i), 2*nso+cols+l, md+1) = A(2*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_zz(1:p)*Lc(:,l))
+            if (ib == 1) then
+              do l = 1, p                                      ! fold subpanel nodes (via Lc) into Br
+                Br(0*nt+nidx(i), 0*nso+cols+l, md+1) = Br(0*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_rr(1:p)*Lc(:,l))
+                Br(0*nt+nidx(i), 1*nso+cols+l, md+1) = Br(0*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_rt(1:p)*Lc(:,l))
+                Br(0*nt+nidx(i), 2*nso+cols+l, md+1) = Br(0*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_rz(1:p)*Lc(:,l))
+                Br(1*nt+nidx(i), 0*nso+cols+l, md+1) = Br(1*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_tr(1:p)*Lc(:,l))
+                Br(1*nt+nidx(i), 1*nso+cols+l, md+1) = Br(1*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_tt(1:p)*Lc(:,l))
+                Br(1*nt+nidx(i), 2*nso+cols+l, md+1) = Br(1*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_tz(1:p)*Lc(:,l))
+                Br(2*nt+nidx(i), 0*nso+cols+l, md+1) = Br(2*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_zr(1:p)*Lc(:,l))
+                Br(2*nt+nidx(i), 1*nso+cols+l, md+1) = Br(2*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_zt(1:p)*Lc(:,l))
+                Br(2*nt+nidx(i), 2*nso+cols+l, md+1) = Br(2*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_zz(1:p)*Lc(:,l))
+              end do
+            else
+              do l = 1, p                                      ! ... into Bz
+                Bz(0*nt+nidx(i), 0*nso+cols+l, md+1) = Bz(0*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_rr(1:p)*Lc(:,l))
+                Bz(0*nt+nidx(i), 1*nso+cols+l, md+1) = Bz(0*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_rt(1:p)*Lc(:,l))
+                Bz(0*nt+nidx(i), 2*nso+cols+l, md+1) = Bz(0*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_rz(1:p)*Lc(:,l))
+                Bz(1*nt+nidx(i), 0*nso+cols+l, md+1) = Bz(1*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_tr(1:p)*Lc(:,l))
+                Bz(1*nt+nidx(i), 1*nso+cols+l, md+1) = Bz(1*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_tt(1:p)*Lc(:,l))
+                Bz(1*nt+nidx(i), 2*nso+cols+l, md+1) = Bz(1*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_tz(1:p)*Lc(:,l))
+                Bz(2*nt+nidx(i), 0*nso+cols+l, md+1) = Bz(2*nt+nidx(i), 0*nso+cols+l, md+1) + sum(Be_zr(1:p)*Lc(:,l))
+                Bz(2*nt+nidx(i), 1*nso+cols+l, md+1) = Bz(2*nt+nidx(i), 1*nso+cols+l, md+1) + sum(Be_zt(1:p)*Lc(:,l))
+                Bz(2*nt+nidx(i), 2*nso+cols+l, md+1) = Bz(2*nt+nidx(i), 2*nso+cols+l, md+1) + sum(Be_zz(1:p)*Lc(:,l))
+              end do
+            end if
+          end do
+          end do
+        end do
+      end do
+    end do
+    ! ===================== inlined DLP (stresslet) PRESSURE (Ksub=2) -> Pmat; enters sigma.n only via nth*Stt, skip when tnphi==0 =====================
+    allocate(Pmat(nt,3*nso,M+1)); Pmat = (0.0_r64,0.0_r64)
+    if (any(tnphi /= 0.0_r64)) then
+    allocate(tinp(np*2+1+512)); nep = 0
+    do j = 1, np
+      do i = 0, 1
+        nep = nep+1; tinp(nep) = tpan(j) + (tpan(j+1)-tpan(j))*real(i,r64)/2.0_r64
+      end do
+    end do
+    nep = nep+1; tinp(nep) = tpan(np+1)
+    do while (tinp(2) > st1)
+      split = 0.5_r64*(tinp(1)+tinp(2)); do i = nep, 2, -1; tinp(i+1) = tinp(i); end do; tinp(2) = split; nep = nep+1
+    end do
+    do while (tinp(nep-1) < stN)
+      split = 0.5_r64*(tinp(nep)+tinp(nep-1)); tinp(nep+1) = tinp(nep); tinp(nep) = split; nep = nep+1
+    end do
+    npap = nep-1
+    allocate(joap(npap))
+    do c = 1, npap
+      tm = 0.5_r64*(tinp(c)+tinp(c+1)); qo = 1
+      do j = 1, np
+        if (tm >= tpan(j) .and. tm < tpan(j+1)) qo = j
+      end do
+      joap(c) = qo
+    end do
+    allocate(PC1(nt,3*qq,M+1), PC2(nt,3*qq,M+1), PC3(nt,3*qq,M+1), PC4(nt,3*qq,M+1))
+    do qo = 1, np
+      cols = (qo-1)*p
+      sumwso = 0.0_r64
+      do jp = 1, p; sumwso = sumwso + sws(cols+jp); end do
+      nk = 0
+      do i = 1, nt
+        ikq(i) = (abs(tx(i)-sxlo(qo)) + abs(tx(i)-sxhi(qo))) < 2.0_r64*sumwso
+        if (ikq(i)) then; nk = nk + 1; nidx(nk) = i; znear(nk) = tx(i); end if
+      end do
+      ! ---- outer far: carrier-free azimuthal ring integral on the coarse original nodes ----
+      do i = 1, nt
+        if (ikq(i)) cycle
+        rt = real(tx(i),r64); zti = aimag(tx(i)); rho = rt
+        do jp = 1, p
+          jj = cols + jp; rhop = real(sx(jj),r64); zh = zti - aimag(sx(jj)); ws = sws(jj)
+          nrs = real(snx(jj),r64); nzs = aimag(snx(jj))
+          Pr = (0.0_r64,0.0_r64); Pp = (0.0_r64,0.0_r64); Pz = (0.0_r64,0.0_r64)
+          do iv = 1, nv
+            vphi = twopi*real(iv-1,r64)/real(nv,r64); cv = cos(vphi); sv = sin(vphi)
+            r2v = rho*rho + rhop*rhop - 2.0_r64*rho*rhop*cv + zh*zh
+            rcv = rho*cv - rhop; ndr = nrs*rcv + nzs*zh
+            do md = 0, M
+              ev = exp(ic*real(md,r64)*vphi); ir3 = ev/r2v**1.5_r64; ir5 = ev/r2v**2.5_r64
+              Pr(md+1) = Pr(md+1) + (-nrs*ir3 + 3.0_r64*ndr*rcv*ir5)
+              Pp(md+1) = Pp(md+1) + (3.0_r64*ndr*(-rho*sv)*ir5)
+              Pz(md+1) = Pz(md+1) + (-nzs*ir3 + 3.0_r64*ndr*zh*ir5)
+            end do
+          end do
+          fac = rhop*ws/real(nv,r64)
+          do md = 0, M
+            Pmat(i,         jj, md+1) = Pr(md+1)*fac
+            Pmat(i,   nso+jj, md+1)   = Pp(md+1)*fac
+            Pmat(i, 2*nso+jj, md+1)   = Pz(md+1)*fac
+          end do
+        end do
+      end do
+      if (nk == 0) cycle
+      do c = 1, npap
+        if (joap(c) /= qo) cycle
+        denom = tpan(qo+1) - tpan(qo)
+        do i = 1, p
+          tgi = tinp(c) + (1.0_r64+tglp(i))/2.0_r64*(tinp(c+1)-tinp(c))
+          rk(i) = (2.0_r64*tgi - (tpan(qo)+tpan(qo+1)))/denom
+        end do
+        call lagrange_interp_r64(p, tglp, p, rk, Lc)
+        Ypb = matmul(Lc, xc(:,qo))
+        rlo = (2.0_r64*tinp(c)   - (tpan(qo)+tpan(qo+1)))/denom
+        rhi = (2.0_r64*tinp(c+1) - (tpan(qo)+tpan(qo+1)))/denom
+        re2(1) = rlo; re2(2) = rhi
+        call lagrange_interp_r64(p, tglp, 2_8, re2, IPe2)
+        ec2 = matmul(IPe2, xc(:,qo)); zac = ec2(1); zbc = ec2(2)
+        IPqc = matmul(IP2, Lc)
+        Yq = matmul(IP2, Ypb); dYq = matmul(Dq, Yq)
+        do iq = 1, qq
+          spd = abs(dYq(iq)); nvq(iq) = -ic*dYq(iq)/spd; wsq(iq) = wglq(iq)*spd; wxpq(iq) = dYq(iq)*wglq(iq)
+        end do
+        dYp = matmul(Dp, Ypb)
+        do jp = 1, p; wsp(jp) = wglp(jp)*abs(dYp(jp)); nYp(jp) = -ic*dYp(jp)/abs(dYp(jp)); end do
+        sumwsc = sum(wsp)
+        nkc = 0
+        do i = 1, nk
+          ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 2.5_r64*sumwsc
+          if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
+        end do
+        if (nkc > 0) then
+          call axissymstok_dlppres_coef_nmode_r64(nkc, zc(1:nkc), qq, Yq, nvq, M, &
+               PC1(1:nkc,1:3*qq,:), PC2(1:nkc,1:3*qq,:), PC3(1:nkc,1:3*qq,:), PC4(1:nkc,1:3*qq,:))
+          call sdspecialquad_r64(nkc, zc(1:nkc), qq, Yq, nvq, wxpq, zac, zbc, iside, &
+               As(1:qq,1:nkc), Ad(1:qq,1:nkc), A1(1:qq,1:nkc), A2(1:qq,1:nkc), A3(1:qq,1:nkc), A4(1:qq,1:nkc))
+          do md = 0, M
+            do b = 1, 3
+              do iq = 1, qq
+                do ia = 1, nkc
+                  cc1 = PC1(ia,3*(iq-1)+b,md+1); cc2 = PC2(ia,3*(iq-1)+b,md+1)
+                  cc3 = PC3(ia,3*(iq-1)+b,md+1); cc4 = PC4(ia,3*(iq-1)+b,md+1)
+                  Slog = cmplx(As(iq,ia),0.0_r64,r64); Dval = Ad(iq,ia); Dz = cmplx(A1(iq,ia),-A2(iq,ia),r64)
+                  if (b == 2) then
+                    cq =  ic*twopi*aimag(Dval*(cc3/nvq(iq)))
+                    hq = -ic*twopi*aimag(Dz  *(cc4/nvq(iq)))
+                  else
+                    cq = cmplx( twopi*real(Dval*(cc3/nvq(iq)), r64), 0.0_r64, r64)
+                    hq = cmplx(-twopi*real(Dz  *(cc4/nvq(iq)), r64), 0.0_r64, r64)
+                  end if
+                  Gcq(ia,iq) = twopi*cc1*Slog + cc2*wsq(iq) + cq + hq
+                end do
+              end do
+              Gpc(1:nkc,1:p) = matmul(Gcq(1:nkc,1:qq), IPqc)
+              do ia = 1, nkc
+                do l = 1, p
+                  Pmat(nidx(ci(ia)), (b-1)*nso+cols+l, md+1) = Pmat(nidx(ci(ia)), (b-1)*nso+cols+l, md+1) + Gpc(ia,l)
+                end do
+              end do
+            end do
+          end do
+        end if
+        do i = 1, nk
+          if (ikc(i)) cycle
+          rt = real(znear(i),r64); zti = aimag(znear(i)); rho = rt
+          do jp = 1, p
+            rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp)); ws = wsp(jp)
+            nrs = real(nYp(jp),r64); nzs = aimag(nYp(jp))
+            Pr = (0.0_r64,0.0_r64); Pp = (0.0_r64,0.0_r64); Pz = (0.0_r64,0.0_r64)
+            do iv = 1, nv
+              vphi = twopi*real(iv-1,r64)/real(nv,r64); cv = cos(vphi); sv = sin(vphi)
+              r2v = rho*rho + rhop*rhop - 2.0_r64*rho*rhop*cv + zh*zh
+              rcv = rho*cv - rhop; ndr = nrs*rcv + nzs*zh
+              do md = 0, M
+                ev = exp(ic*real(md,r64)*vphi); ir3 = ev/r2v**1.5_r64; ir5 = ev/r2v**2.5_r64
+                Pr(md+1) = Pr(md+1) + (-nrs*ir3 + 3.0_r64*ndr*rcv*ir5)
+                Pp(md+1) = Pp(md+1) + (3.0_r64*ndr*(-rho*sv)*ir5)
+                Pz(md+1) = Pz(md+1) + (-nzs*ir3 + 3.0_r64*ndr*zh*ir5)
+              end do
+            end do
+            fac = rhop*ws/real(nv,r64)
+            do md = 0, M
+              do l = 1, p
+                Pmat(nidx(i),         cols+l, md+1) = Pmat(nidx(i),         cols+l, md+1) + Pr(md+1)*fac*Lc(jp,l)
+                Pmat(nidx(i),   nso+cols+l, md+1)   = Pmat(nidx(i),   nso+cols+l, md+1)   + Pp(md+1)*fac*Lc(jp,l)
+                Pmat(nidx(i), 2*nso+cols+l, md+1)   = Pmat(nidx(i), 2*nso+cols+l, md+1)   + Pz(md+1)*fac*Lc(jp,l)
+              end do
             end do
           end do
         end do
       end do
     end do
-    deallocate(tin, joa, ci, zc, zcn, nidx, znear, znearn, ikq, ikc, C1, C2, C3, C4, C5, As, Ad, A1, A2, A3, A4, Gcq, Gpc, ff)
+    deallocate(tinp, joap, PC1, PC2, PC3, PC4)
+    end if
+    ! ===================== assemble sigma.n = nr*(sigma.e_rho) + nth*(sigma.e_theta) + nz*(sigma.e_z) =====================
+    do md = 0, M
+      do j = 1, 3*nso
+        do i = 1, nt
+          nr = real(tnx(i),r64); nz = aimag(tnx(i)); nthv = tnphi(i)
+          Brr = Br(0*nt+i,j,md+1); Brt = Br(1*nt+i,j,md+1); Brz = Br(2*nt+i,j,md+1)   ! sigma.e_rho (rho,theta,z)
+          Bzr = Bz(0*nt+i,j,md+1); Bzt = Bz(1*nt+i,j,md+1); Bzz = Bz(2*nt+i,j,md+1)   ! sigma.e_z   (rho,theta,z)
+          Ppr = Pmat(i,j,md+1)
+          Stt = -3.0_r64*Ppr - Brr - Bzz
+          A(0*nt+i,j,md+1) = nr*Brr + nthv*Brt + nz*Bzr   ! t_rho
+          A(1*nt+i,j,md+1) = nr*Brt + nthv*Stt + nz*Bzt   ! t_theta
+          A(2*nt+i,j,md+1) = nr*Brz + nthv*Bzt + nz*Bzz   ! t_z
+        end do
+      end do
+    end do
+    deallocate(tin, joa, ci, zc, zcn, nidx, znear, ikq, ikc, C1, C2, C3, C4, C5, As, Ad, A1, A2, A3, A4, Gcq, Gpc, ff)
+    deallocate(Br, Bz, Pmat)
   end subroutine axissymstok_dlpn_blockmat_nmode_r64
 end module axissymstok_specialquad_mod
