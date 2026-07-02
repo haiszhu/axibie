@@ -1,7 +1,7 @@
-# AxiStokes3D build Makefile.  Compiles the Fortran in src/ + the mwrap MEX gateway and links
-# the support libraries build/libaxissymstok_kernelsplit.a and build/libaxissymlap_kernelsplit.a,
-# which are shipped prebuilt together with their module interfaces
-# build/axissymstok_kernelsplit_mod.mod and build/axissymlap_kernelsplit_mod.mod (the .mod lets
+# AxiStokes3D build Makefile.  Compiles the Fortran in src/ + the mwrap MEX gateway and links the
+# prebuilt support libraries build/libaxissymstok_kernelsplit.a, build/libaxissymlap_kernelsplit.a
+# and build/libaxissym_physop_sparse.a, shipped together with their module interfaces
+# build/axissym{stok,lap}_kernelsplit_mod.mod and build/axissym_physop_sparse_mod.mod (the .mod lets
 # the sources that `use` those modules compile; the .a provides the compiled routines at link).
 
 PROJECT := AxiStokes3D
@@ -68,14 +68,19 @@ PUBLIC_SOURCES := $(SRC_DIR)/axistokes3d_mod.f90 \
                   $(SRC_DIR)/axissymlap_specialquad_mex.f90 \
                   $(SRC_DIR)/axissym_physop_mod.f90 \
                   $(SRC_DIR)/axissym_physop_mex.f90 \
+                  $(SRC_DIR)/axissym_physop_sparse_mex.f90 \
                   $(SRC_DIR)/axissym_nmodehelpers_mex.f90 \
                   $(SRC_DIR)/kdtree_mod.f90 \
                   $(SRC_DIR)/kdtree_mex.f90
+# NOTE: axissym_physop_sparse_MOD.f90 is withheld (the IP) -- shipped as prebuilt
+# libaxissym_physop_sparse.a + axissym_physop_sparse_mod.mod; only its public axps_ _MEX wrapper
+# (above) ships with source and compiles against the shipped .mod.
 PUBLIC_OBJECTS := $(patsubst $(SRC_DIR)/%.f90,$(BLD_DIR)/%.o,$(PUBLIC_SOURCES))
 
-PUB_LIB     := $(BLD_DIR)/lib$(PROJECT).a
-SEC_LIB     := $(BLD_DIR)/libaxissymstok_kernelsplit.a   # shipped prebuilt in build/ — not a build target
-SEC_LIB_LAP := $(BLD_DIR)/libaxissymlap_kernelsplit.a    # shipped prebuilt in build/ — not a build target
+PUB_LIB        := $(BLD_DIR)/lib$(PROJECT).a
+SEC_LIB        := $(BLD_DIR)/libaxissymstok_kernelsplit.a   # shipped prebuilt in build/ — not a build target
+SEC_LIB_LAP    := $(BLD_DIR)/libaxissymlap_kernelsplit.a    # shipped prebuilt in build/ — not a build target
+SEC_LIB_SPARSE := $(BLD_DIR)/libaxissym_physop_sparse.a     # shipped prebuilt in build/ — not a build target
 
 MW_SRC  := $(MATLAB_DIR)/$(PROJECT).mw
 MEX_C   := $(MATLAB_DIR)/$(PROJECT)_mex.c
@@ -85,7 +90,7 @@ MEX_OUT := $(MATLAB_DIR)/$(PROJECT)_mex.$(MEX_EXT)
 
 all:
 	@echo "$(PROJECT) build targets: make mex | make lib | make clean"
-	@echo "  NOTE: build/libaxissym{stok,lap}_kernelsplit.a + axissym{stok,lap}_kernelsplit_mod.mod must be present."
+	@echo "  NOTE: build/libaxissym{stok,lap}_kernelsplit.a + build/libaxissym_physop_sparse.a + their .mod must be present."
 
 mex: $(MEX_OUT)
 lib: $(PUB_LIB)
@@ -127,12 +132,12 @@ STDCXX_A     := $(shell $(CC) -print-file-name=libstdc++.a)
 LIBGCC_A     := $(shell $(CC) -print-file-name=libgcc.a)
 
 # Links the prebuilt support lib (must exist in $(BLD_DIR)); make errors loudly if it is missing.
-$(MEX_OUT): $(PUB_LIB) $(SEC_LIB) $(SEC_LIB_LAP) $(MEX_C)
+$(MEX_OUT): $(PUB_LIB) $(SEC_LIB) $(SEC_LIB_LAP) $(SEC_LIB_SPARSE) $(MEX_C)
 	$(CC) $(MEX_LDFLAGS) -fPIC \
 	  -DMATLAB_MEX_FILE -DMATLAB_DEFAULT_RELEASE=R2018a -DMX_COMPAT_32=0 \
 	  -I$(MATLAB_ROOT)/extern/include \
 	  $(MEX_C) \
-	  -L$(BLD_DIR) -l$(PROJECT) -laxissymstok_kernelsplit -laxissymlap_kernelsplit \
+	  -L$(BLD_DIR) -l$(PROJECT) -laxissymstok_kernelsplit -laxissymlap_kernelsplit -laxissym_physop_sparse \
 	  $(KDTREE_CWRAP) $(KDTREE_LIB) \
 	  $(MATLAB_LIBS) $(LAPACK_LIBS) \
 	  $(STDCXX_A) $(LIBGCC_A) -lpthread -lgfortran -lm \

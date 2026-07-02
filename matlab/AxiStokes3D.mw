@@ -267,6 +267,62 @@ F=Fsq(:,bcol);                                                        % F * sigm
 near = near > 0.5;
 end
 
+% ==== physical-space SPARSE close-correction (pass 2/3): per-panel fourier COMPUTE (Laplace SLP) ====
+@function [S_ij, idxall] = axps_closeslp_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall)
+nt=double(nt); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
+iside=double(iside); iclosed=double(iclosed); ntcx=double(ntcx); gate=double(gate);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:));
+sws=double(sws(:)); tpan=double(tpan(:)); tcxi=double(tcxi(:)); s3dw=double(s3dw(:));
+nsp=p*np; npp1=np+1; nsf=nsp*nang; nt3=3*nt; ns3=3*nsf; nap=nang*p;
+t3dx=double(reshape(t3dx,3,nt)); s3dx=double(reshape(s3dx,3,nsf)); s3dnx=double(reshape(s3dnx,3,nsf));
+S_ij=double(reshape(S_ij,ntcx,nap)); idxall=double(idxall(:));
+# FORTRAN axps_closeslp_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, int[1] ntcx, double[npp1] tcxi, inout double[ntcx,nap] S_ij, inout double[ntcx] idxall);
+end
+
+% ==== physical-space SPARSE close-correction (pass 2/3): per-panel fourier COMPUTE (Laplace DLP) ====
+@function [S_ij, idxall] = axps_closedlp_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall)
+nt=double(nt); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
+iside=double(iside); iclosed=double(iclosed); ntcx=double(ntcx); gate=double(gate);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:));
+sws=double(sws(:)); tpan=double(tpan(:)); tcxi=double(tcxi(:)); s3dw=double(s3dw(:));
+nsp=p*np; npp1=np+1; nsf=nsp*nang; nt3=3*nt; ns3=3*nsf; nap=nang*p;
+t3dx=double(reshape(t3dx,3,nt)); s3dx=double(reshape(s3dx,3,nsf)); s3dnx=double(reshape(s3dnx,3,nsf));
+S_ij=double(reshape(S_ij,ntcx,nap)); idxall=double(idxall(:));
+# FORTRAN axps_closedlp_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, int[1] ntcx, double[npp1] tcxi, inout double[ntcx,nap] S_ij, inout double[ntcx] idxall);
+end
+
+% ==== physical-space SPARSE close-correction (pass 1/3): kdtree SIZING ====
+@function [tcxi, ntcx] = axps_closesize_mex(nt, tx, t3dx, p, np, sx, sws, gate, tcxi, ntcx)
+nt=double(nt); p=double(p); np=double(np); gate=double(gate); ntcx=double(ntcx);
+tx=double(tx(:)); sx=double(sx(:)); sws=double(sws(:)); tcxi=double(tcxi(:));
+nsp=p*np; npp1=np+1; nt3=3*nt;
+t3dx=double(reshape(t3dx,3,nt));
+# FORTRAN axps_closesize_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, int[1] p, int[1] np, dcomplex[nsp] sx, double[nsp] sws, double[1] gate, inout double[npp1] tcxi, inout double[1] ntcx);
+end
+
+% ==== physical-space SPARSE close-correction (pass 3/3): ASSEMBLE naive + scatter ====
+@function A = axps_closeasm_mex(iphys, ilayer, nc, nt, tx, t3dx, p, np, nang, s3dx, s3dnx, s3dw, ntcx, tcxi, idxall, S_ij, iself, A)
+iphys=double(iphys); ilayer=double(ilayer); nc=double(nc); nt=double(nt); p=double(p); np=double(np);
+nang=double(nang); ntcx=double(ntcx); iself=double(iself);
+tx=double(tx(:)); tcxi=double(tcxi(:)); idxall=double(idxall(:)); s3dw=double(s3dw(:));
+nsp=p*np; npp1=np+1; nsf=nsp*nang; nt3=3*nt; ns3=3*nsf; nap=nang*p;
+t3dx=double(reshape(t3dx,3,nt)); s3dx=double(reshape(s3dx,3,nsf)); s3dnx=double(reshape(s3dnx,3,nsf));
+S_ij=double(reshape(S_ij,ntcx,nap));
+if iself, nrA=nsf; else, nrA=nt; end
+A=double(reshape(A,nrA,nsf));
+# FORTRAN axps_closeasm_r64(int[1] iphys, int[1] ilayer, int[1] nc, int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, int[1] p, int[1] np, int[1] nang, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] ntcx, double[npp1] tcxi, double[ntcx] idxall, double[ntcx,nap] S_ij, int[1] iself, inout double[nrA,nsf] A);
+end
+
+% ==== physical-space SPARSE close-correction APPLY (matvec piece; kernel-free) ====
+@function u = axps_closecorrapply_mex(nt, p, np, nang, ntcx, tcxi, idxall, S_ij, sig, iself, u)
+nt=double(nt); p=double(p); np=double(np); nang=double(nang); ntcx=double(ntcx); iself=double(iself);
+tcxi=double(tcxi(:)); idxall=double(idxall(:)); sig=double(sig(:)); u=double(u(:));
+nsp=p*np; npp1=np+1; nsf=nsp*nang; nap=nang*p;
+S_ij=double(reshape(S_ij,ntcx,nap));
+if iself, nrU=nsf; else, nrU=nt; end
+# FORTRAN axps_closecorrapply_r64(int[1] nt, int[1] p, int[1] np, int[1] nang, int[1] ntcx, double[npp1] tcxi, double[ntcx] idxall, double[ntcx,nap] S_ij, double[nsf] sig, int[1] iself, inout double[nrU] u);
+end
+
 % ============================================================
 % Helpers for the pure-MATLAB n-mode block builders (utils/axls_*_blockmat_nmode.m):
 % the SAME compiled gauss / lagrange-interp / carrier / sdspecialquad / split-coef routines.

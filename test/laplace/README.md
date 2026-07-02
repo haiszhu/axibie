@@ -80,3 +80,36 @@ hypersingular close-eval floor.
 | h-refinement convergence | meridian-grid error (`np=36`) |
 |---|---|
 | ![convergence](imgs/axissymslap_lap_dlpn0th_convergence.png) | ![meridian error](imgs/axissymslap_lap_dlpn0th_error.png) |
+
+## Physical-space (physmat) pipeline: naive + sparse close correction
+
+Laplace SLP exterior-Dirichlet BVP in PHYSICAL space -- all azimuthal modes solved at once on
+the 3D surface grid (`test_axissymslap_lap_slp_bvp_physmat.m`, `np=2:16`, `pmodes=2*np`,
+`nang=2*pmodes+1`).  The self operator is never built accurately entrywise: it is the naive
+`Lap3dSLPmat` (FMM-replaceable, self-diagonal zeroed) plus a kdtree-detected COMPACT close
+correction -- per source panel, the accurate per-panel-fourier close-eval minus naive on the
+azimuth-0 target orbit representatives (`S_ij(ntcx, nang*p)`), expanded to all target azimuths
+by the circulant symmetry at assembly.  Pipeline fully compiled: `axps_closesize_mex` (kdtree
+sizing) -> `axps_closeslp_mex` (per-panel fourier compute) -> `axps_closeasm_mex` (naive +
+circulant scatter); solve `lsqminnorm` (SLP meridian null space); 3D field eval matrix-free =
+`Lap3dSLPfmm` far + `axps_closecorrapply_mex` (kernel-free sparse correction apply).
+Correction storage `ntcx*nang*p` vs the dense operator's `(N*nang)^2`.
+
+| h-refinement convergence | 3D target-grid error (`np=16`) |
+|---|---|
+| ![convergence](imgs/axissymslap_lap_slp_convergence2.png) | ![3D error](imgs/axissymslap_lap_slp_error2.png) |
+
+Combined `(D+S)` exterior-Dirichlet BVP in PHYSICAL space
+(`test_axissymslap_lap_dlp_bvp_physmat.m`, `np=2:16`, `pmodes=2*np`): same three-pass close
+build run twice per geometry -- `axps_closeslp_mex` and `axps_closedlp_mex` share one detection
+(`tcxi/idxall`) and one signature (3D ring normals `s3dnx` explicit; the DLP recipe follows
+`axissymlap_dlp_blockmat_nmode_r64`: `Kvk*vk + Kve*ve` source-normal carrier + source-Cauchy
+`2pi*C3*Re(Ad)` inner-near).  Assembly selects the naive kernel via `(iphys, ilayer, nc)`
+mirroring `axp_offdiagphysmat`; no explicit `1/2 I` -- the `iside` branch of the close-eval
+takes the one-sided exterior limit, so `A = As + Ad` is solved directly by unrestarted GMRES
+(second-kind: mesh-independent iteration count printed per refinement).  Field eval = the
+`S` and `D` FMM+corrapply chains summed.
+
+| h-refinement convergence | 3D target-grid error (`np=16`) |
+|---|---|
+| ![convergence](imgs/axissymslap_lap_dlp_convergence2.png) | ![3D error](imgs/axissymslap_lap_dlp_error2.png) |
