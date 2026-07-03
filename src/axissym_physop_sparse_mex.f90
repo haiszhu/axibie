@@ -43,23 +43,62 @@ subroutine axps_closedlp_r64(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan
 end subroutine axps_closedlp_r64
 
 subroutine axps_closeasm_r64(iphys, ilayer, nc, nt, tx, t3dx, p, np, nang, s3dx, s3dnx, s3dw, &
-                             ntcx, tcxi, idxall, S_ij, iself, A)
+                             mu, ntcx, tcxi, idxall, S_ij, iself, A)
   use axissym_physop_sparse_mod, only: closeasm => axissym_closeasm_r64
   implicit none
   integer(8), intent(in)    :: iphys, ilayer, nc, nt, p, np, nang, ntcx, iself
   complex(8), intent(in)    :: tx(nt)
-  real(8),    intent(in)    :: t3dx(3,nt), s3dx(3,p*np*nang), s3dnx(3,p*np*nang), s3dw(p*np*nang)
+  real(8),    intent(in)    :: t3dx(3,nt), s3dx(3,p*np*nang), s3dnx(3,p*np*nang), s3dw(p*np*nang), mu
   real(8),    intent(in)    :: tcxi(np+1), idxall(ntcx), S_ij(ntcx, nang*p)
   real(8),    intent(inout) :: A(*)
   call closeasm(iphys, ilayer, nc, nt, tx, t3dx, p, np, nang, s3dx, s3dnx, s3dw, &
-                ntcx, tcxi, idxall, S_ij, iself, A)
+                mu, ntcx, tcxi, idxall, S_ij, iself, A)
 end subroutine axps_closeasm_r64
 
-subroutine axps_closecorrapply_r64(nt, p, np, nang, ntcx, tcxi, idxall, S_ij, sig, iself, u)
+subroutine axps_closecorrapply_r64(nc, nt, p, np, nang, ntcx, tcxi, idxall, S_ij, sig, iself, u)
   use axissym_physop_sparse_mod, only: corrapply => axissym_closecorrapply_r64
   implicit none
-  integer(8), intent(in)    :: nt, p, np, nang, ntcx, iself
-  real(8),    intent(in)    :: tcxi(np+1), idxall(ntcx), S_ij(ntcx, nang*p), sig(p*np*nang)
+  integer(8), intent(in)    :: nc, nt, p, np, nang, ntcx, iself
+  real(8),    intent(in)    :: tcxi(np+1), idxall(ntcx), S_ij(nc*ntcx, nc*nang*p), sig(nc*p*np*nang)
   real(8),    intent(inout) :: u(*)
-  call corrapply(nt, p, np, nang, ntcx, tcxi, idxall, S_ij, sig, iself, u)
+  call corrapply(nc, nt, p, np, nang, ntcx, tcxi, idxall, S_ij, sig, iself, u)
 end subroutine axps_closecorrapply_r64
+
+subroutine axps_closestokslp_r64(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, &
+                                 s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, S_ij, idxall)
+  use axissym_physop_sparse_mod, only: closestokslp => axissym_closestokslp_r64
+  implicit none
+  integer(8), intent(in)    :: nt, p, np, nang, pmodes, iside, iclosed, ntcx
+  complex(8), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np)
+  real(8),    intent(in)    :: t3dx(3,nt), sws(p*np), tpan(np+1), gate, mu
+  real(8),    intent(in)    :: s3dx(3, p*np*nang), s3dnx(3, p*np*nang), s3dw(p*np*nang), tcxi(np+1)
+  real(8),    intent(inout) :: S_ij(3*ntcx, 3*nang*p), idxall(ntcx)
+  call closestokslp(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, &
+                    s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, S_ij, idxall)
+end subroutine axps_closestokslp_r64
+
+subroutine axps_closestokslpn_r64(nt, tx, t3dx, tn3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, &
+                                  s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, S_ij, idxall)
+  use axissym_physop_sparse_mod, only: closestokslpn => axissym_closestokslpn_r64
+  implicit none
+  integer(8), intent(in)    :: nt, p, np, nang, pmodes, iside, iclosed, ntcx
+  complex(8), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np)
+  real(8),    intent(in)    :: t3dx(3,nt), tn3dx(3,nt), sws(p*np), tpan(np+1), gate, mu
+  real(8),    intent(in)    :: s3dx(3, p*np*nang), s3dnx(3, p*np*nang), s3dw(p*np*nang), tcxi(np+1)
+  real(8),    intent(inout) :: S_ij(3*ntcx, 3*nang*p), idxall(ntcx)
+  call closestokslpn(nt, tx, t3dx, tn3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, &
+                     s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, S_ij, idxall)
+end subroutine axps_closestokslpn_r64
+
+subroutine axps_closestokdlpn_r64(nt, tx, t3dx, tn3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, &
+                                  s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, S_ij, idxall)
+  use axissym_physop_sparse_mod, only: closestokdlpn => axissym_closestokdlpn_r64
+  implicit none
+  integer(8), intent(in)    :: nt, p, np, nang, pmodes, iside, iclosed, ntcx
+  complex(8), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np)
+  real(8),    intent(in)    :: t3dx(3,nt), tn3dx(3,nt), sws(p*np), tpan(np+1), gate, mu
+  real(8),    intent(in)    :: s3dx(3, p*np*nang), s3dnx(3, p*np*nang), s3dw(p*np*nang), tcxi(np+1)
+  real(8),    intent(inout) :: S_ij(3*ntcx, 3*nang*p), idxall(ntcx)
+  call closestokdlpn(nt, tx, t3dx, tn3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, &
+                     s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, S_ij, idxall)
+end subroutine axps_closestokdlpn_r64

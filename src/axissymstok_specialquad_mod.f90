@@ -1017,7 +1017,30 @@ contains
         sumwsc = sum(wsp)
         nkc = 0
         do i = 1, nk
-          ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 2.5_r64*sumwsc     ! pressure inner near gate = 2.5
+          block
+            real(r64) :: chimx, chig, deng
+            integer(8) :: jpg
+            ! pressure inner gate: 2.5 halo band (multi near-surface, d74e81b9) + MODE-AWARE
+            ! pair-chi guard: split error ~ eps*e^(M*acosh(chimax)) over (target, subpanel-node)
+            ! pairs -> admit only M*acosh(chimax)<6 (C~1e4 for D' C5 -> ~1e-9).  Dyadic-pole pairs chi 4..30
+            ! -> far path (machine, brute-verified); multi halo chimax~1+ -> split kept.
+            chimx = 1.0_r64
+            do jpg = 1, p
+              deng = 2.0_r64*real(znear(i),r64)*real(Ypb(jpg),r64)
+              if (deng > 0.0_r64) then
+                chig = 1.0_r64 + ((real(znear(i),r64)-real(Ypb(jpg),r64))**2 &
+                                 + (aimag(znear(i))-aimag(Ypb(jpg)))**2)/deng
+              else
+                chig = huge(1.0_r64)
+              end if
+              if (chig > chimx) chimx = chig
+            end do
+            deng = abs(znear(i)-zac) + abs(znear(i)-zbc)
+            ! INSIDE 1.5*sumwsc the far path is invalid -> ALWAYS split (plain-1.5-verified);
+            ! the chi guard governs ONLY the 1.5-2.5 halo extension band.
+            ikc(i) = (deng < 1.5_r64*sumwsc) .or. ((deng < 2.5_r64*sumwsc) .and. &
+                     (real(M,r64)*acosh(min(chimx,1.0e30_r64)) < 6.0_r64))
+          end block
           if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
         end do
         ! ---- inner near: (private) pressure split coef -> Slog/Dval assembly, fold q->p_sub (IPqc) ----
@@ -1226,7 +1249,30 @@ contains
         sumwsc = sum(wsp)
         nkc = 0
         do i = 1, nk
-          ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 2.5_r64*sumwsc
+          block
+            real(r64) :: chimx, chig, deng
+            integer(8) :: jpg
+            ! pressure inner gate: 2.5 halo band (multi near-surface, d74e81b9) + MODE-AWARE
+            ! pair-chi guard: split error ~ eps*e^(M*acosh(chimax)) over (target, subpanel-node)
+            ! pairs -> admit only M*acosh(chimax)<6 (C~1e4 for D' C5 -> ~1e-9).  Dyadic-pole pairs chi 4..30
+            ! -> far path (machine, brute-verified); multi halo chimax~1+ -> split kept.
+            chimx = 1.0_r64
+            do jpg = 1, p
+              deng = 2.0_r64*real(znear(i),r64)*real(Ypb(jpg),r64)
+              if (deng > 0.0_r64) then
+                chig = 1.0_r64 + ((real(znear(i),r64)-real(Ypb(jpg),r64))**2 &
+                                 + (aimag(znear(i))-aimag(Ypb(jpg)))**2)/deng
+              else
+                chig = huge(1.0_r64)
+              end if
+              if (chig > chimx) chimx = chig
+            end do
+            deng = abs(znear(i)-zac) + abs(znear(i)-zbc)
+            ! INSIDE 1.5*sumwsc the far path is invalid -> ALWAYS split (plain-1.5-verified);
+            ! the chi guard governs ONLY the 1.5-2.5 halo extension band.
+            ikc(i) = (deng < 1.5_r64*sumwsc) .or. ((deng < 2.5_r64*sumwsc) .and. &
+                     (real(M,r64)*acosh(min(chimx,1.0e30_r64)) < 6.0_r64))
+          end block
           if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
         end do
         ! ---- inner near: (private) pressure split coef -> Slog/Dval assembly, fold q->p_sub (IPqc) ----
@@ -1417,7 +1463,30 @@ contains
         sumwsc = sum(wsp)
         nkc = 0
         do i = 1, nk
-          ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 2.5_r64*sumwsc
+          block
+            real(r64) :: chimx, chig, deng
+            integer(8) :: jpg
+            ! pressure inner gate: 2.5 halo band (multi near-surface, d74e81b9) + MODE-AWARE
+            ! pair-chi guard: split error ~ eps*e^(M*acosh(chimax)) over (target, subpanel-node)
+            ! pairs -> admit only M*acosh(chimax)<6 (C~1e4 for D' C5 -> ~1e-9).  Dyadic-pole pairs chi 4..30
+            ! -> far path (machine, brute-verified); multi halo chimax~1+ -> split kept.
+            chimx = 1.0_r64
+            do jpg = 1, p
+              deng = 2.0_r64*real(znear(i),r64)*real(Ypb(jpg),r64)
+              if (deng > 0.0_r64) then
+                chig = 1.0_r64 + ((real(znear(i),r64)-real(Ypb(jpg),r64))**2 &
+                                 + (aimag(znear(i))-aimag(Ypb(jpg)))**2)/deng
+              else
+                chig = huge(1.0_r64)
+              end if
+              if (chig > chimx) chimx = chig
+            end do
+            deng = abs(znear(i)-zac) + abs(znear(i)-zbc)
+            ! INSIDE 1.5*sumwsc the far path is invalid -> ALWAYS split (plain-1.5-verified);
+            ! the chi guard governs ONLY the 1.5-2.5 halo extension band.
+            ikc(i) = (deng < 1.5_r64*sumwsc) .or. ((deng < 2.5_r64*sumwsc) .and. &
+                     (real(M,r64)*acosh(min(chimx,1.0e30_r64)) < 6.0_r64))
+          end block
           if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
         end do
         ! ---- inner near: (private) stresslet-pressure split coef -> 4-bucket assembly, fold q->p_sub ----
@@ -3357,7 +3426,30 @@ contains
         sumwsc = sum(wsp)
         nkc = 0
         do i = 1, nk
-          ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 2.5_r64*sumwsc
+          block
+            real(r64) :: chimx, chig, deng
+            integer(8) :: jpg
+            ! pressure inner gate: 2.5 halo band (multi near-surface, d74e81b9) + MODE-AWARE
+            ! pair-chi guard: split error ~ eps*e^(M*acosh(chimax)) over (target, subpanel-node)
+            ! pairs -> admit only M*acosh(chimax)<6 (C~1e4 for D' C5 -> ~1e-9).  Dyadic-pole pairs chi 4..30
+            ! -> far path (machine, brute-verified); multi halo chimax~1+ -> split kept.
+            chimx = 1.0_r64
+            do jpg = 1, p
+              deng = 2.0_r64*real(znear(i),r64)*real(Ypb(jpg),r64)
+              if (deng > 0.0_r64) then
+                chig = 1.0_r64 + ((real(znear(i),r64)-real(Ypb(jpg),r64))**2 &
+                                 + (aimag(znear(i))-aimag(Ypb(jpg)))**2)/deng
+              else
+                chig = huge(1.0_r64)
+              end if
+              if (chig > chimx) chimx = chig
+            end do
+            deng = abs(znear(i)-zac) + abs(znear(i)-zbc)
+            ! INSIDE 1.5*sumwsc the far path is invalid -> ALWAYS split (plain-1.5-verified);
+            ! the chi guard governs ONLY the 1.5-2.5 halo extension band.
+            ikc(i) = (deng < 1.5_r64*sumwsc) .or. ((deng < 2.5_r64*sumwsc) .and. &
+                     (real(M,r64)*acosh(min(chimx,1.0e30_r64)) < 6.0_r64))
+          end block
           if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
         end do
         if (nkc > 0) then

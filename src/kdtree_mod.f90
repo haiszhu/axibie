@@ -25,6 +25,7 @@ module kdtree_mod
   integer*8, save :: s_backend = 0
   integer*8, allocatable, save :: s_dim(:), s_lft(:), s_rgt(:), s_idx(:)  ! nbody exported tree
   real*4,    allocatable, save :: s_split(:), s_xp(:), s_yp(:), s_zp(:)
+  !$omp threadprivate(s_backend, s_dim, s_lft, s_rgt, s_idx, s_split, s_xp, s_yp, s_zp)
 
   ! ---- C bridge (kdtree_cwrap.cpp; external symbols, gfortran appends "_") ----
   interface

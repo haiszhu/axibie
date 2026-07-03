@@ -1,8 +1,9 @@
 # AxiStokes3D build Makefile.  Compiles the Fortran in src/ + the mwrap MEX gateway and links the
-# prebuilt support libraries build/libaxissymstok_kernelsplit.a, build/libaxissymlap_kernelsplit.a
-# and build/libaxissym_physop_sparse.a, shipped together with their module interfaces
-# build/axissym{stok,lap}_kernelsplit_mod.mod and build/axissym_physop_sparse_mod.mod (the .mod lets
-# the sources that `use` those modules compile; the .a provides the compiled routines at link).
+# prebuilt support libraries build/libaxissymstok_kernelsplit.a, build/libaxissymlap_kernelsplit.a,
+# build/libaxissym_physop_sparse.a and build/libaxissym_physop_solver.a, shipped together with their
+# module interfaces build/axissym{stok,lap}_kernelsplit_mod.mod, build/axissym_physop_sparse_mod.mod
+# and build/axissym_physop_solver_mod.mod (the .mod lets the sources that `use` those modules
+# compile; the .a provides the compiled routines at link).
 
 PROJECT := AxiStokes3D
 PP      := ax
@@ -23,6 +24,14 @@ FFLAGS  := -O3 -fPIC -fdefault-integer-8 -fallow-argument-mismatch \
            -march=native -funroll-loops -fopenmp \
            -J$(BLD_DIR) -I$(BLD_DIR) -I$(SRC_DIR)
 
+# ---------- OpenMP switch (mirrors external/fmm3d: default OFF here) ----------
+# Serial by default; `make mex OMP=ON` compiles the !$omp directives in and links the
+# OpenMP runtime.  SWITCHING THE FLAG DOES NOT REBUILD -- `make clean` when toggling.
+OMP ?= OFF
+ifeq ($(OMP),ON)
+  FFLAGS += -fopenmp
+endif
+
 UNAME := $(shell uname)
 ARCH  := $(shell uname -m)
 ifeq ($(UNAME), Darwin)
@@ -40,6 +49,10 @@ ifeq ($(UNAME), Darwin)
                  $(MATLAB_ROOT)/bin/$(MATLAB_ARCH)/libmex.dylib \
                  $(MATLAB_ROOT)/bin/$(MATLAB_ARCH)/libmat.dylib -lm
   LAPACK_LIBS := $(MATLAB_ROOT)/bin/$(MATLAB_ARCH)/libmwlapack.dylib $(MATLAB_ROOT)/bin/$(MATLAB_ARCH)/libmwblas.dylib
+  # OpenMP: link MATLAB's OWN libomp (GOMP-ABI compatible) so there is exactly ONE
+  # OpenMP runtime in-process -- NEVER homebrew llvm/libomp (-> OMP Error #15/#179).
+  # See make.inc.fmm3d for the full rationale.
+  OMP_LIBS    := $(MATLAB_ROOT)/bin/$(MATLAB_ARCH)/libomp.dylib
   MEX_LDFLAGS := -bundle -Wl,-undefined,dynamic_lookup
 else
   MATLAB_ROOT := $(shell ls -d /usr/local/MATLAB/R* 2>/dev/null | sort | tail -n1)
@@ -48,6 +61,7 @@ else
   OPENBLAS_DIR := /usr/local/opt/openblas-singlethread
   MATLAB_LIBS := -L$(MATLAB_ROOT)/bin/$(MATLAB_ARCH) -lmx -lmex -lmat -lm
   LAPACK_LIBS := -L$(MATLAB_ROOT)/bin/$(MATLAB_ARCH) -lmwlapack -lmwblas
+  OMP_LIBS    := -L$(MATLAB_ROOT)/bin/$(MATLAB_ARCH) -liomp5
   MEX_LDFLAGS := -shared
 endif
 
@@ -69,11 +83,15 @@ PUBLIC_SOURCES := $(SRC_DIR)/axistokes3d_mod.f90 \
                   $(SRC_DIR)/axissym_physop_mod.f90 \
                   $(SRC_DIR)/axissym_physop_mex.f90 \
                   $(SRC_DIR)/axissym_physop_sparse_mex.f90 \
+                  $(SRC_DIR)/axissym_physop_solver_mex.f90 \
                   $(SRC_DIR)/axissym_nmodehelpers_mex.f90 \
                   $(SRC_DIR)/kdtree_mod.f90 \
                   $(SRC_DIR)/kdtree_mex.f90
 # NOTE: axissym_physop_sparse_MOD.f90 is withheld (the IP) -- shipped as prebuilt
 # libaxissym_physop_sparse.a + axissym_physop_sparse_mod.mod; only its public axps_ _MEX wrapper
+# (above) ships with source and compiles against the shipped .mod.
+# NOTE: axissym_physop_solver_MOD.f90 is likewise withheld -- shipped as prebuilt
+# libaxissym_physop_solver.a + axissym_physop_solver_mod.mod; only its public axpso_ _MEX wrapper
 # (above) ships with source and compiles against the shipped .mod.
 PUBLIC_OBJECTS := $(patsubst $(SRC_DIR)/%.f90,$(BLD_DIR)/%.o,$(PUBLIC_SOURCES))
 
@@ -81,6 +99,7 @@ PUB_LIB        := $(BLD_DIR)/lib$(PROJECT).a
 SEC_LIB        := $(BLD_DIR)/libaxissymstok_kernelsplit.a   # shipped prebuilt in build/ — not a build target
 SEC_LIB_LAP    := $(BLD_DIR)/libaxissymlap_kernelsplit.a    # shipped prebuilt in build/ — not a build target
 SEC_LIB_SPARSE := $(BLD_DIR)/libaxissym_physop_sparse.a     # shipped prebuilt in build/ — not a build target
+SEC_LIB_SOLVER := $(BLD_DIR)/libaxissym_physop_solver.a     # shipped prebuilt in build/ — not a build target
 
 MW_SRC  := $(MATLAB_DIR)/$(PROJECT).mw
 MEX_C   := $(MATLAB_DIR)/$(PROJECT)_mex.c
@@ -90,7 +109,7 @@ MEX_OUT := $(MATLAB_DIR)/$(PROJECT)_mex.$(MEX_EXT)
 
 all:
 	@echo "$(PROJECT) build targets: make mex | make lib | make clean"
-	@echo "  NOTE: build/libaxissym{stok,lap}_kernelsplit.a + build/libaxissym_physop_sparse.a + their .mod must be present."
+	@echo "  NOTE: build/libaxissym{stok,lap}_kernelsplit.a + build/libaxissym_physop_sparse.a + build/libaxissym_physop_solver.a + their .mod must be present."
 
 mex: $(MEX_OUT)
 lib: $(PUB_LIB)
@@ -132,14 +151,14 @@ STDCXX_A     := $(shell $(CC) -print-file-name=libstdc++.a)
 LIBGCC_A     := $(shell $(CC) -print-file-name=libgcc.a)
 
 # Links the prebuilt support lib (must exist in $(BLD_DIR)); make errors loudly if it is missing.
-$(MEX_OUT): $(PUB_LIB) $(SEC_LIB) $(SEC_LIB_LAP) $(SEC_LIB_SPARSE) $(MEX_C)
+$(MEX_OUT): $(PUB_LIB) $(SEC_LIB) $(SEC_LIB_LAP) $(SEC_LIB_SPARSE) $(SEC_LIB_SOLVER) $(MEX_C)
 	$(CC) $(MEX_LDFLAGS) -fPIC \
 	  -DMATLAB_MEX_FILE -DMATLAB_DEFAULT_RELEASE=R2018a -DMX_COMPAT_32=0 \
 	  -I$(MATLAB_ROOT)/extern/include \
 	  $(MEX_C) \
-	  -L$(BLD_DIR) -l$(PROJECT) -laxissymstok_kernelsplit -laxissymlap_kernelsplit -laxissym_physop_sparse \
+	  -L$(BLD_DIR) -l$(PROJECT) -laxissymstok_kernelsplit -laxissymlap_kernelsplit -laxissym_physop_sparse -laxissym_physop_solver \
 	  $(KDTREE_CWRAP) $(KDTREE_LIB) \
-	  $(MATLAB_LIBS) $(LAPACK_LIBS) \
+	  $(MATLAB_LIBS) $(LAPACK_LIBS) $(if $(filter ON,$(OMP)),$(OMP_LIBS),) \
 	  $(STDCXX_A) $(LIBGCC_A) -lpthread -lgfortran -lm \
 	  -o $(MEX_OUT)
 

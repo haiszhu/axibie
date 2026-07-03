@@ -33,7 +33,7 @@
 // ============================================================================
 
 namespace {
-std::unique_ptr<wenda::kdtree::KDTree> g_nbody;
+thread_local std::unique_ptr<wenda::kdtree::KDTree> g_nbody;
 } // namespace
 
 extern "C" {
@@ -83,7 +83,7 @@ void kdtree_nbody_free_() { g_nbody.reset(); }
 // ============================================================================
 
 namespace {
-std::unique_ptr<KDTree> g_taiya; // ::KDTree (taiya)
+thread_local std::unique_ptr<KDTree> g_taiya; // ::KDTree (taiya)
 } // namespace
 
 extern "C" {
