@@ -279,6 +279,18 @@ S_ij=double(reshape(S_ij,ntcx,nap)); idxall=double(idxall(:));
 # FORTRAN axps_closeslp_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, int[1] ntcx, double[npp1] tcxi, inout double[ntcx,nap] S_ij, inout double[ntcx] idxall);
 end
 
+% ==== physical-space SPARSE close-correction (pass 2/3): per-panel fourier COMPUTE (Laplace SLPn, S') ====
+@function [S_ij, idxall] = axps_closeslpn_mex(nt, tx, t3dx, tn3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall)
+nt=double(nt); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
+iside=double(iside); iclosed=double(iclosed); ntcx=double(ntcx); gate=double(gate);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:));
+sws=double(sws(:)); tpan=double(tpan(:)); tcxi=double(tcxi(:)); s3dw=double(s3dw(:));
+nsp=p*np; npp1=np+1; nsf=nsp*nang; nt3=3*nt; ns3=3*nsf; nap=nang*p;
+t3dx=double(reshape(t3dx,3,nt)); tn3dx=double(reshape(tn3dx,3,nt)); s3dx=double(reshape(s3dx,3,nsf)); s3dnx=double(reshape(s3dnx,3,nsf));
+S_ij=double(reshape(S_ij,ntcx,nap)); idxall=double(idxall(:));
+# FORTRAN axps_closeslpn_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, double[nt3] tn3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, int[1] ntcx, double[npp1] tcxi, inout double[ntcx,nap] S_ij, inout double[ntcx] idxall);
+end
+
 % ==== physical-space SPARSE close-correction (pass 2/3): per-panel fourier COMPUTE (Laplace DLP) ====
 @function [S_ij, idxall] = axps_closedlp_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall)
 nt=double(nt); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
@@ -595,4 +607,96 @@ end
 K=double(K); n=numel(x); k9=9*K;
 Rm=double(reshape(Rm,9,K)); x=double(x(:)); u=double(u(:));
 # FORTRAN axpso_stokslpn_corrapply_r64(int[1] K, int[1] n, double[k9] Rm, double[n] x, inout double[n] u);
+end
+
+@function u = axpso_stokslp_fieldeval_mex(K, Me, p, np, nang, pmodes, iside, iclosed, gate, mu, rball, Pe, sigma, Rm, Cc, sx, snx, sws, swxp, tpan, u)
+K=double(K); Me=double(Me); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
+iside=double(iside); iclosed=double(iclosed); gate=double(gate); mu=double(mu); rball=double(rball);
+nsp=p*np; npp1=np+1; me3=3*Me; nsig=3*K*nsp*nang; k9=9*K; k3=3*K;
+Pe=double(reshape(Pe,3,Me)); sigma=double(sigma(:)); Rm=double(reshape(Rm,9,K)); Cc=double(reshape(Cc,3,K));
+sx=reshape(double(sx),nsp,K); snx=reshape(double(snx),nsp,K); swxp=reshape(double(swxp),nsp,K);
+sws=reshape(double(sws),nsp,K); tpan=reshape(double(tpan),npp1,K); u=double(u(:));
+# FORTRAN axpso_stokslp_fieldeval_r64(int[1] K, int[1] Me, int[1] p, int[1] np, int[1] nang, int[1] pmodes, int[1] iside, int[1] iclosed, double[1] gate, double[1] mu, double[1] rball, double[3,Me] Pe, double[nsig] sigma, double[k9] Rm, double[k3] Cc, dcomplex[nsp,K] sx, dcomplex[nsp,K] snx, double[nsp,K] sws, dcomplex[nsp,K] swxp, double[npp1,K] tpan, inout double[me3] u);
+end
+
+@function ok = axpso_lapslpn_release_mex(ok)
+ok=double(ok);
+# FORTRAN axpso_lapslpn_release_r64(inout double[1] ok);
+end
+
+@function [ntcxs, nbytes] = axpso_lapslpn_selfsetup_mex(K, p, np, nang, pmodes, iside, iclosed, gate, sx, snx, sws, swxp, tpan, ntcxs, nbytes)
+K=double(K); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
+iside=double(iside); iclosed=double(iclosed); gate=double(gate);
+nsp=p*np; npp1=np+1;
+sx=reshape(double(sx),nsp,K); snx=reshape(double(snx),nsp,K); swxp=reshape(double(swxp),nsp,K);
+sws=reshape(double(sws),nsp,K); tpan=reshape(double(tpan),npp1,K);
+ntcxs=double(ntcxs(:)); nbytes=double(nbytes);
+# FORTRAN axpso_lapslpn_selfsetup_r64(int[1] K, int[1] p, int[1] np, int[1] nang, int[1] pmodes, int[1] iside, int[1] iclosed, double[1] gate, dcomplex[nsp,K] sx, dcomplex[nsp,K] snx, double[nsp,K] sws, dcomplex[nsp,K] swxp, double[npp1,K] tpan, inout double[K] ntcxs, inout double[1] nbytes);
+end
+
+@function [Sk, ik, tcxik] = axpso_lapslpn_getself_mex(k, ntcxk, p, np, nang, Sk, ik, tcxik)
+k=double(k); ntcxk=double(ntcxk); p=double(p); np=double(np); nang=double(nang);
+npp1=np+1; r1=ntcxk; c1=nang*p;
+Sk=double(reshape(Sk,r1,c1)); ik=double(ik(:)); tcxik=double(tcxik(:));
+# FORTRAN axpso_lapslpn_getself_r64(int[1] k, int[1] ntcxk, int[1] p, int[1] np, int[1] nang, inout double[r1,c1] Sk, inout double[ntcxk] ik, inout double[npp1] tcxik);
+end
+
+@function [ntcxx, nuo, npair, nbytes] = axpso_lapslpn_crosssetup_mex(K, p, np, nang, pmodes, iside, iclosed, gate, rball, Xall, Nall, Rm, Cc, sx, snx, sws, swxp, tpan, ntcxx, nuo, npair, nbytes)
+K=double(K); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
+iside=double(iside); iclosed=double(iclosed); gate=double(gate); rball=double(rball);
+nsp=p*np; npp1=np+1; ktot=nsp*nang*K; k9=9*K; k3=3*K;
+Xall=double(reshape(Xall,3,ktot)); Nall=double(reshape(Nall,3,ktot));
+Rm=double(reshape(Rm,9,K)); Cc=double(reshape(Cc,3,K));
+sx=reshape(double(sx),nsp,K); snx=reshape(double(snx),nsp,K); swxp=reshape(double(swxp),nsp,K);
+sws=reshape(double(sws),nsp,K); tpan=reshape(double(tpan),npp1,K);
+ntcxx=double(ntcxx(:)); nuo=double(nuo(:)); npair=double(npair); nbytes=double(nbytes);
+# FORTRAN axpso_lapslpn_crosssetup_r64(int[1] K, int[1] p, int[1] np, int[1] nang, int[1] pmodes, int[1] iside, int[1] iclosed, double[1] gate, double[1] rball, double[3,ktot] Xall, double[3,ktot] Nall, double[k9] Rm, double[k3] Cc, dcomplex[nsp,K] sx, dcomplex[nsp,K] snx, double[nsp,K] sws, dcomplex[nsp,K] swxp, double[npp1,K] tpan, inout double[K] ntcxx, inout double[K] nuo, inout double[1] npair, inout double[1] nbytes);
+end
+
+@function [Sk, idxk, tcxik, canonk] = axpso_lapslpn_getcross_mex(k, ntcxk, nuk, p, np, nang, Sk, idxk, tcxik, canonk)
+k=double(k); ntcxk=double(ntcxk); nuk=double(nuk); p=double(p); np=double(np); nang=double(nang);
+npp1=np+1; r1=ntcxk; c1=nang*p;
+Sk=double(reshape(Sk,r1,c1)); idxk=double(idxk(:)); tcxik=double(tcxik(:)); canonk=double(canonk(:));
+# FORTRAN axpso_lapslpn_getcross_r64(int[1] k, int[1] ntcxk, int[1] nuk, int[1] p, int[1] np, int[1] nang, inout double[r1,c1] Sk, inout double[ntcxk] idxk, inout double[npp1] tcxik, inout double[nuk] canonk);
+end
+
+@function u = axpso_lapslpn_corrapply_mex(K, x, u)
+K=double(K); n=numel(x);
+x=double(x(:)); u=double(u(:));
+# FORTRAN axpso_lapslpn_corrapply_r64(int[1] K, int[1] n, double[n] x, inout double[n] u);
+end
+
+% unified handle-based near-correction setup: (ikernel,ilayer,params,iinter) x geometry -> handle
+% ikernel 1 lap|2 stok|3 helm|4 maxw ; ilayer 1 SLP|2 SLPn|3 DLP|4 DLPn ; iinter 1 self|2 cross
+% params = scalar kernel parameter (complex): wavenumber (helm/maxw); stokes reads real(params)
+% as viscosity mu; laplace unused (0).
+@function [handle, nbytes] = axpso_corr_setup_mex(ikernel, ilayer, params, iinter, K, p, np, pmodes, iside, iclosed, gate, geomoff, tpanoff, nsx, ntpan, sx, snx, sws, swxp, tpan, rball, ntarg, targoff, targ, targnx, Rm, Cc, handle)
+ikernel=double(ikernel); ilayer=double(ilayer); iinter=double(iinter);
+K=double(K); iside=double(iside); iclosed=double(iclosed);
+params=complex(double(params)); gate=double(gate); rball=double(rball); ntarg=double(ntarg);
+nsx=double(nsx); ntpan=double(ntpan); kp1=K+1; k9=9*K; k3=3*K;
+p=double(p(:)); np=double(np(:)); pmodes=double(pmodes(:));
+geomoff=double(geomoff(:)); tpanoff=double(tpanoff(:)); targoff=double(targoff(:));
+sx=reshape(double(sx),nsx,1); snx=reshape(double(snx),nsx,1); swxp=reshape(double(swxp),nsx,1);
+sws=reshape(double(sws),nsx,1); tpan=reshape(double(tpan),ntpan,1);
+targ=double(reshape(targ,3,ntarg)); targnx=double(reshape(targnx,3,ntarg));
+Rm=double(reshape(Rm,9,K)); Cc=double(reshape(Cc,3,K)); handle=double(handle); nbytes=0;
+# FORTRAN axpso_corr_setup_r64(int[1] ikernel, int[1] ilayer, dcomplex[1] params, int[1] iinter, int[1] K, int[K] p, int[K] np, int[K] pmodes, int[1] iside, int[1] iclosed, double[1] gate, int[kp1] geomoff, int[kp1] tpanoff, int[1] nsx, int[1] ntpan, dcomplex[nsx] sx, dcomplex[nsx] snx, double[nsx] sws, dcomplex[nsx] swxp, double[ntpan] tpan, double[1] rball, int[1] ntarg, int[kp1] targoff, double[3,ntarg] targ, double[3,ntarg] targnx, double[k9] Rm, double[k3] Cc, inout double[1] handle, inout double[1] nbytes);
+end
+
+% unified access: copy entry k's block (flat, reshape to nc*ntcxk x nc*nang*p) + idx + tcxi out of a handle
+@function [blk, ik, tcxik] = axpso_corr_get_mex(handle, k, ntcxk, nc, p, np, pmodes, blk, ik, tcxik)
+handle=double(handle); k=double(k); ntcxk=double(ntcxk); nc=double(nc); p=double(p); np=double(np); pmodes=double(pmodes);
+npp1=np+1; nb=nc*nc*ntcxk*(2*pmodes+1)*p;
+blk=double(blk(:)); ik=double(ik(:)); tcxik=double(tcxik(:));
+# FORTRAN axpso_corr_get_r64(double[1] handle, int[1] k, int[1] ntcxk, int[1] nc, int[1] p, int[1] np, int[1] pmodes, inout double[nb] blk, inout double[ntcxk] ik, inout double[npp1] tcxik);
+end
+
+% unified handle-based apply: source density x (nx) -> target buffer u (nu), ACCUMULATES (seed u
+% with the naive FMM part).  ONE apply spans self / cross / arbitrary-target eval; for self and
+% cross nu==nx, for arbitrary targets nu = target space.  Kernel/layer/interaction are in the handle.
+@function u = axpso_corr_apply_mex(handle, nx, x, nu, u)
+handle=double(handle); nx=double(nx); nu=double(nu);
+x=double(x(:)); u=double(u(:));
+# FORTRAN axpso_corr_apply_r64(double[1] handle, int[1] nx, double[nx] x, int[1] nu, inout double[nu] u);
 end

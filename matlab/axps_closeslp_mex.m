@@ -10,4 +10,4 @@ mex_id_ = 'axps_closeslp_r64(c i int64_t[x], c i dcomplex[x], c i double[x], c i
 [S_ij, idxall] = AxiStokes3D_mex(mex_id_, nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall, 1, nt, nt3, 1, 1, 1, nsp, nsp, nsp, nsp, npp1, 1, ns3, ns3, nsf, 1, 1, 1, 1, npp1, ntcx, nap, ntcx);
 end
 
-% ==== physical-space SPARSE close-correction (pass 2/3): per-panel fourier COMPUTE (Laplace DLP) ====
+% ==== physical-space SPARSE close-correction (pass 2/3): per-panel fourier COMPUTE (Laplace SLPn, S') ====

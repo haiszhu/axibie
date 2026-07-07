@@ -1,0 +1,17 @@
+# Track only the hand-written source in this dir; ignore everything else.
+# Ignored: the mwrap-generated gateway (pvfmm.c) + driver stubs (*_mex.m), the
+# compiled mex (pvfmm.mexmaca64), and any test/build scratch -- all regenerable
+# by `make` (mwrap + the pvfmm build).
+*
+!.gitignore
+!makefile
+!pvfmm.mw
+!pvfmm_wrap.h
+!test_lap_slp_timing.m
+!test_lap_slpn_timing.m
+!test_lap_dlp_timing.m
+!test_lap_dlpn_timing.m
+!test_stok_slp_timing.m
+!test_stok_slpn_timing.m
+!test_stok_dlp_timing.m
+!test_stok_dlpn_timing.m

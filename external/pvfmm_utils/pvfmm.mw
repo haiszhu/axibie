@@ -1,0 +1,160 @@
+@function [handle, flag] = MPI_Init_mex(args_string, handle, flag)
+# mpi_init_wrap(cstring args_string, inout uint64_t[1] handle, inout int[1] flag);
+% simple version
+%@function flag = MPI_Init_mex()
+%# mpi_init_wrap(output int[1] flag);
+%end
+end
+
+@function [handle, flag] = MPI_Finalize_mex(handle, flag)
+# mpi_finalize_wrap(inout uint64_t[1] handle, inout int[1] flag);
+% simple version
+%@function flag = MPI_Finalize_mex()
+%# mpi_finalize_wrap(output int[1] flag);
+%end
+end
+
+@function rank = MPI_Comm_rank_mex()
+# mpi_comm_rank_wrap(output int[1] rank);
+end
+
+@function size = MPI_Comm_size_mex()
+# mpi_comm_size_wrap(output int[1] size);
+end
+
+@function trg_value = laplace_slp_naive_mex(handle, sl_coord, sl_den, trg_coord, n_sl, n_trg, trg_value)
+sl_coord = (sl_coord(:));
+sl_den = (sl_den(:));
+trg_coord = (trg_coord(:));
+n_sl = (n_sl);
+n_trg = (n_trg);
+n_sl3 = 3*n_sl;
+n_trg3 = 3*n_trg;
+# laplace_slp_naive_wrap(uint64_t[1] handle, double[n_sl3] sl_coord, double[n_sl] sl_den, double[n_trg3] trg_coord, int[1] n_sl, int[1] n_trg, inout double[n_trg] trg_value);
+trg_value = (trg_value(:));
+end
+
+@function trg_value = laplace_slp_fmm_mex(handle, sl_coord, sl_den, trg_coord, n_sl, n_trg, mult_order, mem_size, max_pts, trg_value)
+% comments to be added
+sl_coord = (sl_coord(:));
+sl_den = (sl_den(:));
+trg_coord = (trg_coord(:));
+n_sl = (n_sl);
+n_trg = (n_trg);
+n_sl3 = 3*n_sl;
+n_trg3 = 3*n_trg;
+# laplace_slp_fmm_wrap(uint64_t[1] handle, double[n_sl3] sl_coord, double[n_sl] sl_den, double[n_trg3] trg_coord, int[1] n_sl, int[1] n_trg, int[1] mult_order, uint64_t[1] mem_size, int[1] max_pts, inout double[n_trg] trg_value);
+trg_value = (trg_value(:));
+end
+
+@function trg_value = stokes_slp_fmm_mex(handle, sl_coord, sl_den, trg_coord, n_sl, n_trg, mult_order, mem_size, max_pts, trg_value)
+% comments to be added
+sl_coord = (sl_coord(:));
+sl_den = (sl_den(:));
+trg_coord = (trg_coord(:));
+n_sl = (n_sl);
+n_trg = (n_trg);
+n_sl3 = 3*n_sl;
+n_trg3 = 3*n_trg;
+# stokes_slp_fmm_wrap(uint64_t[1] handle, double[n_sl3] sl_coord, double[n_sl3] sl_den, double[n_trg3] trg_coord, int[1] n_sl, int[1] n_trg, int[1] mult_order, uint64_t[1] mem_size, int[1] max_pts, inout double[n_trg3] trg_value);
+trg_value = (trg_value(:));
+end
+
+@function trg_value = stokes_slpn_fmm_mex(handle, sl_coord, sl_den, trg_coord, trg_normal, n_sl, n_trg, mult_order, mem_size, max_pts, trg_value)
+% comments to be added
+sl_coord = (sl_coord(:));
+sl_den = (sl_den(:));
+trg_coord = (trg_coord(:));
+trg_normal = (trg_normal(:));
+n_sl = (n_sl);
+n_trg = (n_trg);
+n_sl3 = 3*n_sl;
+n_trg3 = 3*n_trg;
+# stokes_slpn_fmm_wrap(uint64_t[1] handle, double[n_sl3] sl_coord, double[n_sl3] sl_den, double[n_trg3] trg_coord, double[n_trg3] trg_normal, int[1] n_sl, int[1] n_trg, int[1] mult_order, uint64_t[1] mem_size, int[1] max_pts, inout double[n_trg3] trg_value);
+trg_value = (trg_value(:));
+end
+
+@function trg_value = stokes_dlp_fmm_mex(handle, dl_coord, dl_sigma, dl_normal, trg_coord, n_dl, n_trg, mult_order, mem_size, max_pts, trg_value)
+% Stokes double-layer velocity. dl_sigma, dl_normal, trg_value are 3-vec/node.
+dl_coord = (dl_coord(:));
+dl_sigma = (dl_sigma(:));
+dl_normal = (dl_normal(:));
+trg_coord = (trg_coord(:));
+n_dl = (n_dl);
+n_trg = (n_trg);
+n_dl3 = 3*n_dl;
+n_trg3 = 3*n_trg;
+# stokes_dlp_fmm_wrap(uint64_t[1] handle, double[n_dl3] dl_coord, double[n_dl3] dl_sigma, double[n_dl3] dl_normal, double[n_trg3] trg_coord, int[1] n_dl, int[1] n_trg, int[1] mult_order, uint64_t[1] mem_size, int[1] max_pts, inout double[n_trg3] trg_value);
+trg_value = (trg_value(:));
+end
+
+@function trg_value = stokes_dlpn_fmm_mex(handle, dl_coord, dl_sigma, dl_normal, trg_coord, trg_normal, n_dl, n_trg, mult_order, mem_size, max_pts, trg_value)
+% Stokes double-layer TRACTION (D'). dl_sigma/dl_normal/trg_coord/trg_normal/trg_value are 3-vec/node.
+dl_coord = (dl_coord(:));
+dl_sigma = (dl_sigma(:));
+dl_normal = (dl_normal(:));
+trg_coord = (trg_coord(:));
+trg_normal = (trg_normal(:));
+n_dl = (n_dl);
+n_trg = (n_trg);
+n_dl3 = 3*n_dl;
+n_trg3 = 3*n_trg;
+# stokes_dlpn_fmm_wrap(uint64_t[1] handle, double[n_dl3] dl_coord, double[n_dl3] dl_sigma, double[n_dl3] dl_normal, double[n_trg3] trg_coord, double[n_trg3] trg_normal, int[1] n_dl, int[1] n_trg, int[1] mult_order, uint64_t[1] mem_size, int[1] max_pts, inout double[n_trg3] trg_value);
+trg_value = (trg_value(:));
+end
+
+@function trg_value = laplace_slpn_fmm_mex(handle, sl_coord, sl_den, trg_coord, trg_normal, n_sl, n_trg, mult_order, mem_size, max_pts, trg_value)
+% comments to be added
+sl_coord = (sl_coord(:));
+sl_den = (sl_den(:));
+trg_coord = (trg_coord(:));
+trg_normal = (trg_normal(:));
+n_sl = (n_sl);
+n_trg = (n_trg);
+n_sl3 = 3*n_sl;
+n_trg3 = 3*n_trg;
+# laplace_slpn_fmm_wrap(uint64_t[1] handle, double[n_sl3] sl_coord, double[n_sl] sl_den, double[n_trg3] trg_coord, double[n_trg3] trg_normal, int[1] n_sl, int[1] n_trg, int[1] mult_order, uint64_t[1] mem_size, int[1] max_pts, inout double[n_trg] trg_value);
+trg_value = (trg_value(:));
+end
+
+@function trg_value = laplace_dlp_fmm_mex(handle, dl_coord, dl_normal, dl_sigma, trg_coord, n_dl, n_trg, mult_order, mem_size, max_pts, trg_value)
+% comments to be added
+dl_coord = (dl_coord(:));
+dl_normal = (dl_normal(:));
+dl_sigma = (dl_sigma(:));
+trg_coord = (trg_coord(:));
+n_dl = (n_dl);
+n_trg = (n_trg);
+n_dl3 = 3*n_dl;
+n_trg3 = 3*n_trg;
+# laplace_dlp_fmm_wrap(uint64_t[1] handle, double[n_dl3] dl_coord, double[n_dl3] dl_normal, double[n_dl] dl_sigma, double[n_trg3] trg_coord, int[1] n_dl, int[1] n_trg, int[1] mult_order, uint64_t[1] mem_size, int[1] max_pts, inout double[n_trg] trg_value);
+trg_value = (trg_value(:));
+end
+
+@function trg_value = laplace_dlpn_fmm_mex(handle, dl_coord, dl_normal, dl_sigma, trg_coord, trg_normal, n_dl, n_trg, mult_order, mem_size, max_pts, trg_value)
+% Laplace DLP normal-derivative (D'), scalar per target. dl_sigma scalar/node; trg_normal 3-vec/node.
+dl_coord = (dl_coord(:));
+dl_normal = (dl_normal(:));
+dl_sigma = (dl_sigma(:));
+trg_coord = (trg_coord(:));
+trg_normal = (trg_normal(:));
+n_dl = (n_dl);
+n_trg = (n_trg);
+n_dl3 = 3*n_dl;
+n_trg3 = 3*n_trg;
+# laplace_dlpn_fmm_wrap(uint64_t[1] handle, double[n_dl3] dl_coord, double[n_dl3] dl_normal, double[n_dl] dl_sigma, double[n_trg3] trg_coord, double[n_trg3] trg_normal, int[1] n_dl, int[1] n_trg, int[1] mult_order, uint64_t[1] mem_size, int[1] max_pts, inout double[n_trg] trg_value);
+trg_value = (trg_value(:));
+end
+
+@function trg_value = helmholtz_slp_fmm_mex(handle, sl_coord, sl_den, trg_coord, n_sl, n_trg, mult_order, mem_size, max_pts, trg_value)
+% comments to be added
+sl_coord = (sl_coord(:));
+sl_den = (sl_den(:));
+trg_coord = (trg_coord(:));
+n_sl2 = (2*n_sl);
+n_trg2 = (2*n_trg);
+n_sl3 = 3*n_sl;
+n_trg3 = 3*n_trg;
+# helmholtz_slp_fmm_wrap(uint64_t[1] handle, double[n_sl3] sl_coord, double[n_sl2] sl_den, double[n_trg3] trg_coord, int[1] n_sl, int[1] n_trg, int[1] mult_order, uint64_t[1] mem_size, int[1] max_pts, inout double[n_trg2] trg_value);
+trg_value = (trg_value(:));
+end
