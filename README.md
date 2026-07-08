@@ -18,7 +18,8 @@ Build the Fortran compute layer and the MEX gateway from the repository root:
 ```sh
 git submodule update --init --recursive
 make -f Makefile_kdtree
-make mex
+make mex                  # serial build
+make mex OMP=ON           # OpenMP build
 ```
 
 You can now run any driver in [`/test/stokes`](test/stokes) or [`/test/laplace`](test/laplace), e.g.
@@ -29,6 +30,8 @@ run('test/laplace/test_axissymslap_lap_slp_bvp.m')
 ```
 
 ## Examples
+
+### Single particle — mode by mode direct solve
 
 A minimal close-evaluation: build a panel curve, then assemble the single-layer block matrix for a target sitting just outside the surface (where naive quadrature loses digits) — accurate to near machine precision.
 
@@ -50,6 +53,75 @@ u = A * ones(numel(s.x),1);                        % single-layer potential of a
 ```
 
 `A` is the `nt x N` close-evaluation operator (here `1 x 224`); swap `axls_slp_blockmat_mex` for `axls_{slpn,dlp,dlpn}_blockmat_mex` (Laplace) or `axss_*` (Stokes), and the `_nmode_mex` variants for all azimuthal modes at once. See [`/test/stokes`](test/stokes) and [`/test/laplace`](test/laplace) for full boundary-value-problem drivers.
+
+### A few particles — explicit full matrix + direct solve (whatever since problem size is not that large...)
+
+Calling `axpso_close_setup` to build per-particle block in physical space. (particle by particle, then x-y-z-x-y-z..., ordering convention is different from `axpso_corr_setup`. It might be better to use particle by particle, then xxx-yyy-zzz from debugging perspective for me...)
+
+```matlab
+% two handles per layer: SELF (iinter=1) and CROSS (iinter=2); here Stokes SLP (2, 1, mu).
+% Geometry packed as in the FMM rung below (flat per-particle arrays + prefix-sum offsets).
+hself  = axpso_close_setup_mex(2, 1, mu, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
+           geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
+           rball, K*Nnod, targoff, Xall, Nall, Rm, Cc, 0);          % FULL close-eval entries
+hcross = axpso_close_setup_mex(2, 1, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
+           geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
+           rball, K*Nnod, targoff, Xall, Nall, Rm, Cc, 0);
+axpso_close2corr_set_mex(hself,  K, geomoff, nsx, sxf, snxf, swsf, targoff, K*Nnod, Xall, Nall, Cc);
+axpso_close2corr_set_mex(hcross, K, geomoff, nsx, sxf, snxf, swsf, targoff, K*Nnod, Xall, Nall, Cc);
+
+n = 3*K*Nnod;                                                       % Stokes: 3 dof per node
+A = real(Sto3dSLPmat_il(struct('x',Xall), struct('x',Xall,'w',wall)));  % dense naive Stokeslet matrix
+A = zeroselfblk(A, K*Nnod);                                         % singular self-interaction -> 0
+A = axpso_corr2dense_get_mex(hself,  n, n, A);                      % + self corrections (ACCUMULATES)
+A = axpso_corr2dense_get_mex(hcross, n, n, A);                      % + cross corrections
+sigma = lsqminnorm(A, g);                                           % direct solve (min-norm: Stokes S
+                                                                    %  has the pressure null space)
+```
+
+Per-particle compact blocks are also individually readable/writable (`axpso_corr_get_mex` /
+`axpso_corr_set_mex`) — e.g. summing the D and S corrections of a combined-field operator into one
+handle.  Working driver: [`test/stokes_multi/test_axissymsstok_stok_slp_bvp_multi_physmat.m`](test/stokes_multi/test_axissymsstok_stok_slp_bvp_multi_physmat.m);
+the full 4×2 layer/kernel validation matrix lives in
+[`test/laplace_multi`](test/laplace_multi) and [`test/stokes_multi`](test/stokes_multi) (READMEs with
+convergence figures).
+
+### Many particles — sparse near-correction + FMM (matrix-free solve)
+
+At scale the close-evaluation becomes a *sparse* correction added to a global FMM, addressed by a **handle**. `axpso_corr_setup_mex` builds and stores the whole near-correction (kdtree detection + per-particle blocks) as a self-describing object in ONE call — the correction directly, no dense operator ever formed; `axpso_corr_apply_mex` accumulates it into a matvec.
+
+```matlab
+% K panel-meridian particles on a lattice; geometry packed into flat per-particle arrays
+% + prefix-sum offsets (pv/npv/pmv, geomoff/tpanoff/targoff, sxf..tpanf, Rm/Cc) -- see the
+% drivers below.  Here: Laplace SLPn (ikernel=1, ilayer=2, params=0), exterior (iside=1).
+n = K*Nnod;                                        % scalar Laplace: 1 dof per node
+
+% the near correction as two handles -- SELF (iinter=1) and CROSS (iinter=2):
+hself  = axpso_corr_setup_mex(1, 2, 0.0, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
+           geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
+           rball, n, targoff, Xall, Nall, Rm, Cc, 0);
+hcross = axpso_corr_setup_mex(1, 2, 0.0, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
+           geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
+           rball, n, targoff, Xall, Nall, Rm, Cc, 0);
+
+% one matvec of (-1/2 I + S'):  naive FMM (self i~=j excluded) + the two near corrections,
+% each ACCUMULATING into y (the -1/2 jump rides inside the self block):
+srcinfo.sources = Xall; srcinfo.charges = (sigma(:).').*wall;
+U = lfmm3d(1e-12, srcinfo, 2);                     % potential + gradient at the sources
+y = (sum(U.grad.*Nall,1)).';                       % naive S' = grad(pot) . n
+y = axpso_corr_apply_mex(hself,  n, sigma, n, y);  % self  correction
+y = axpso_corr_apply_mex(hcross, n, sigma, n, y);  % cross correction
+% wrap these lines in a function handle -> gmres for the exterior-Neumann solve
+```
+
+The *same* two calls serve every kernel and layer — `(2, 2, mu)` is the Stokes traction, `(2, 3, mu)`
+the Stokes double layer, etc.; the lab↔local rotation rides inside the module (from the stored `Rm`),
+so the matvec stays frame-agnostic. Calling `axpso_corr_apply_mex(h, nx, sigma, nu, u)` with `nu ≠ nx`
+evaluates the solution at *arbitrary* off-surface targets (field eval). Combined-field operators sum
+their layer corrections into one handle (`corr_get` + `corr_set`), halving the apply cost. Full FMM +
+GMRES drivers, scaling from `K=8` to the `K=3375` ultra:
+[`test/laplace_max`](test/laplace_max) (Laplace SLPn) and [`test/stokes_max`](test/stokes_max)
+(Stokes SLPn traction + the combined-field `(D+S)` Dirichlet variant).
 
 ## References
 
