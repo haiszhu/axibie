@@ -684,12 +684,60 @@ Rm=double(reshape(Rm,9,K)); Cc=double(reshape(Cc,3,K)); handle=double(handle); n
 # FORTRAN axpso_corr_setup_r64(int[1] ikernel, int[1] ilayer, dcomplex[1] params, int[1] iinter, int[1] K, int[K] p, int[K] np, int[K] pmodes, int[1] iside, int[1] iclosed, double[1] gate, int[kp1] geomoff, int[kp1] tpanoff, int[1] nsx, int[1] ntpan, dcomplex[nsx] sx, dcomplex[nsx] snx, double[nsx] sws, dcomplex[nsx] swxp, double[ntpan] tpan, double[1] rball, int[1] ntarg, int[kp1] targoff, double[3,ntarg] targ, double[3,ntarg] targnx, double[k9] Rm, double[k3] Cc, inout double[1] handle, inout double[1] nbytes);
 end
 
+% unified handle-based FULL close-eval operator setup -- SAME signature/workflow as corr_setup,
+% but the fill stores the full close-eval value (for explicit assembly) instead of the correction.
+% CROSS/EVAL targets are rotated into each source frame INSIDE the module (loc = R_k' (targ-C_k)).
+@function [handle, nbytes] = axpso_close_setup_mex(ikernel, ilayer, params, iinter, K, p, np, pmodes, iside, iclosed, gate, geomoff, tpanoff, nsx, ntpan, sx, snx, sws, swxp, tpan, rball, ntarg, targoff, targ, targnx, Rm, Cc, handle)
+ikernel=double(ikernel); ilayer=double(ilayer); iinter=double(iinter);
+K=double(K); iside=double(iside); iclosed=double(iclosed);
+params=complex(double(params)); gate=double(gate); rball=double(rball); ntarg=double(ntarg);
+nsx=double(nsx); ntpan=double(ntpan); kp1=K+1; k9=9*K; k3=3*K;
+p=double(p(:)); np=double(np(:)); pmodes=double(pmodes(:));
+geomoff=double(geomoff(:)); tpanoff=double(tpanoff(:)); targoff=double(targoff(:));
+sx=reshape(double(sx),nsx,1); snx=reshape(double(snx),nsx,1); swxp=reshape(double(swxp),nsx,1);
+sws=reshape(double(sws),nsx,1); tpan=reshape(double(tpan),ntpan,1);
+targ=double(reshape(targ,3,ntarg)); targnx=double(reshape(targnx,3,ntarg));
+Rm=double(reshape(Rm,9,K)); Cc=double(reshape(Cc,3,K)); handle=double(handle); nbytes=0;
+# FORTRAN axpso_close_setup_r64(int[1] ikernel, int[1] ilayer, dcomplex[1] params, int[1] iinter, int[1] K, int[K] p, int[K] np, int[K] pmodes, int[1] iside, int[1] iclosed, double[1] gate, int[kp1] geomoff, int[kp1] tpanoff, int[1] nsx, int[1] ntpan, dcomplex[nsx] sx, dcomplex[nsx] snx, double[nsx] sws, dcomplex[nsx] swxp, double[ntpan] tpan, double[1] rball, int[1] ntarg, int[kp1] targoff, double[3,ntarg] targ, double[3,ntarg] targnx, double[k9] Rm, double[k3] Cc, inout double[1] handle, inout double[1] nbytes);
+end
+
 % unified access: copy entry k's block (flat, reshape to nc*ntcxk x nc*nang*p) + idx + tcxi out of a handle
 @function [blk, ik, tcxik] = axpso_corr_get_mex(handle, k, ntcxk, nc, p, np, pmodes, blk, ik, tcxik)
 handle=double(handle); k=double(k); ntcxk=double(ntcxk); nc=double(nc); p=double(p); np=double(np); pmodes=double(pmodes);
 npp1=np+1; nb=nc*nc*ntcxk*(2*pmodes+1)*p;
 blk=double(blk(:)); ik=double(ik(:)); tcxik=double(tcxik(:));
 # FORTRAN axpso_corr_get_r64(double[1] handle, int[1] k, int[1] ntcxk, int[1] nc, int[1] p, int[1] np, int[1] pmodes, inout double[nb] blk, inout double[ntcxk] ik, inout double[npp1] tcxik);
+end
+
+% inverse of axpso_corr_get_mex: overwrite entry k's stored value block with a caller-built block
+% (e.g. close_setup full - naive = correction), leaving topology untouched so axpso_corr_apply_mex
+% scatters the new block exactly as the setup's own.
+@function axpso_corr_set_mex(handle, k, ntcxk, nc, p, np, pmodes, blk)
+handle=double(handle); k=double(k); ntcxk=double(ntcxk); nc=double(nc); p=double(p); np=double(np); pmodes=double(pmodes);
+nb=nc*nc*ntcxk*(2*pmodes+1)*p;
+blk=double(blk(:));
+# FORTRAN axpso_corr_set_r64(double[1] handle, int[1] k, int[1] ntcxk, int[1] nc, int[1] p, int[1] np, int[1] pmodes, double[nb] blk);
+end
+
+% assemble the stored correction into the caller's DENSE operator A (ACCUMULATES; seed A with the
+% dense naive part) -- the explicit-matrix twin of axpso_corr_apply_mex.  Self handles: circulant +
+% R(phi_a) conjugation + R_k sandwich; cross/eval handles: global canon target rows (rectangular ok).
+@function A = axpso_corr2dense_get_mex(handle, nra, nca, A)
+handle=double(handle); nra=double(nra); nca=double(nca);
+A=double(A);
+# FORTRAN axpso_corr2dense_get_r64(double[1] handle, int[1] nra, int[1] nca, inout double[nra,nca] A);
+end
+
+% Fortran port of the driver's close2corr: turn a FULL close-eval handle (axpso_close_setup_mex) into
+% a CORRECTION handle in place, subtracting the naive Sto3d kernel in the module's own compact layout.
+% Topology (idx/canon/tcxi/Rm, ilayer/mu/nc/interaction, p/np/nang) is read from the handle; only the
+% geometry (source sx/snx/sws, targets targ/targnx, centres Cc) is passed.  Then corr_apply scatters it.
+@function axpso_close2corr_set_mex(handle, K, geomoff, nsx, sx, snx, sws, targoff, ntarg, targ, targnx, Cc)
+handle=double(handle); K=double(K); nsx=double(nsx); ntarg=double(ntarg); kp1=K+1; k3=3*K;
+geomoff=double(geomoff(:)); targoff=double(targoff(:));
+sx=reshape(double(sx),nsx,1); snx=reshape(double(snx),nsx,1); sws=reshape(double(sws),nsx,1);
+targ=double(reshape(targ,3,ntarg)); targnx=double(reshape(targnx,3,ntarg)); Cc=double(reshape(Cc,3,K));
+# FORTRAN axpso_close2corr_set_r64(double[1] handle, int[1] K, int[kp1] geomoff, int[1] nsx, dcomplex[nsx] sx, dcomplex[nsx] snx, double[nsx] sws, int[kp1] targoff, int[1] ntarg, double[3,ntarg] targ, double[3,ntarg] targnx, double[k3] Cc);
 end
 
 % unified handle-based apply: source density x (nx) -> target buffer u (nu), ACCUMULATES (seed u

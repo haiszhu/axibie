@@ -1,101 +1,128 @@
 clearvars; format short e;
+addpath('/Users/hzhu/Documents/Github/axibie/utils');
+addpath('../../utils');
+addpath('../../matlab');
+addpath('../../external/fmm3d/matlab');                       % lfmm3d
 
-% MULTI-particle Laplace DLPn (D') exterior-Neumann BVP via the Fortran operators, CLOSE-CORRECTION,
-% h-refinement of np. Mirror omega3 test_LapDLPnAxiPhysMat0: COMBINED-FIELD representation u = (S+D)[sigma],
-% match the surface flux (S'+D')[sigma] = dn(u_ex) (the -1/2 jump rides in the SLPn self block, the S'
-% regularizes the hypersingular D' -> full-rank, backslash).  Scalar (nc=1).
-%   SYSTEM (flux): S = naive (S'+D') normal-deriv (FMM-replaceable, diag 0) + Scorr (N self + N near diffs)
-%     self  (S'+D')_kk = Finv_k*(AbSn_k+AbDn_k)*F_k   (axp_physmat slpn + dlpn) ; near off-diag slpn + dlpn
-%   EVAL (potential): u = (S+D)[sigma] -> naive Lap3dSLPmat+Lap3dDLPmat + (SLP+DLP value) close-correction.
-% Solve (S+Scorr) sigma = dn(u_ex) ; evaluate the (S+D) potential field.
+% MULTI-particle Laplace DLPn exterior-Neumann BVP -- PHYSICAL-SPACE SPARSE-CORRECTION version of
+% test_axissymslap_lap_dlpn_bvp_multi.m, in the framework style of the SLPn/DLP physmat twins.
+% COMBINED-FIELD u = (S+D)[sigma]; match the surface flux (S'+D')[sigma] = dn(u_ex) (the -1/2 jump
+% rides in the SLPn self correction, the S' regularizes the hypersingular D' -> full-rank, no
+% deflation).  Fully MATRIX-FREE mex; each near correction is FULL close-eval minus naive, in Fortran:
+%   SETUP (per layer, per pass): axpso_close_setup_mex returns the FULL close-eval matrix (iform=0);
+%     axpso_close2corr_set_mex subtracts the naive Lap3d kernel IN FORTRAN (compact layout, self node
+%     auto-zero; the D' m=0 self row-sum fix rides in the fill) -> the handle holds the correction.
+%     Four SYSTEM handles: {S',D'} x {self,cross}.
+%   SYSTEM (flux): lfmm3d naive (S'+D') = grad(charges + dipoles).n_t at the sources (self i~=j
+%     excluded by the FMM) + the four corr applies (ACCUMULATE).
+%   SOLVE: gmres, combined-field full-rank (no deflation).
+%   EVAL (potential): lfmm3d naive (S+D) at the grid + {S,D} eval corrections, same recipe.
+% SCALAR (nc=1): one dof/node, no lab<->local R sandwich.
 
-p=16; np_vals=2:10; errmax=nan(1,numel(np_vals));
+p=16; np_vals=2:10; errmax=nan(1,numel(np_vals)); gate=2.0; fmmeps=1e-12;
 rot=@(u,th) cos(th)*eye(3)+sin(th)*[0 -u(3) u(2); u(3) 0 -u(1); -u(2) u(1) 0]+(1-cos(th))*(u*u');
 Zf={@(t) 0.5*sin(t)-1i*1.0*cos(t), @(t) 1.0*sin(t)-1i*0.5*cos(t)}; ac=[0.5 1.0; 1.0 0.5];
 yloc={[0.10 0.05; 0 0.05; 0.20 -0.30],[0.20 -0.10; 0 0.15; 0.10 -0.10]}; qq=[1.0 -0.7 0.6 -0.5];
 
 for kk=1:numel(np_vals)
   np=np_vals(kk); M=2*np; nphi=2*M+1; ph=2*pi*(0:nphi-1)/nphi; iside=1; iclosed=0;
-  chi_crit=cosh(log(1e13)/M);
   rng(1);
 
-  % 2 particles, random pose; 3D node positions X{k} and 3D node normals NX{k}
+  % 1. particles: random pose; LOCAL-frame meridian geometry + 3D ring nodes/normals (lab)
   C=cell(2,1); R=cell(2,1); X=cell(2,1); NX=cell(2,1); sq=cell(2,1); geo=cell(2,1);
   for k=1:2
     s=[]; s.p=p; s.Z=Zf{k}; s.tpan=linspace(0,pi,np+1)'; s=quadr(s,[],'p','G');
     d=randn(3,1); C{k}=(k-1)*1.6*d/norm(d); uu=randn(3,1); uu=uu/norm(uu); R{k}=rot(uu,2*pi*rand);
     rho=real(s.x); z=imag(s.x); nr=real(s.nx); nz=imag(s.nx);
     X{k}=R{k}*[(kron(cos(ph(:)),rho)).';(kron(sin(ph(:)),rho)).';(kron(ones(nphi,1),z)).']+C{k};
-    NX{k}=R{k}*[(kron(cos(ph(:)),nr)).';(kron(sin(ph(:)),nr)).';(kron(ones(nphi,1),nz)).'];   % 3D node normals
+    NX{k}=R{k}*[(kron(cos(ph(:)),nr)).';(kron(sin(ph(:)),nr)).';(kron(ones(nphi,1),nz)).'];   % 3D node normals (lab)
     sq{k}=axisym_to_3d_quadrature(real(s.x),imag(s.x),s.ws,nphi);
-    g=[]; g.sx=s.x(:); g.snx=s.nx(:); g.sws=s.ws(:); g.swxp=s.wxp(:); g.tpan=s.tpan(:); g.sxlo=s.xlo(:); g.sxhi=s.xhi(:);
-    parc=0; for kj=1:np, parc=max(parc,sum(g.sws((kj-1)*p+(1:p)))); end
-    g.rnear=max(max(real(g.sx))*sqrt(2*(chi_crit-1)), 2*parc); geo{k}=g;
+    g=[]; g.sx=s.x(:); g.snx=s.nx(:); g.sws=s.ws(:); g.swxp=s.wxp(:); g.tpan=s.tpan(:); geo{k}=g;
   end
-  Nmer=numel(geo{1}.sx); N=Nmer*nphi;
-  Xall=[X{1} X{2}]; Nall=[NX{1} NX{2}]; wall=[sq{1}.w sq{2}.w]; Mtot=size(Xall,2); blk={1:N, N+1:2*N};
+  N=numel(geo{1}.sx); Nnod=N*nphi; Mtot=2*Nnod;
+  Xall=[X{1} X{2}]; Nall=[NX{1} NX{2}]; wall=[sq{1}.w sq{2}.w];
 
-  % interior charges -> exact potential uex (eval) and exact surface flux dn(uex) (Neumann data)
+  % interior point charges -> exact exterior potential uex (eval) AND exact surface flux dn(uex) (Neumann data)
   Y=zeros(3,0); for k=1:2, Y=[Y, R{k}*yloc{k}+C{k}]; end
-  uex=@(P) qq(1)./(4*pi*vecnorm(P-Y(:,1)))+qq(2)./(4*pi*vecnorm(P-Y(:,2))) ...
-          +qq(3)./(4*pi*vecnorm(P-Y(:,3)))+qq(4)./(4*pi*vecnorm(P-Y(:,4)));
-  gflux=zeros(Mtot,1);
-  for k=1:numel(qq), dXY=Xall-Y(:,k); r=vecnorm(dXY); gflux=gflux - qq(k)*(sum(Nall.*dXY,1).')./(4*pi*r(:).^3); end
-  Dnv=@(t,xs,ws,ns) Lap3dSLPmat(t, struct('x',xs,'w',ws)) + Lap3dDLPmat(t, struct('x',xs,'w',ws,'nx',ns));  % (S+D) value
+  uex=@(P) lapsum(P,Y,qq);
+  g_tr=zeros(1,Mtot);                                          % dn(uex) = -sum_j q_j (n.(X-Y_j))/(4pi r^3)
+  for j=1:numel(qq), dXY=Xall-Y(:,j); rr=vecnorm(dXY); g_tr=g_tr - qq(j)*(sum(Nall.*dXY,1))./(4*pi*rr.^3); end
+  g_tr=g_tr(:);
 
-  % --- (1) naive FULL (S'+D') operator (FMM-replaceable; diag 0) ---
-  S=lapSDtrac(Xall,Nall,Xall,wall,Nall); S(1:Mtot+1:end)=0;
-  Scorr=sparse(Mtot,Mtot);
+  % 2. flat per-particle meridian geometry consumed by the handle-based setups (self + cross)
+  K2=2;
+  sxs=zeros(N,K2); snxs=sxs; swss=zeros(N,K2); swxps=zeros(N,K2); tpans=zeros(np+1,K2);
+  for k=1:K2, gs=geo{k}; sxs(:,k)=gs.sx; snxs(:,k)=gs.snx; swss(:,k)=gs.sws; swxps(:,k)=gs.swxp; tpans(:,k)=gs.tpan; end
+  pv=p*ones(K2,1); npv=np*ones(K2,1); pmv=M*ones(K2,1);
+  geomoff=1+(0:K2)'*N; tpanoff=1+(0:K2)'*(np+1); targoff=1+(0:K2)'*Nnod;
+  nsx=K2*N; ntpan=K2*(np+1);
+  sxf=sxs(:); snxf=snxs(:); swsf=swss(:); swxpf=swxps(:); tpanf=tpans(:);
+  rnear=gate*sqrt(max(arrayfun(@(j) sum(geo{1}.sws((j-1)*p+(1:p))), 1:np)));
 
-  % --- (2) self DIFFERENCE correction: (accurate (S'+D') self) - (naive (S'+D') self, diag 0) ---
-  for k=1:2
-    g=geo{k};
-    [AbSn,F,Finv,~,~]=axp_physmat_mex(1,2,1,p,np,g.sx,g.snx,g.sws,g.swxp,g.tpan,g.sxlo,g.sxhi,M,iside,iclosed,1.0,eye(3));
-    [AbDn,~ ,~  ,~,~]=axp_physmat_mex(1,4,1,p,np,g.sx,g.snx,g.sws,g.swxp,g.tpan,g.sxlo,g.sxhi,M,iside,iclosed,1.0,eye(3));
-    Sns=lapSDtrac(X{k},NX{k},X{k},sq{k}.w,NX{k}); Sns(1:N+1:end)=0;
-    Scorr(blk{k},blk{k})=Scorr(blk{k},blk{k})+(real(Finv*(AbSn+AbDn)*F)-Sns);
-  end
+  % 3. SYSTEM corrections: FULL close-eval minus naive for BOTH layers, self and cross.  The -1/2 jump
+  %    rides in the S' self correction; the D' m=0 self row-sum fix rides in the D' fill.
+  hSpself = axpso_close_setup_mex(1, 2, 0.0, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
+              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
+              1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);        % SLPn self
+  axpso_close2corr_set_mex(hSpself, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
+  hDpself = axpso_close_setup_mex(1, 4, 0.0, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
+              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
+              1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);        % DLPn self
+  axpso_close2corr_set_mex(hDpself, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
+  hSpcross = axpso_close_setup_mex(1, 2, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+               geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
+               1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);       % SLPn cross
+  axpso_close2corr_set_mex(hSpcross, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
+  hDpcross = axpso_close_setup_mex(1, 4, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+               geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
+               1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);       % DLPn cross
+  axpso_close2corr_set_mex(hDpcross, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
 
-  % --- (3) off-diagonal near DIFFERENCE correction (kdtree): (S'+D') flux close - naive ---
-  for pq=1:2
-    gs=geo{pq}; other=setdiff(1:Mtot, blk{pq});
-    nb=~cellfun(@isempty, rangesearch(X{pq}', Xall(:,other)', gs.rnear));
-    cand=other(nb); if isempty(cand), continue; end
-    Pn=Xall(:,cand); phir=atan2(Pn(2,:),Pn(1,:)); txn=(hypot(Pn(1,:),Pn(2,:))+1i*Pn(3,:)).'; tphin=phir.';
-    NPc=Nall(:,cand); nrho=NPc(1,:).*cos(phir)+NPc(2,:).*sin(phir); nphic=-NPc(1,:).*sin(phir)+NPc(2,:).*cos(phir);
-    tnxc=(nrho+1i*NPc(3,:)).'; tnphic=nphic.';
-    [BSn,Fs,nmask]=axp_offdiagphysmat_mex(1,2,1,numel(cand),txn,tphin,[0;0;0],eye(3),p,np,gs.sx,gs.snx,gs.sws,gs.swxp,gs.tpan,gs.sxlo,gs.sxhi,C{pq},R{pq},M,iside,iclosed,1.0,0,tnxc,tnphic);
-    [BDn,~ ,~    ]=axp_offdiagphysmat_mex(1,4,1,numel(cand),txn,tphin,[0;0;0],eye(3),p,np,gs.sx,gs.snx,gs.sws,gs.swxp,gs.tpan,gs.sxlo,gs.sxhi,C{pq},R{pq},M,iside,iclosed,1.0,0,tnxc,tnphic);
-    nr=cand(nmask); Bf=real((BSn+BDn)*Fs);
-    Sno=lapSDtrac(Xall(:,nr),Nall(:,nr),X{pq},sq{pq}.w,NX{pq});
-    Scorr(nr,blk{pq})=Scorr(nr,blk{pq})+(Bf(nmask,:)-Sno);
-  end
+  % 4. matrix-free operator: lfmm3d naive (S'+D') + four corr applies (scalar, no deflation)
+  applyA=@(x) applymvSD(x, fmmeps, Xall, Nall, wall, hSpself, hSpcross, hDpself, hDpcross);
 
-  % --- Neumann flux data + solve ---
-  sigma=(S+Scorr)\gflux; sig={sigma(blk{1}), sigma(blk{2})};
+  % 4b. CALDERON right-preconditioner: on-surface S value apply (lfmm3d charges + {self,cross} SLP
+  %     handles).  (-1/2+S'+D')S is SECOND-KIND (D'S = K'^2 - 1/4 I), so kappa = O(1) and the gmres
+  %     residual transfers to the solution: unpreconditioned, sol err ~ kappa*relres ~ 1e-8 at np=8
+  %     (the dense figure's 5e-12 floor is BACKSLASH; the repo's gmres multi0 also floored at 7.7e-9).
+  hSvself = axpso_close_setup_mex(1, 1, 0.0, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
+              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
+              1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);        % SLP value self
+  axpso_close2corr_set_mex(hSvself, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
+  hSvcross = axpso_close_setup_mex(1, 1, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+               geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
+               1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);       % SLP value cross
+  axpso_close2corr_set_mex(hSvcross, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
+  applyS=@(x) applymvS(x, fmmeps, Xall, wall, hSvself, hSvcross);
 
-  % --- 3D exterior target grid (outside both particles) ---
-  cmid=(C{1}+C{2})/2; gv=linspace(-3,3,22); [GX,GY,GZ]=ndgrid(gv,linspace(-1,3,12),gv); P=[GX(:)';GY(:)';GZ(:)']+cmid;
+  % 5. solve (gmres on the SECOND-KIND composite (-1/2+S'+D')S, then sigma = S tau)
+  [tau,flag,relres,iter]=gmres(@(t) applyA(applyS(t)), g_tr, [], 1e-12, 300);
+  sigma=applyS(tau);
+  fprintf('  gmres: flag=%d  iters=%d  relres=%.3e\n', flag, iter(2), relres);
+
+  % 6. 3D exterior target grid (outside both particles)
+  cmid=(C{1}+C{2})/2; gv=linspace(-3,3,22); [GX,GY,GZ]=ndgrid(gv,gv,gv); P=[GX(:)';GY(:)';GZ(:)']+cmid;
   ext=true(1,size(P,2)); dmin=inf(1,size(P,2));
   for k=1:2, loc=R{k}.'*(P-C{k}); sd=(hypot(loc(1,:),loc(2,:))/ac(k,1)).^2+(loc(3,:)/ac(k,2)).^2; ext=ext&(sd>1.05); dmin=min(dmin,sd-1); end
-  Pe=P(:,ext); M3=size(Pe,2); dmin=dmin(ext);
+  Pe=P(:,ext); Me=size(Pe,2); dmin=dmin(ext);
 
-  % --- field eval: u = (S+D)[sigma] -> naive (S+D) + per-source near (SLP+DLP value) close correction ---
-  u=Dnv(struct('x',Pe), Xall, wall, Nall)*real(sigma);
-  for pq=1:2
-    gs=geo{pq};
-    cand=find(~cellfun(@isempty, rangesearch(X{pq}', Pe', gs.rnear))); if isempty(cand), continue; end
-    Pn=Pe(:,cand); txn=(hypot(Pn(1,:),Pn(2,:))+1i*Pn(3,:)).'; tphin=atan2(Pn(2,:),Pn(1,:)).';
-    [BD,Fs,nmask]=axp_offdiagphysmat_mex(1,3,1,numel(cand),txn,tphin,[0;0;0],eye(3),p,np,gs.sx,gs.snx,gs.sws,gs.swxp,gs.tpan,gs.sxlo,gs.sxhi,C{pq},R{pq},M,iside,iclosed,1.0,0);
-    [BS,~ ,~    ]=axp_offdiagphysmat_mex(1,1,1,numel(cand),txn,tphin,[0;0;0],eye(3),p,np,gs.sx,gs.snx,gs.sws,gs.swxp,gs.tpan,gs.sxlo,gs.sxhi,C{pq},R{pq},M,iside,iclosed,1.0,0);
-    unaive=Dnv(struct('x',Pn), X{pq}, sq{pq}.w, NX{pq})*real(sig{pq});
-    uclose=real((BD+BS)*(Fs*sig{pq}));
-    ci=cand(nmask); u(ci)=u(ci)-unaive(nmask)+uclose(nmask);
-  end
-
+  % 7. field eval u = (S+D)[sigma]: lfmm3d naive (S+D) at Pe + {S,D} eval corrections (targoff=ones ->
+  %    every source sees ALL Me grid targets), same full-minus-naive recipe applied source K*Nnod -> Me.
+  cw=(sigma(:).').*wall; srcinfo=[]; srcinfo.sources=Xall; srcinfo.charges=cw; srcinfo.dipoles=Nall.*cw;
+  U=lfmm3d(fmmeps,srcinfo,0,Pe,1); u=U.pottarg(:);
+  hSeval = axpso_close_setup_mex(1, 1, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
+             1.0+rnear, Me, ones(K2+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);            % SLP eval
+  axpso_close2corr_set_mex(hSeval, K2, geomoff, nsx, sxf, snxf, swsf, ones(K2+1,1), Me, Pe, Pe, [C{:}]);
+  hDeval = axpso_close_setup_mex(1, 3, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
+             1.0+rnear, Me, ones(K2+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);            % DLP eval
+  axpso_close2corr_set_mex(hDeval, K2, geomoff, nsx, sxf, snxf, swsf, ones(K2+1,1), Me, Pe, Pe, [C{:}]);
+  u=axpso_corr_apply_mex(hSeval, K2*Nnod, sigma, Me, u);
+  u=axpso_corr_apply_mex(hDeval, K2*Nnod, sigma, Me, u);
   Uex=uex(Pe).'; err=abs(u-Uex)/max(abs(Uex)); inb=dmin.'<0.1; errmax(kk)=max(err);
   fprintf('np=%2d  N=%5d/part  M=%2d  M3=%5d :  near(d<0.1) %.2e   far(d>=0.1) %.2e\n', ...
-          np, N, M, M3, max([err(inb);0]), max(err(~inb)));
+          np, Nnod, M, Me, max([err(inb);0]), max(err(~inb)));
 
   figure(2),clf; hold on;
   scatter3(Pe(1,:),Pe(2,:),Pe(3,:),14,log10(max(err,1e-17)),'filled');
@@ -103,17 +130,57 @@ for kk=1:numel(np_vals)
   plot3(X{2}(1,:),X{2}(2,:),X{2}(3,:),'.','Color',[.6 .6 .6]);
   plot3(Y(1,:),Y(2,:),Y(3,:),'p','MarkerSize',16,'MarkerFaceColor',[0.85 0.1 0.1],'MarkerEdgeColor','k');
   cb=colorbar; cb.Label.String='log_{10}|u_h-u_{exact}|/max|u_{exact}|';
-  clim([-16 -4]); axis equal; view(35,18); grid on; colormap('jet');
-  xlabel('x'); ylabel('y'); zlabel('z'); title('multi-particle Laplace DLPn (S''+D'', close-correction): 3D field error (last refinement)');
+  axis equal; view(35,18); grid on; colormap('jet');
+  xlabel('x'); ylabel('y'); zlabel('z'); title('2-particle Laplace DLPn (S''+D'', physmat sparse-correction): 3D field error (last refinement)');
+  figure(2),ylim([-1 3])
 end
 
-% --- convergence plot ---
-figure(1),clf; semilogy(np_vals,errmax,'o-k'); grid on; xlabel('n_p'); ylabel('max field err');
-title('multi-particle Laplace DLPn (S''+D'', close-correction): h-refinement, p=16, M=2 n_p');
+figure(2),clf; hold on;
+scatter3(Pe(1,:),Pe(2,:),Pe(3,:),14,log10(max(err,1e-17)),'filled');
+plot3(X{1}(1,:),X{1}(2,:),X{1}(3,:),'.','Color',[.6 .6 .6]);
+plot3(X{2}(1,:),X{2}(2,:),X{2}(3,:),'.','Color',[.6 .6 .6]);
+plot3(Y(1,:),Y(2,:),Y(3,:),'p','MarkerSize',16,'MarkerFaceColor',[0.85 0.1 0.1],'MarkerEdgeColor','k');
+cb=colorbar; cb.Label.String='log_{10}|u_h-u_{exact}|/max|u_{exact}|';
+clim([-16 -4]); axis equal; view(35,18); grid on; colormap('jet');
+xlabel('x'); ylabel('y'); zlabel('z'); title('2-particle Laplace DLPn (S''+D'', physmat sparse-correction): 3D field error (last refinement)');
+figure(2),ylim([-1 3])
 
-function T = lapSDtrac(Xt, Nt, xs, ws, Ns)
-% combined (S'+D') Laplace normal-derivative operator: S' (target normal Nt) + D' (target Nt + source Ns).
-[~,AnS] = Lap3dSLPmat(struct('x',Xt,'nx',Nt), struct('x',xs,'w',ws));
-[~,AnD] = Lap3dDLPmat(struct('x',Xt,'nx',Nt), struct('x',xs,'w',ws,'nx',Ns));
-T = real(AnS + AnD);
+% cmp = getPyPlot_cMap('rainbow', [], [], '"/Users/hzhu/.pyenv/versions/3.11.13/bin/python"');
+% colormap(cmp)
+
+% --- convergence plot: max field error vs panel count ---
+figure(1),clf; semilogy(np_vals,errmax,'o-k'); grid on; xlabel('n_p'); ylabel('max field err');
+title('multi-particle Laplace DLPn (S''+D'', physmat sparse-correction): h-refinement, p=16, M=2 n_p');
+
+% exportgraphics(figure(1),'axissymslap_lap_dlpn_multi_physmat_convergence.png','Resolution',200)
+% exportgraphics(figure(2),'axissymslap_lap_dlpn_multi_physmat_error.png','Resolution',200)
+
+function y = applymvSD(x, fmmeps, Xall, Nall, wall, hSpself, hSpcross, hDpself, hDpcross)
+% matrix-free (-1/2 I + S' + D') matvec: lfmm3d naive (S'+D') = grad(charges + dipoles).n_t at the
+% sources (self i~=j excluded; the -1/2 jump rides in the S' self correction) + four handle corr
+% applies (ACCUMULATE).  SCALAR.
+cw=(x(:).').*wall;                                            % charge/dipole strength (weights baked in)
+srcinfo=[]; srcinfo.sources=Xall; srcinfo.charges=cw; srcinfo.dipoles=Nall.*cw;
+U=lfmm3d(fmmeps,srcinfo,2);                                   % pot + grad at sources (self i~=j excluded)
+y=(sum(U.grad.*Nall,1)).';                                    % (S'+D') = grad(S+D) . target normal
+n=numel(x);
+y=axpso_corr_apply_mex(hSpself,  n, x, n, y);
+y=axpso_corr_apply_mex(hSpcross, n, x, n, y);
+y=axpso_corr_apply_mex(hDpself,  n, x, n, y);
+y=axpso_corr_apply_mex(hDpcross, n, x, n, y);
+end
+
+function y = applymvS(x, fmmeps, Xall, wall, hSvself, hSvcross)
+% on-surface S VALUE apply (Calderon preconditioner): lfmm3d naive potential at the sources
+% (self i~=j excluded; diagonal-limit rides in the self correction) + {self,cross} corr applies.
+srcinfo=[]; srcinfo.sources=Xall; srcinfo.charges=(x(:).').*wall;
+U=lfmm3d(fmmeps,srcinfo,1); y=U.pot(:);
+n=numel(x);
+y=axpso_corr_apply_mex(hSvself,  n, x, n, y);
+y=axpso_corr_apply_mex(hSvcross, n, x, n, y);
+end
+
+function u=lapsum(P,Y,Q)
+u=zeros(1,size(P,2));
+for j=1:size(Y,2), u=u+Q(j)./(4*pi*vecnorm(P-Y(:,j))); end
 end

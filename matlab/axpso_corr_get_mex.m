@@ -6,6 +6,6 @@ mex_id_ = 'axpso_corr_get_r64(c i double[x], c i int64_t[x], c i int64_t[x], c i
 [blk, ik, tcxik] = AxiStokes3D_mex(mex_id_, handle, k, ntcxk, nc, p, np, pmodes, blk, ik, tcxik, 1, 1, 1, 1, 1, 1, 1, nb, ntcxk, npp1);
 end
 
-% unified handle-based apply: source density x (nx) -> target buffer u (nu), ACCUMULATES (seed u
-% with the naive FMM part).  ONE apply spans self / cross / arbitrary-target eval; for self and
-% cross nu==nx, for arbitrary targets nu = target space.  Kernel/layer/interaction are in the handle.
+% inverse of axpso_corr_get_mex: overwrite entry k's stored value block with a caller-built block
+% (e.g. close_setup full - naive = correction), leaving topology untouched so axpso_corr_apply_mex
+% scatters the new block exactly as the setup's own.
