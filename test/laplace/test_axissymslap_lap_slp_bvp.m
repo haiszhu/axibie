@@ -1,7 +1,6 @@
 clearvars; format short e;
-addpath('/Users/hzhu/Documents/Github/axibie/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/matlab');
+addpath('../../utils');
+addpath('../../matlab');
 
 % ---- geometry switch (mirror axibie/testStokesDir.m / the SLPn test) ----
 shape = 'cshape';                                   % 'sphere' | 'ellipse' | 'cshape'
@@ -51,7 +50,9 @@ for kk=1:numel(np_vals)
   fm=fftshift(fft(f,nmodes,1)/nang,1);
 
   % 2. self modal matrix (all modes, scalar real block)
-  Aself=axls_slp_blockmat_nmode_mex(N,sx,p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,[]);
+  % FROZEN worker path (uncomment to compare): Aself=axls_slp_blockmat_nmode_mex(N,sx,p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,[]);
+  Aself=real(axp_modemat_setup_mex(1,1,0,1,1,p,np,pmodes,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,0,[1;1],zeros(3,0),zeros(3,0),eye(3),zeros(3,1),N,N));
 
   % 3. solve  S_m[sigma_m] = u_m   (lsqminnorm: SLP meridian null space)
   sig=cell(pmodes+1,1);
@@ -60,7 +61,9 @@ for kk=1:numel(np_vals)
   end
 
   % 4. 3d target eval (single-layer potential S[sigma])
-  Ae=axls_slp_blockmat_nmode_mex(M3,(rho3+1i*z3).',p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,[]);
+  % FROZEN worker path (uncomment to compare): Ae=axls_slp_blockmat_nmode_mex(M3,(rho3+1i*z3).',p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,[]);
+  Ae=real(axp_modemat_setup_mex(1,1,0,3,1,p,np,pmodes,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,M3,[1;M3+1],P,zeros(3,M3),eye(3),zeros(3,1),M3,N));
   v3=zeros(pmodes+1,M3);
   for m=0:pmodes
     v3(m+1,:)=(Ae(:,:,m+1)*sig{m+1}).';

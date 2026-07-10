@@ -25,8 +25,13 @@ for k=1:numel(Np)
   sx=s.x(:); snx=s.nx(:); sws=s.ws(:); swxp=s.wxp(:);
   tpan=s.tpan(:); sxlo=s.Z(s.tpan(1:end-1)); sxlo=sxlo(:); sxhi=s.Z(s.tpan(2:end)); sxhi=sxhi(:);
   f=uexact(s);
-  A =axls_slp_blockmat_mex(N,         sx,    p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,[]);
-  Ae=axls_slp_blockmat_mex(numel(t.x),t.x(:),p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,[]);
+  % FROZEN single-mode path (uncomment to compare): A =axls_slp_blockmat_mex(N,         sx,    p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,[]);
+  A =real(axp_modemat_setup_mex(1,1,0,1,1,p,np,0,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,0,[1;1],zeros(3,0),zeros(3,0),eye(3),zeros(3,1),N,N));
+  % FROZEN single-mode path (uncomment to compare): Ae=axls_slp_blockmat_mex(numel(t.x),t.x(:),p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,[]);
+  Mt=numel(t.x); T3=[real(t.x(:)).'; zeros(1,Mt); imag(t.x(:)).'];   % meridian targets in 3D (phi=0)
+  Ae=real(axp_modemat_setup_mex(1,1,0,3,1,p,np,0,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,Mt,[1;Mt+1],T3,zeros(3,Mt),eye(3),zeros(3,1),Mt,N));
   dens=A\f; tt=Ae*dens;
   u=nan*zz; u(ii)=tt;
   err(k)=max(abs(u(:)-uf(:)));

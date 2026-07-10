@@ -25,4 +25,8 @@ F=Fsq(:,bcol);                                                        % F * sigm
 near = near > 0.5;
 end
 
-% ==== physical-space SPARSE close-correction (pass 2/3): per-panel fourier COMPUTE (Laplace SLP) ====
+% ==== LEVEL-2 PHYSICAL master (axissym_physmat_setup): K-particle ragged geometry -> COMPLETE dense
+% physical-space operator A(nra,nca), real, LAB node-interleaved.  iinter 1 self (K diagonal blocks) |
+% 2 cross (off-diagonal blocks only; diagonal blocks stay 0 -- caller combines with a self call) |
+% 3 eval (arbitrary lab targets, every source sees all of them).  A is pre-zeroed HERE (untouched
+% blocks stay 0).

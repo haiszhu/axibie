@@ -26,8 +26,16 @@ for k=1:numel(Np)
   sx=s.x(:); snx=s.nx(:); sws=s.ws(:); swxp=s.wxp(:);
   tpan=s.tpan(:); sxlo=s.Z(s.tpan(1:end-1)); sxlo=sxlo(:); sxhi=s.Z(s.tpan(2:end)); sxhi=sxhi(:);
   f=uexact(s);
-  A =axss_slp_blockmat_mex(N,        sx,    p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,mu,[]);
-  Ae=axss_slp_blockmat_mex(numel(t.x),t.x(:),p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,mu,[]);
+  im=[1:N,2*N+1:3*N];                                  % meridian (rho,z) rows/cols of the mode-0 3x3 stack
+  % FROZEN single-mode path (uncomment to compare): A =axss_slp_blockmat_mex(N,        sx,    p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,mu,[]);
+  A3=axp_modemat_setup_mex(2,1,mu,1,1,p,np,0,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,0,[1;1],zeros(3,0),zeros(3,0),eye(3),zeros(3,1),3*N,3*N);
+  A=A3(im,im);
+  Mt=numel(t.x); T3=[real(t.x(:)).'; zeros(1,Mt); imag(t.x(:)).'];   % meridian targets in 3D (phi=0)
+  % FROZEN single-mode path (uncomment to compare): Ae=axss_slp_blockmat_mex(numel(t.x),t.x(:),p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,mu,[]);
+  Ae3=axp_modemat_setup_mex(2,1,mu,3,1,p,np,0,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,Mt,[1;Mt+1],T3,zeros(3,Mt),eye(3),zeros(3,1),3*Mt,3*N);
+  Ae=Ae3([1:Mt,2*Mt+1:3*Mt],im);
   dens=A\f; tt=Ae*dens;
   u=nan*(1+1i)*zz; u(ii)=tt(1:end/2)+1i*tt(end/2+1:end);
   err(k)=max(abs(u(:)-uf(:)));
@@ -48,34 +56,4 @@ xlabel('\rho'); ylabel('z'); title('Stokes SLP 0th-mode: log_{10} err vs exact a
 function s=mkcurve(Z,p,np)
 s.p=p; s.Z=Z; s.tpan=linspace(0,pi,np+1)'; s=quadr(s,[],'p','G');
 if ~isfield(s,'np'), s.np=numel(s.tpan)-1; end
-end
-
-function G = StoAxiMat_even(t,s)
-% Naive 0th-mode axisymmetric Stokes SLP, 2x2 meridian tensor (mu=1).
-%   G = [G_rr G_rz; G_zr G_zz]  (2 nt x 2 ns), in-plane density stacked (sigma_rho; sigma_zeta).
-%   K^{(0)}_{S,ab} = sqrt(rho'/rho)/(8 pi mu) ( SK_ab gK + SE_ab gE ) .* ws
-% SK,SE the 2x2 of stokes_0th_mode_even_terms.tex (= axibie AxiStokesSpecialMat S11..S22),
-% verified vs the direct 3D azimuthal integral to 1e-14.
-mu = 1;
-rt = real(t.x(:));    zt = imag(t.x(:));
-rs = real(s.x(:)).';  zs = imag(s.x(:)).';
-nt = numel(rt);       ns = numel(rs);
-rho  = repmat(rt,1,ns);   rhop = repmat(rs,nt,1);
-drho = rho - rhop;
-dz   = repmat(zt,1,ns) - repmat(zs,nt,1);
-rr2  = drho.^2 + dz.^2;
-chi  = 1 + rr2./(2*rho.*rhop);   m = 2./(chi+1);
-[Kc,Ec] = ellipke(m);
-gK = sqrt(2./(chi+1)).*Kc;   gE = sqrt(2./(chi+1)).*Ec;
-pref = (sqrt(rhop./rho)/(8*pi*mu)) .* s.ws(:).';
-% 2x2 SK, SE
-SKrr = (rho.^2+rhop.^2+2*dz.^2)./(rho.*rhop);   SErr = -2-4*chi+2*chi.*drho.^2./rr2;
-SKrz = dz./rho;                                 SErz = 2*(drho.*dz./rr2 - dz./(2*rho));
-SKzr = -dz./rhop;                               SEzr = 2*(drho.*dz./rr2 + dz./(2*rhop));
-SKzz = 2*ones(size(rho));                       SEzz = 2*dz.^2./rr2;
-Grr = pref.*(SKrr.*gK + SErr.*gE);
-Grz = pref.*(SKrz.*gK + SErz.*gE);
-Gzr = pref.*(SKzr.*gK + SEzr.*gE);
-Gzz = pref.*(SKzz.*gK + SEzz.*gE);
-G = [Grr Grz; Gzr Gzz];
 end

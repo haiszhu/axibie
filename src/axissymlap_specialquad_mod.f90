@@ -2,10 +2,9 @@ module axissymlap_specialquad_mod
   use axilaplace3d_mod, only: r64, gauss_r64, lagrange_interp_r64
   use axisym_modal_green_mod, only: modal_green_r64, modal_green_all_r64, modal_green_all_far_r64
   use specialquad_mod, only: sdspecialquad_r64
-  use axissymlap_kernelsplit_mod, only: axissymlap_slp_coef_r64, axissymlap_slp_coef_nmode_r64, &
-       axissymlap_slpn_coef_r64, axissymlap_slpn_coef_nmode_r64, &
-       axissymlap_dlp_coef_r64, axissymlap_dlp_coef_nmode_r64, &
-       axissymlap_dlpn_coef_r64, axissymlap_dlpn_coef_nmode_r64
+  use axissymlap_kernelsplit_mod, only: axissymlap_coef_r64, &                     ! L1 MASTER (all nmode workers)
+       axissymlap_slp_coef_r64, axissymlap_slpn_coef_r64, &                        ! frozen 0th-mode (single-mode blockmats only)
+       axissymlap_dlp_coef_r64, axissymlap_dlpn_coef_r64
   implicit none
   private
   public :: axissymlap_slp_blockmat_r64
@@ -155,7 +154,8 @@ contains
     integer(8),   allocatable :: joa(:), ci(:), nidx(:)
     logical,      allocatable :: ikq(:), ikc(:)
     complex(r64), allocatable :: zc(:), znear(:), Ad(:,:)
-    real(r64),    allocatable :: C1(:,:,:), C2(:,:,:), As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:), Gcq(:,:), Gpc(:,:)
+    real(r64),    allocatable :: C1(:,:,:), C2(:,:,:), C3a(:,:,:), C3b(:,:,:), C4(:,:,:), &
+                                 As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:), Gcq(:,:), Gpc(:,:)
     q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
     call gauss_r64(p,     tglp, wglp, Dp)
     call gauss_r64(2_8*p, tglq, wglq, Dq)
@@ -191,7 +191,7 @@ contains
       joa(c) = qo
     end do
     allocate(ci(nt), zc(nt), nidx(nt), znear(nt), ikq(nt), ikc(nt))
-    allocate(C1(nt,q,M+1), C2(nt,q,M+1))
+    allocate(C1(nt,q,M+1), C2(nt,q,M+1), C3a(nt,q,M+1), C3b(nt,q,M+1), C4(nt,q,M+1))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
     A = 0.0_r64
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
@@ -248,7 +248,8 @@ contains
         end do
         ! ---- inner near: 2p SLP close (coef C1/C2 + sdspecialquad As), fold q->p_coarse (IPqc) ----
         if (nkc > 0) then
-          call axissymlap_slp_coef_nmode_r64(nkc, zc(1:nkc), q, Yq, M, C1(1:nkc,1:q,:), C2(1:nkc,1:q,:))
+          call axissymlap_coef_r64(1_8, nkc, zc(1:nkc), zc(1:nkc), q, Yq, nvq, M, &
+               C1(1:nkc,1:q,:), C2(1:nkc,1:q,:), C3a(1:nkc,1:q,:), C3b(1:nkc,1:q,:), C4(1:nkc,1:q,:))
           call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, zac, zbc, iside, &
                As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
           do md = 0, M
@@ -442,7 +443,8 @@ contains
     integer(8),   allocatable :: joa(:), ci(:), nidx(:)
     logical,      allocatable :: ikq(:), ikc(:)
     complex(r64), allocatable :: zc(:), zcn(:), znear(:), znearn(:), Ad(:,:)
-    real(r64),    allocatable :: C1(:,:,:), C2(:,:,:), C3(:,:,:), As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:), Gcq(:,:), Gpc(:,:)
+    real(r64),    allocatable :: C1(:,:,:), C2(:,:,:), C3(:,:,:), C3b(:,:,:), C4(:,:,:), &
+                                 As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:), Gcq(:,:), Gpc(:,:)
     q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
     call gauss_r64(p,     tglp, wglp, Dp)
     call gauss_r64(2_8*p, tglq, wglq, Dq)
@@ -478,7 +480,7 @@ contains
       joa(c) = qo
     end do
     allocate(ci(nt), zc(nt), zcn(nt), nidx(nt), znear(nt), znearn(nt), ikq(nt), ikc(nt))
-    allocate(C1(nt,q,M+1), C2(nt,q,M+1), C3(nt,q,M+1))
+    allocate(C1(nt,q,M+1), C2(nt,q,M+1), C3(nt,q,M+1), C3b(nt,q,M+1), C4(nt,q,M+1))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
     A = 0.0_r64
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
@@ -536,8 +538,8 @@ contains
         end do
         ! ---- inner near: 2p S' close (coef + sdspecialquad As, target Cauchy -Ad/nvq), fold q->p_coarse (IPqc) ----
         if (nkc > 0) then
-          call axissymlap_slpn_coef_nmode_r64(nkc, zc(1:nkc), zcn(1:nkc), q, Yq, M, &
-               C1(1:nkc,1:q,:), C2(1:nkc,1:q,:), C3(1:nkc,1:q,:))
+          call axissymlap_coef_r64(2_8, nkc, zc(1:nkc), zcn(1:nkc), q, Yq, nvq, M, &
+               C1(1:nkc,1:q,:), C2(1:nkc,1:q,:), C3(1:nkc,1:q,:), C3b(1:nkc,1:q,:), C4(1:nkc,1:q,:))
           call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, zac, zbc, iside, &
                As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
           do md = 0, M
@@ -734,7 +736,8 @@ contains
     integer(8),   allocatable :: joa(:), ci(:), nidx(:)
     logical,      allocatable :: ikq(:), ikc(:)
     complex(r64), allocatable :: zc(:), znear(:), Ad(:,:)
-    real(r64),    allocatable :: C1(:,:,:), C2(:,:,:), C3(:,:,:), As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:), Gcq(:,:), Gpc(:,:)
+    real(r64),    allocatable :: C1(:,:,:), C2(:,:,:), C3(:,:,:), C3b(:,:,:), C4(:,:,:), &
+                                 As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:), Gcq(:,:), Gpc(:,:)
     q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
     call gauss_r64(p,     tglp, wglp, Dp)
     call gauss_r64(2_8*p, tglq, wglq, Dq)
@@ -770,7 +773,7 @@ contains
       joa(c) = qo
     end do
     allocate(ci(nt), zc(nt), nidx(nt), znear(nt), ikq(nt), ikc(nt))
-    allocate(C1(nt,q,M+1), C2(nt,q,M+1), C3(nt,q,M+1))
+    allocate(C1(nt,q,M+1), C2(nt,q,M+1), C3(nt,q,M+1), C3b(nt,q,M+1), C4(nt,q,M+1))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
     A = 0.0_r64
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
@@ -829,8 +832,8 @@ contains
         end do
         ! ---- inner near: 2p DLP close (coef + sdspecialquad As, SOURCE Cauchy +2pi*C3*Re(Ad)), fold q->p (IPqc) ----
         if (nkc > 0) then
-          call axissymlap_dlp_coef_nmode_r64(nkc, zc(1:nkc), q, Yq, nvq, M, &
-               C1(1:nkc,1:q,:), C2(1:nkc,1:q,:), C3(1:nkc,1:q,:))
+          call axissymlap_coef_r64(3_8, nkc, zc(1:nkc), zc(1:nkc), q, Yq, nvq, M, &
+               C1(1:nkc,1:q,:), C2(1:nkc,1:q,:), C3(1:nkc,1:q,:), C3b(1:nkc,1:q,:), C4(1:nkc,1:q,:))
           call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, zac, zbc, iside, &
                As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
           do md = 0, M
@@ -1195,7 +1198,7 @@ contains
         end do
         ! ---- inner near: 2p 5-bucket DLPn close (coef + sdspecialquad), fold q->p_coarse (IPqc) ----
         if (nkc > 0) then
-          call axissymlap_dlpn_coef_nmode_r64(nkc, zc(1:nkc), zcn(1:nkc), q, Yq, nvq, M, &
+          call axissymlap_coef_r64(4_8, nkc, zc(1:nkc), zcn(1:nkc), q, Yq, nvq, M, &
                C1(1:nkc,1:q,:), C2(1:nkc,1:q,:), C3a(1:nkc,1:q,:), C3b(1:nkc,1:q,:), C4(1:nkc,1:q,:))
           call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, zac, zbc, iside, &
                As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))

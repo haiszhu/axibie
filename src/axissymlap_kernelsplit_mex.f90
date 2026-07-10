@@ -38,3 +38,12 @@ subroutine axlk_dlpn_coef_nmode_r64(nt, tx, tnx, nq, sx, snx, M, C1, C2, C3a, C3
   real(8),    intent(inout) :: C1(nt,nq,M+1), C2(nt,nq,M+1), C3a(nt,nq,M+1), C3b(nt,nq,M+1), C4(nt,nq,M+1)
   call cf(nt, tx, tnx, nq, sx, snx, M, C1, C2, C3a, C3b, C4)
 end subroutine axlk_dlpn_coef_nmode_r64
+
+subroutine axlk_coef_r64(ilayer, nt, tx, tnx, nq, sx, snx, M, C1, C2, C3a, C3b, C4)
+  use axissymlap_kernelsplit_mod, only: cf => axissymlap_coef_r64
+  implicit none
+  integer(8), intent(in)    :: ilayer, nt, nq, M
+  complex(8), intent(in)    :: tx(nt), tnx(nt), sx(nq), snx(nq)
+  real(8),    intent(inout) :: C1(nt,nq,M+1), C2(nt,nq,M+1), C3a(nt,nq,M+1), C3b(nt,nq,M+1), C4(nt,nq,M+1)
+  call cf(ilayer, nt, tx, tnx, nq, sx, snx, M, C1, C2, C3a, C3b, C4)
+end subroutine axlk_coef_r64

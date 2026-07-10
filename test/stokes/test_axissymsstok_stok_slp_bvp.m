@@ -49,7 +49,10 @@ for kk=1:numel(np_vals)
   fmr=fftshift(fft(fr,nmodes,1)/nang,1); fmp=fftshift(fft(fp,nmodes,1)/nang,1); fmz=fftshift(fft(fz,nmodes,1)/nang,1);
 
   % 2. self modal matrix
-  Aself=axss_slp_blockmat_nmode_mex(N,sx,p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,mu,[]);
+  % FROZEN worker path (uncomment to compare): Aself=axss_slp_blockmat_nmode_mex(N,sx,p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,mu,[]);
+  Aself=axp_modemat_setup_mex(2,1,mu,1,1,p,np,pmodes,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,0,[1;1],zeros(3,0),zeros(3,0),eye(3),zeros(3,1),3*N,3*N);
+  % Aself=axss_slp_blockmat_nmode(N,sx,p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,mu,[]);
 
   % 3. solve
   sig=cell(pmodes+1,1);
@@ -75,7 +78,10 @@ for kk=1:numel(np_vals)
   Mn = nnz(isnear);   Mf = nnz(~isnear);
   ux3=zeros(1,M3); uy3=zeros(1,M3); uz3=zeros(1,M3);   % near + far 分别填进来
   % near
-  Aen = axss_slp_blockmat_nmode_mex(Mn, zt(isnear),  p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,mu,[]);
+  % FROZEN worker path (uncomment to compare): Aen = axss_slp_blockmat_nmode_mex(Mn, zt(isnear),  p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,mu,[]);
+  T3n=[rho3(isnear); zeros(1,Mn); z3(isnear)];         % near targets in 3D (phi=0 half-plane)
+  Aen=axp_modemat_setup_mex(2,1,mu,3,1,p,np,pmodes,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,Mn,[1;Mn+1],T3n,zeros(3,Mn),eye(3),zeros(3,1),3*Mn,3*N);
   vr=zeros(pmodes+1,Mn); vp=vr; vz=vr;
   for m=0:pmodes
     v=Aen(:,:,m+1)*sig{m+1};

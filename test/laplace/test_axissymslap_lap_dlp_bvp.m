@@ -1,7 +1,6 @@
 clearvars; format short e;
-addpath('/Users/hzhu/Documents/Github/axibie/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/utils');
-addpath('/Users/hzhu/Documents/Github/AxiStokes3D/matlab');
+addpath('../../utils');
+addpath('../../matlab');
 
 % ---- geometry switch (mirror axibie/testStokesDir.m / the SLP & SLPn tests) ----
 shape = 'cshape';                                   % 'sphere' | 'ellipse' | 'cshape'
@@ -49,8 +48,12 @@ for kk=1:numel(np_vals)
   fm=fftshift(fft(f,nmodes,1)/nang,1);
 
   % 2. self modal matrices  (1/2 I + D + S)  (D-block side 'e' carries the +1/2 exterior-trace jump)
-  D=axls_dlp_blockmat_nmode_mex(N,sx,p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,[]);
-  S=axls_slp_blockmat_nmode_mex(N,sx,p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,[]);
+  % FROZEN worker path (uncomment to compare): D=axls_dlp_blockmat_nmode_mex(N,sx,p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,[]);
+  D=real(axp_modemat_setup_mex(1,3,0,1,1,p,np,pmodes,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,0,[1;1],zeros(3,0),zeros(3,0),eye(3),zeros(3,1),N,N));
+  % FROZEN worker path (uncomment to compare): S=axls_slp_blockmat_nmode_mex(N,sx,p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,[]);
+  S=real(axp_modemat_setup_mex(1,1,0,1,1,p,np,pmodes,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,0,[1;1],zeros(3,0),zeros(3,0),eye(3),zeros(3,1),N,N));
 
   % 3. solve  (1/2 I + D_m + S_m) sigma_m = u_m   (second-kind: well-conditioned, backslash)
   sig=cell(pmodes+1,1);
@@ -59,8 +62,12 @@ for kk=1:numel(np_vals)
   end
 
   % 4. 3d target eval (combined potential (D+S)[sigma])
-  De=axls_dlp_blockmat_nmode_mex(M3,(rho3+1i*z3).',p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,[]);
-  Se=axls_slp_blockmat_nmode_mex(M3,(rho3+1i*z3).',p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,[]);
+  % FROZEN worker path (uncomment to compare): De=axls_dlp_blockmat_nmode_mex(M3,(rho3+1i*z3).',p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,[]);
+  De=real(axp_modemat_setup_mex(1,3,0,3,1,p,np,pmodes,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,M3,[1;M3+1],P,zeros(3,M3),eye(3),zeros(3,1),M3,N));
+  % FROZEN worker path (uncomment to compare): Se=axls_slp_blockmat_nmode_mex(M3,(rho3+1i*z3).',p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,pmodes,iside,iclosed,[]);
+  Se=real(axp_modemat_setup_mex(1,1,0,3,1,p,np,pmodes,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,M3,[1;M3+1],P,zeros(3,M3),eye(3),zeros(3,1),M3,N));
   v3=zeros(pmodes+1,M3);
   for m=0:pmodes, v3(m+1,:)=((De(:,:,m+1)+Se(:,:,m+1))*sig{m+1}).'; end
   u3=real(v3(1,:));

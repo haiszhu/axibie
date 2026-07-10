@@ -7,11 +7,5 @@ mex_id_ = 'axsk_dlppres_coef_nmode_r64(c i int64_t[x], c i dcomplex[x], c i int6
 C1=reshape(C1,nt,3*nq,Mp1); C2=reshape(C2,nt,3*nq,Mp1); C3=reshape(C3,nt,3*nq,Mp1); C4=reshape(C4,nt,3*nq,Mp1);
 end
 
-% ============================================================
-% kdtree (axk_): build-once / query-ball, backend = 1 (KD_NBODY) | 2 (KD_TAIYA), required.
-%   axk_kdtree_build_mex(backend, pts, leafsize);   % pts is np-by-3 (rows = points, like tin.x')
-%   [idx, nout] = axk_kdtree_ball_mex(qpt, radius, nmax);   % idx: 1-based indices within radius
-%   axk_kdtree_free_mex();
-% ============================================================
-
-% build the tree (state held in the Fortran module until free)
+% LEVEL-1 MASTER (Stokes): coef dispatch, ilayer 1 SLP / 2 SLPn / 3 DLP / 4 DLPn / 5 SLPpres / 6 DLPpres.
+% Buckets (nrow, 3*nq, M+1): nrow = 3*nt for ilayer 1-4, nt for the pressure rows 5-6.  Unused slots zeroed.

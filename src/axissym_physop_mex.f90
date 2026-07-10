@@ -43,3 +43,33 @@ subroutine axp_offdiagphysmat_r64(iphys, ilayer, nc, nt, ns, Xt, Ntg, Ct, Rt, &
                p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, Cs, Rs, &
                M, iside, iclosed, mu, iforce, At, B, iF, jF, xF, near)
 end subroutine axp_offdiagphysmat_r64
+
+subroutine axp_physmat_setup_r64(ikernel, ilayer, params, iinter, K, p, np, pmodes, iside, iclosed, &
+                                 geomoff, tpanoff, nsx, ntpan, sx, snx, sws, swxp, tpan, &
+                                 ntarg, targoff, targ, targnx, Rm, Cc, nrA, ncA, A)
+  use axissym_physop_mod, only: physmatsetup => axissym_physmat_setup
+  implicit none
+  integer(8), intent(in)    :: ikernel, ilayer, iinter, K, iside, iclosed, nsx, ntpan, ntarg, nrA, ncA
+  integer(8), intent(in)    :: p(K), np(K), pmodes(K), geomoff(K+1), tpanoff(K+1), targoff(K+1)
+  complex(8), intent(in)    :: params, sx(nsx), snx(nsx), swxp(nsx)
+  real(8),    intent(in)    :: sws(nsx), tpan(ntpan), targ(3,ntarg), targnx(3,ntarg), Rm(3,3,K), Cc(3,K)
+  real(8),    intent(inout) :: A(nrA, ncA)                       ! caller pre-zeroed (untouched blocks stay 0)
+  call physmatsetup(ikernel, ilayer, params, iinter, K, p, np, pmodes, iside, iclosed, &
+                    geomoff, tpanoff, nsx, ntpan, sx, snx, sws, swxp, tpan, &
+                    ntarg, targoff, targ, targnx, Rm, Cc, nrA, ncA, A)
+end subroutine axp_physmat_setup_r64
+
+subroutine axp_modemat_setup_r64(ikernel, ilayer, params, iinter, K, p, np, pmodes, iside, iclosed, &
+                                 geomoff, tpanoff, nsx, ntpan, sx, snx, sws, swxp, tpan, &
+                                 ntarg, targoff, targ, targnx, Rm, Cc, nrA, ncA, A)
+  use axissym_physop_mod, only: modemat => axissym_modemat_setup
+  implicit none
+  integer(8), intent(in)    :: ikernel, ilayer, iinter, K, iside, iclosed, nsx, ntpan, ntarg, nrA, ncA
+  integer(8), intent(in)    :: p(K), np(K), pmodes(K), geomoff(K+1), tpanoff(K+1), targoff(K+1)
+  complex(8), intent(in)    :: params, sx(nsx), snx(nsx), swxp(nsx)
+  real(8),    intent(in)    :: sws(nsx), tpan(ntpan), targ(3,ntarg), targnx(3,ntarg), Rm(3,3,K), Cc(3,K)
+  complex(8), intent(inout) :: A(nrA, ncA, *)                    ! 3rd dim = maxval(pmodes)+1, caller pre-zeroed
+  call modemat(ikernel, ilayer, params, iinter, K, p, np, pmodes, iside, iclosed, &
+               geomoff, tpanoff, nsx, ntpan, sx, snx, sws, swxp, tpan, &
+               ntarg, targoff, targ, targnx, Rm, Cc, nrA, ncA, A)
+end subroutine axp_modemat_setup_r64

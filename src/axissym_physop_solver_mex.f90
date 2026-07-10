@@ -221,3 +221,10 @@ subroutine axpso_corr_apply_r64(handle, nx, x, nu, u)
   real(8),    intent(inout) :: u(nu)
   call axissym_corr_apply(nint(handle,8), nx, x, nu, u)
 end subroutine axpso_corr_apply_r64
+
+subroutine axpso_corr_free_r64(handle)
+  use axissym_physop_solver_mod, only: axissym_corr_free
+  implicit none
+  real(8), intent(in) :: handle
+  call axissym_corr_free(nint(handle,8))
+end subroutine axpso_corr_free_r64

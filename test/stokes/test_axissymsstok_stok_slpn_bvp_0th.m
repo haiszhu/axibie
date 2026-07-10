@@ -1,7 +1,6 @@
 clearvars; close all; format short e;
 addpath('../../utils');
 addpath('../../matlab');
-addpath('/Users/hzhu/Documents/Github/axibie/alpertkernels');  % AxiKernel, AxiKernelT
 
 p=16; iside=1; iclosed=0; mu=1;
 lam=0.75; Z=@(t) -(1.5+cos(t)).*(-sin(lam*pi*sin(t))+1i*cos(lam*pi*sin(t)));  % c-shape (open, poles t=0,pi)
@@ -28,9 +27,17 @@ for k=1:numel(Np)
   sx=s.x(:); snx=s.nx(:); sws=s.ws(:); swxp=s.wxp(:);
   tpan=s.tpan(:); sxlo=s.Z(s.tpan(1:end-1)); sxlo=sxlo(:); sxhi=s.Z(s.tpan(2:end)); sxhi=sxhi(:);
   fp=texact(s);                                        % Neumann data = exact traction (surface normal)
-  A =axss_slpn_blockmat_mex(N,sx,snx,p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,mu,[]);
+  im=[1:N,2*N+1:3*N];                                  % meridian (rho,z) rows/cols of the mode-0 3x3 stack
+  % FROZEN single-mode path (uncomment to compare): A =axss_slpn_blockmat_mex(N,sx,snx,p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,mu,[]);
+  A3=axp_modemat_setup_mex(2,2,mu,1,1,p,np,0,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,0,[1;1],zeros(3,0),zeros(3,0),eye(3),zeros(3,1),3*N,3*N);
+  A=A3(im,im);
   dens=lsqminnorm(A,fp);                               % SLP null space / pressure gauge -> min-norm
-  Ae=axss_slp_blockmat_mex(numel(t.x),t.x(:),p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,mu,[]);
+  Mt=numel(t.x); T3=[real(t.x(:)).'; zeros(1,Mt); imag(t.x(:)).'];   % meridian targets in 3D (phi=0)
+  % FROZEN single-mode path (uncomment to compare): Ae=axss_slp_blockmat_mex(numel(t.x),t.x(:),p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,mu,[]);
+  Ae3=axp_modemat_setup_mex(2,1,mu,3,1,p,np,0,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,Mt,[1;Mt+1],T3,zeros(3,Mt),eye(3),zeros(3,1),3*Mt,3*N);
+  Ae=Ae3([1:Mt,2*Mt+1:3*Mt],im);
   tt=Ae*dens;
   u=nan*(1+1i)*zz; u(ii)=tt(1:end/2)+1i*tt(end/2+1:end);
   err(k)=max(abs(u(:)-uf(:)));

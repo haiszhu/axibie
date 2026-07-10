@@ -267,6 +267,48 @@ F=Fsq(:,bcol);                                                        % F * sigm
 near = near > 0.5;
 end
 
+% ==== LEVEL-2 PHYSICAL master (axissym_physmat_setup): K-particle ragged geometry -> COMPLETE dense
+% physical-space operator A(nra,nca), real, LAB node-interleaved.  iinter 1 self (K diagonal blocks) |
+% 2 cross (off-diagonal blocks only; diagonal blocks stay 0 -- caller combines with a self call) |
+% 3 eval (arbitrary lab targets, every source sees all of them).  A is pre-zeroed HERE (untouched
+% blocks stay 0).
+@function A = axp_physmat_setup_mex(ikernel, ilayer, params, iinter, K, p, np, pmodes, iside, iclosed, geomoff, tpanoff, nsx, ntpan, sx, snx, sws, swxp, tpan, ntarg, targoff, targ, targnx, Rm, Cc, nra, nca)
+ikernel=double(ikernel); ilayer=double(ilayer); iinter=double(iinter);
+K=double(K); iside=double(iside); iclosed=double(iclosed);
+params=complex(double(params)); ntarg=double(ntarg);
+nsx=double(nsx); ntpan=double(ntpan); kp1=K+1; k9=9*K; k3=3*K;
+p=double(p(:)); np=double(np(:)); pmodes=double(pmodes(:));
+geomoff=double(geomoff(:)); tpanoff=double(tpanoff(:)); targoff=double(targoff(:));
+sx=reshape(double(sx),nsx,1); snx=reshape(double(snx),nsx,1); swxp=reshape(double(swxp),nsx,1);
+sws=reshape(double(sws),nsx,1); tpan=reshape(double(tpan),ntpan,1);
+targ=double(reshape(targ,3,ntarg)); targnx=double(reshape(targnx,3,ntarg));
+Rm=double(reshape(Rm,9,K)); Cc=double(reshape(Cc,3,K));
+nra=double(nra); nca=double(nca);
+A=zeros(nra,nca);
+# FORTRAN axp_physmat_setup_r64(int[1] ikernel, int[1] ilayer, dcomplex[1] params, int[1] iinter, int[1] K, int[K] p, int[K] np, int[K] pmodes, int[1] iside, int[1] iclosed, int[kp1] geomoff, int[kp1] tpanoff, int[1] nsx, int[1] ntpan, dcomplex[nsx] sx, dcomplex[nsx] snx, double[nsx] sws, dcomplex[nsx] swxp, double[ntpan] tpan, int[1] ntarg, int[kp1] targoff, double[3,ntarg] targ, double[3,ntarg] targnx, double[k9] Rm, double[k3] Cc, int[1] nra, int[1] nca, inout double[nra,nca] A);
+end
+
+% ==== LEVEL-2 MODAL master (axissym_modemat_setup): K-particle ragged geometry -> per-particle
+% all-mode block stacks A(nra, nca, max(pmodes)+1), complex for BOTH kernels.  iinter 1 self | 3 eval
+% (2 cross fails loud in Fortran).  A is pre-zeroed HERE (the module writes only each particle's
+% pmodes(k)+1 modes; higher modes of low-pmode particles stay 0).
+@function A = axp_modemat_setup_mex(ikernel, ilayer, params, iinter, K, p, np, pmodes, iside, iclosed, geomoff, tpanoff, nsx, ntpan, sx, snx, sws, swxp, tpan, ntarg, targoff, targ, targnx, Rm, Cc, nra, nca)
+ikernel=double(ikernel); ilayer=double(ilayer); iinter=double(iinter);
+K=double(K); iside=double(iside); iclosed=double(iclosed);
+params=complex(double(params)); ntarg=double(ntarg);
+nsx=double(nsx); ntpan=double(ntpan); kp1=K+1; k9=9*K; k3=3*K;
+p=double(p(:)); np=double(np(:)); pmodes=double(pmodes(:));
+geomoff=double(geomoff(:)); tpanoff=double(tpanoff(:)); targoff=double(targoff(:));
+sx=reshape(double(sx),nsx,1); snx=reshape(double(snx),nsx,1); swxp=reshape(double(swxp),nsx,1);
+sws=reshape(double(sws),nsx,1); tpan=reshape(double(tpan),ntpan,1);
+targ=double(reshape(targ,3,ntarg)); targnx=double(reshape(targnx,3,ntarg));
+Rm=double(reshape(Rm,9,K)); Cc=double(reshape(Cc,3,K));
+nra=double(nra); nca=double(nca); mp1=max(pmodes)+1; ncm=nca*mp1;
+A=complex(zeros(nra,ncm));
+# FORTRAN axp_modemat_setup_r64(int[1] ikernel, int[1] ilayer, dcomplex[1] params, int[1] iinter, int[1] K, int[K] p, int[K] np, int[K] pmodes, int[1] iside, int[1] iclosed, int[kp1] geomoff, int[kp1] tpanoff, int[1] nsx, int[1] ntpan, dcomplex[nsx] sx, dcomplex[nsx] snx, double[nsx] sws, dcomplex[nsx] swxp, double[ntpan] tpan, int[1] ntarg, int[kp1] targoff, double[3,ntarg] targ, double[3,ntarg] targnx, double[k9] Rm, double[k3] Cc, int[1] nra, int[1] nca, inout dcomplex[nra,ncm] A);
+A=reshape(A, nra, nca, mp1);
+end
+
 % ==== physical-space SPARSE close-correction (pass 2/3): per-panel fourier COMPUTE (Laplace SLP) ====
 @function [S_ij, idxall] = axps_closeslp_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall)
 nt=double(nt); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
@@ -475,6 +517,14 @@ C1=zeros(nt,cm); C2=zeros(nt,cm); C3a=zeros(nt,cm); C3b=zeros(nt,cm); C4=zeros(n
 C1=reshape(C1,nt,nq,Mp1); C2=reshape(C2,nt,nq,Mp1); C3a=reshape(C3a,nt,nq,Mp1); C3b=reshape(C3b,nt,nq,Mp1); C4=reshape(C4,nt,nq,Mp1);
 end
 
+% LEVEL-1 MASTER (Laplace): coef dispatch, ilayer 1 SLP / 2 SLPn / 3 DLP / 4 DLPn.  Unused slots zeroed.
+@function [C1, C2, C3a, C3b, C4] = axlk_coef_mex(ilayer, nt, tx, tnx, nq, sx, snx, M)
+ilayer=double(ilayer); nt=double(nt); nq=double(nq); M=double(M); tx=double(tx(:)); tnx=double(tnx(:)); sx=double(sx(:)); snx=double(snx(:)); Mp1=M+1; cm=nq*Mp1;
+C1=zeros(nt,cm); C2=zeros(nt,cm); C3a=zeros(nt,cm); C3b=zeros(nt,cm); C4=zeros(nt,cm);
+# FORTRAN axlk_coef_r64(int[1] ilayer, int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] nq, dcomplex[nq] sx, dcomplex[nq] snx, int[1] M, inout double[nt,cm] C1, inout double[nt,cm] C2, inout double[nt,cm] C3a, inout double[nt,cm] C3b, inout double[nt,cm] C4);
+C1=reshape(C1,nt,nq,Mp1); C2=reshape(C2,nt,nq,Mp1); C3a=reshape(C3a,nt,nq,Mp1); C3b=reshape(C3b,nt,nq,Mp1); C4=reshape(C4,nt,nq,Mp1);
+end
+
 % ============================================================
 % Stokes kernel-split coef mexes (axsk_): n-mode close-eval split coefficients.
 % Same compiled split as the Fortran builders, for utils/axss_*_blockmat_nmode.m.
@@ -533,6 +583,16 @@ Mp1=M+1; c3m=3*nq*Mp1;
 C1=complex(zeros(nt,c3m)); C2=complex(zeros(nt,c3m)); C3=complex(zeros(nt,c3m)); C4=complex(zeros(nt,c3m));
 # FORTRAN axsk_dlppres_coef_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] nq, dcomplex[nq] sx, dcomplex[nq] snx, int[1] M, inout dcomplex[nt,c3m] C1, inout dcomplex[nt,c3m] C2, inout dcomplex[nt,c3m] C3, inout dcomplex[nt,c3m] C4);
 C1=reshape(C1,nt,3*nq,Mp1); C2=reshape(C2,nt,3*nq,Mp1); C3=reshape(C3,nt,3*nq,Mp1); C4=reshape(C4,nt,3*nq,Mp1);
+end
+
+% LEVEL-1 MASTER (Stokes): coef dispatch, ilayer 1 SLP / 2 SLPn / 3 DLP / 4 DLPn / 5 SLPpres / 6 DLPpres.
+% Buckets (nrow, 3*nq, M+1): nrow = 3*nt for ilayer 1-4, nt for the pressure rows 5-6.  Unused slots zeroed.
+@function [C1, C2, C3, C4, C5] = axsk_coef_mex(ilayer, nt, tx, tnx, nq, sx, snx, M, mu)
+ilayer=double(ilayer); nt=double(nt); nq=double(nq); M=double(M); mu=double(mu); tx=double(tx(:)); tnx=double(tnx(:)); sx=double(sx(:)); snx=double(snx(:));
+Mp1=M+1; if ilayer<=4, nrow=3*nt; else, nrow=nt; end; c3m=3*nq*Mp1;
+C1=complex(zeros(nrow,c3m)); C2=complex(zeros(nrow,c3m)); C3=complex(zeros(nrow,c3m)); C4=complex(zeros(nrow,c3m)); C5=complex(zeros(nrow,c3m));
+# FORTRAN axsk_coef_r64(int[1] ilayer, int[1] nt, dcomplex[nt] tx, dcomplex[nt] tnx, int[1] nq, dcomplex[nq] sx, dcomplex[nq] snx, int[1] M, double[1] mu, int[1] nrow, inout dcomplex[nrow,c3m] C1, inout dcomplex[nrow,c3m] C2, inout dcomplex[nrow,c3m] C3, inout dcomplex[nrow,c3m] C4, inout dcomplex[nrow,c3m] C5);
+C1=reshape(C1,nrow,3*nq,Mp1); C2=reshape(C2,nrow,3*nq,Mp1); C3=reshape(C3,nrow,3*nq,Mp1); C4=reshape(C4,nrow,3*nq,Mp1); C5=reshape(C5,nrow,3*nq,Mp1);
 end
 
 % ============================================================
@@ -747,4 +807,11 @@ end
 handle=double(handle); nx=double(nx); nu=double(nu);
 x=double(x(:)); u=double(u(:));
 # FORTRAN axpso_corr_apply_r64(double[1] handle, int[1] nx, double[nx] x, int[1] nu, inout double[nu] u);
+end
+
+% release a handle built by axpso_corr_setup_mex / axpso_close_setup_mex: frees the stored entries +
+% topology and returns the table slot.  Inverse of the setups; freeing a dead handle fails loud.
+@function axpso_corr_free_mex(handle)
+handle=double(handle);
+# FORTRAN axpso_corr_free_r64(double[1] handle);
 end

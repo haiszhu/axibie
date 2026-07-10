@@ -60,3 +60,13 @@ subroutine axsk_dlppres_coef_nmode_r64(nt, tx, nq, sx, snx, M, C1, C2, C3, C4)
   complex(8), intent(inout) :: C1(nt,3*nq,M+1), C2(nt,3*nq,M+1), C3(nt,3*nq,M+1), C4(nt,3*nq,M+1)
   call cf(nt, tx, nq, sx, snx, M, C1, C2, C3, C4)
 end subroutine axsk_dlppres_coef_nmode_r64
+
+subroutine axsk_coef_r64(ilayer, nt, tx, tnx, nq, sx, snx, M, mu, nrow, C1, C2, C3, C4, C5)
+  use axissymstok_kernelsplit_mod, only: cf => axissymstok_coef_r64
+  implicit none
+  integer(8), intent(in)    :: ilayer, nt, nq, M, nrow
+  complex(8), intent(in)    :: tx(nt), tnx(nt), sx(nq), snx(nq)
+  real(8),    intent(in)    :: mu
+  complex(8), intent(inout) :: C1(nrow,3*nq,M+1), C2(nrow,3*nq,M+1), C3(nrow,3*nq,M+1), C4(nrow,3*nq,M+1), C5(nrow,3*nq,M+1)
+  call cf(ilayer, nt, tx, tnx, nq, sx, snx, M, mu, nrow, C1, C2, C3, C4, C5)
+end subroutine axsk_coef_r64

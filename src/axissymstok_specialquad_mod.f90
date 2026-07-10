@@ -2,12 +2,11 @@ module axissymstok_specialquad_mod
   use axistokes3d_mod, only: r64, gauss_r64, lagrange_interp_r64
   use axisym_modal_green_mod, only: modal_green_r64, modal_green_all_r64, modal_green_all_far_r64
   use specialquad_mod, only: sdspecialquad_r64
-  use axissymstok_kernelsplit_mod, only: axissymstok_slp_coef_r64, axissymstok_slp_coef_nmode_r64, &
-       axissymstok_slpn_coef_r64, axissymstok_slpn_coef_nmode_r64, &
-       axissymstok_dlp_coef_r64, axissymstok_dlp_coef_nmode_r64, weight_setup_r64, &
-       axissymstok_dlp_aziquad_r64, axissymstok_slpn_aziquad_r64, axissymstok_dlpn_coef_r64, &
-       axissymstok_dlpn_coef_nmode_r64, axissymstok_dlpn_aziquad_r64, &
-       axissymstok_slppres_coef_nmode_r64, axissymstok_dlppres_coef_nmode_r64
+  use axissymstok_kernelsplit_mod, only: axissymstok_coef_r64, &                   ! L1 MASTER (all nmode workers)
+       axissymstok_slp_coef_r64, axissymstok_slpn_coef_r64, &                      ! frozen 0th-mode (single-mode blockmats only)
+       axissymstok_dlp_coef_r64, axissymstok_dlpn_coef_r64, &
+       weight_setup_r64, axissymstok_dlp_aziquad_r64, axissymstok_slpn_aziquad_r64, &
+       axissymstok_dlpn_aziquad_r64
   implicit none
   private
   public :: axissymstok_slp_blockmat_r64
@@ -183,7 +182,7 @@ contains
     real(r64),    allocatable :: tin(:)
     integer(8),   allocatable :: joa(:), nidx(:), ci(:)
     logical,      allocatable :: cl(:), ikc(:)
-    complex(r64), allocatable :: znear(:), zc(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), Gcq(:,:), Gpc(:,:)
+    complex(r64), allocatable :: znear(:), zc(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:), C5(:,:,:), Gcq(:,:), Gpc(:,:)
     real(r64),    allocatable :: As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:)
     complex(r64), allocatable :: Ad(:,:)
     q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
@@ -215,7 +214,7 @@ contains
       joa(k) = j
     end do
     allocate(cl(nt), ikc(nt), nidx(nt), ci(nt), znear(nt), zc(nt))
-    allocate(C1(3*nt,3*q,M+1), C2(3*nt,3*q,M+1), C3(3*nt,3*q,M+1))
+    allocate(C1(3*nt,3*q,M+1), C2(3*nt,3*q,M+1), C3(3*nt,3*q,M+1), C4(3*nt,3*q,M+1), C5(3*nt,3*q,M+1))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
     A = (0.0_r64,0.0_r64)
     do pq = 1, np                                                   ! ===== outer: COARSE panel pq =====
@@ -318,8 +317,8 @@ contains
         end do
         ! inner-near: close-eval the nkc targets near sub-panel k, fold q -> coarse via IPqc
         if (nkc > 0) then
-          call axissymstok_slp_coef_nmode_r64(nkc, zc(1:nkc), q, Yq, M, mu, &
-               C1(1:3*nkc,1:3*q,:), C2(1:3*nkc,1:3*q,:), C3(1:3*nkc,1:3*q,:))
+          call axissymstok_coef_r64(1_8, nkc, zc(1:nkc), zc(1:nkc), q, Yq, nvq, M, mu, 3*nkc, &
+               C1(1:3*nkc,1:3*q,:), C2(1:3*nkc,1:3*q,:), C3(1:3*nkc,1:3*q,:), C4(1:3*nkc,1:3*q,:), C5(1:3*nkc,1:3*q,:))
           call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, za, zb, iside, &
                As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
           do md = 0, M
@@ -596,10 +595,10 @@ contains
     real(r64),    allocatable :: tin(:)
     integer(8),   allocatable :: joa(:), ci(:), nidx(:)
     logical,      allocatable :: ikq(:), ikc(:)
-    complex(r64), allocatable :: zc(:), zcn(:), znear(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:), Gcq(:,:), Gpc(:,:)
+    complex(r64), allocatable :: zc(:), zcn(:), znear(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:), C5(:,:,:), Gcq(:,:), Gpc(:,:)
     real(r64),    allocatable :: As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:)
     complex(r64), allocatable :: Ad(:,:)
-    complex(r64), allocatable :: Br(:,:,:), Bz(:,:,:), Pmat(:,:,:), PC1(:,:,:), PC2(:,:,:), PC3(:,:,:), ff(:,:)
+    complex(r64), allocatable :: Br(:,:,:), Bz(:,:,:), Pmat(:,:,:), PC1(:,:,:), PC2(:,:,:), PC3(:,:,:), PC4(:,:,:), PC5(:,:,:), ff(:,:)
     real(r64),    allocatable :: tinp(:)
     integer(8),   allocatable :: joap(:)
     complex(r64) :: Brr, Brt, Brz, Bzr, Bzt, Bzz, Ppr, Stt
@@ -639,7 +638,7 @@ contains
       joa(c) = qo
     end do
     allocate(ci(nt), zc(nt), zcn(nt), nidx(nt), znear(nt), ikq(nt), ikc(nt))
-    allocate(C1(3*nt,3*q,M+1), C2(3*nt,3*q,M+1), C3(3*nt,3*q,M+1), C4(3*nt,3*q,M+1))
+    allocate(C1(3*nt,3*q,M+1), C2(3*nt,3*q,M+1), C3(3*nt,3*q,M+1), C4(3*nt,3*q,M+1), C5(3*nt,3*q,M+1))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
     allocate(Br(3*nt,3*nso,M+1), Bz(3*nt,3*nso,M+1)); Br = (0.0_r64,0.0_r64); Bz = (0.0_r64,0.0_r64)
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
@@ -784,8 +783,8 @@ contains
                As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
           do ib = 1, 2                                          ! ib=1: e_rho normal (1,0)->Br; ib=2: e_z normal (0,1)->Bz
             if (ib == 1) then; zcn(1:nkc) = (1.0_r64,0.0_r64); else; zcn(1:nkc) = (0.0_r64,1.0_r64); end if
-            call axissymstok_slpn_coef_nmode_r64(nkc, zc(1:nkc), zcn(1:nkc), q, Yq, M, mu, &
-                 C1(1:3*nkc,1:3*q,:), C2(1:3*nkc,1:3*q,:), C3(1:3*nkc,1:3*q,:), C4(1:3*nkc,1:3*q,:))
+            call axissymstok_coef_r64(2_8, nkc, zc(1:nkc), zcn(1:nkc), q, Yq, nvq, M, mu, 3*nkc, &
+                 C1(1:3*nkc,1:3*q,:), C2(1:3*nkc,1:3*q,:), C3(1:3*nkc,1:3*q,:), C4(1:3*nkc,1:3*q,:), C5(1:3*nkc,1:3*q,:))
             do md = 0, M
               do e = 1, 9
                 ar = (e-1)/3 + 1; b = mod(e-1,3) + 1
@@ -956,7 +955,7 @@ contains
       end do
       joap(c) = qo
     end do
-    allocate(PC1(nt,3*q,M+1), PC2(nt,3*q,M+1), PC3(nt,3*q,M+1), ff(p,3))
+    allocate(PC1(nt,3*q,M+1), PC2(nt,3*q,M+1), PC3(nt,3*q,M+1), PC4(nt,3*q,M+1), PC5(nt,3*q,M+1), ff(p,3))
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
       cols = (pq-1)*p
       sumwso = 0.0_r64
@@ -1045,8 +1044,8 @@ contains
         end do
         ! ---- inner near: (private) pressure split coef -> Slog/Dval assembly, fold q->p_sub (IPqc) ----
         if (nkc > 0) then
-          call axissymstok_slppres_coef_nmode_r64(nkc, zc(1:nkc), q, Yq, M, &
-               PC1(1:nkc,1:3*q,:), PC2(1:nkc,1:3*q,:), PC3(1:nkc,1:3*q,:))
+          call axissymstok_coef_r64(5_8, nkc, zc(1:nkc), zc(1:nkc), q, Yq, nvq, M, mu, nkc, &
+               PC1(1:nkc,1:3*q,:), PC2(1:nkc,1:3*q,:), PC3(1:nkc,1:3*q,:), PC4(1:nkc,1:3*q,:), PC5(1:nkc,1:3*q,:))
           call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, zac, zbc, iside, &
                As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
           do md = 0, M
@@ -1150,7 +1149,7 @@ contains
     real(r64),    allocatable :: tin(:)
     integer(8),   allocatable :: joa(:), ci(:), nidx(:)
     logical,      allocatable :: ikq(:), ikc(:)
-    complex(r64), allocatable :: zc(:), znear(:), Gcq(:,:), Gpc(:,:), ff(:,:), Ad(:,:), C1(:,:,:), C2(:,:,:), C3(:,:,:)
+    complex(r64), allocatable :: zc(:), znear(:), Gcq(:,:), Gpc(:,:), ff(:,:), Ad(:,:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:), C5(:,:,:)
     real(r64),    allocatable :: As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:)
     q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
     call gauss_r64(p,     tglp, wglp, Dp)
@@ -1187,7 +1186,7 @@ contains
     end do
     allocate(ci(nt), zc(nt), nidx(nt), znear(nt), ikq(nt), ikc(nt))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p), ff(p,3))
-    allocate(C1(nt,3*q,M+1), C2(nt,3*q,M+1), C3(nt,3*q,M+1))
+    allocate(C1(nt,3*q,M+1), C2(nt,3*q,M+1), C3(nt,3*q,M+1), C4(nt,3*q,M+1), C5(nt,3*q,M+1))
     A = (0.0_r64,0.0_r64)
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
       cols = (pq-1)*p
@@ -1277,8 +1276,8 @@ contains
         end do
         ! ---- inner near: (private) pressure split coef -> Slog/Dval assembly, fold q->p_sub (IPqc) ----
         if (nkc > 0) then
-          call axissymstok_slppres_coef_nmode_r64(nkc, zc(1:nkc), q, Yq, M, &
-               C1(1:nkc,1:3*q,:), C2(1:nkc,1:3*q,:), C3(1:nkc,1:3*q,:))
+          call axissymstok_coef_r64(5_8, nkc, zc(1:nkc), zc(1:nkc), q, Yq, nvq, M, 0.0_r64, nkc, &
+               C1(1:nkc,1:3*q,:), C2(1:nkc,1:3*q,:), C3(1:nkc,1:3*q,:), C4(1:nkc,1:3*q,:), C5(1:nkc,1:3*q,:))
           call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, zac, zbc, iside, &
                As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
           do md = 0, M
@@ -1362,7 +1361,7 @@ contains
     real(r64),    allocatable :: tin(:)
     integer(8),   allocatable :: joa(:), ci(:), nidx(:)
     logical,      allocatable :: ikq(:), ikc(:)
-    complex(r64), allocatable :: zc(:), znear(:), Gcq(:,:), Gpc(:,:), Ad(:,:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:)
+    complex(r64), allocatable :: zc(:), znear(:), Gcq(:,:), Gpc(:,:), Ad(:,:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:), C5(:,:,:)
     real(r64),    allocatable :: As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:)
     q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
     call gauss_r64(p,     tglp, wglp, Dp)
@@ -1399,7 +1398,7 @@ contains
     end do
     allocate(ci(nt), zc(nt), nidx(nt), znear(nt), ikq(nt), ikc(nt))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
-    allocate(C1(nt,3*q,M+1), C2(nt,3*q,M+1), C3(nt,3*q,M+1), C4(nt,3*q,M+1))
+    allocate(C1(nt,3*q,M+1), C2(nt,3*q,M+1), C3(nt,3*q,M+1), C4(nt,3*q,M+1), C5(nt,3*q,M+1))
     A = (0.0_r64,0.0_r64)
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
       cols = (pq-1)*p
@@ -1491,8 +1490,8 @@ contains
         end do
         ! ---- inner near: (private) stresslet-pressure split coef -> 4-bucket assembly, fold q->p_sub ----
         if (nkc > 0) then
-          call axissymstok_dlppres_coef_nmode_r64(nkc, zc(1:nkc), q, Yq, nvq, M, &
-               C1(1:nkc,1:3*q,:), C2(1:nkc,1:3*q,:), C3(1:nkc,1:3*q,:), C4(1:nkc,1:3*q,:))
+          call axissymstok_coef_r64(6_8, nkc, zc(1:nkc), zc(1:nkc), q, Yq, nvq, M, 0.0_r64, nkc, &
+               C1(1:nkc,1:3*q,:), C2(1:nkc,1:3*q,:), C3(1:nkc,1:3*q,:), C4(1:nkc,1:3*q,:), C5(1:nkc,1:3*q,:))
           call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, zac, zbc, iside, &
                As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
           do md = 0, M
@@ -1740,7 +1739,7 @@ contains
     real(r64),    allocatable :: tin(:)
     integer(8),   allocatable :: joa(:), ci(:), nidx(:)
     logical,      allocatable :: ikq(:), ikc(:)
-    complex(r64), allocatable :: zc(:), znear(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:), Gcq(:,:), Gpc(:,:)
+    complex(r64), allocatable :: zc(:), znear(:), C1(:,:,:), C2(:,:,:), C3(:,:,:), C4(:,:,:), C5(:,:,:), Gcq(:,:), Gpc(:,:)
     real(r64),    allocatable :: As(:,:), A1(:,:), A2(:,:), A3(:,:), A4(:,:)
     complex(r64), allocatable :: Ad(:,:)
     q = 2*p; nso = np*p; ic = (0.0_r64,1.0_r64); twopi = 2.0_r64*acos(-1.0_r64)
@@ -1778,7 +1777,7 @@ contains
       joa(c) = qo
     end do
     allocate(ci(nt), zc(nt), nidx(nt), znear(nt), ikq(nt), ikc(nt))
-    allocate(C1(3*nt,3*q,M+1), C2(3*nt,3*q,M+1), C3(3*nt,3*q,M+1), C4(3*nt,3*q,M+1))
+    allocate(C1(3*nt,3*q,M+1), C2(3*nt,3*q,M+1), C3(3*nt,3*q,M+1), C4(3*nt,3*q,M+1), C5(3*nt,3*q,M+1))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
     A = (0.0_r64,0.0_r64)
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
@@ -1906,8 +1905,8 @@ contains
         end do
         ! ---- inner near: 2p DLP close (coef + sdspecialquad), fold q->p_sub (IP2) -> p_coarse (Lc) ----
         if (nkc > 0) then
-          call axissymstok_dlp_coef_nmode_r64(nkc, zc(1:nkc), q, Yq, nvq, M, mu, &
-               C1(1:3*nkc,1:3*q,:), C2(1:3*nkc,1:3*q,:), C3(1:3*nkc,1:3*q,:), C4(1:3*nkc,1:3*q,:))
+          call axissymstok_coef_r64(3_8, nkc, zc(1:nkc), zc(1:nkc), q, Yq, nvq, M, mu, 3*nkc, &
+               C1(1:3*nkc,1:3*q,:), C2(1:3*nkc,1:3*q,:), C3(1:3*nkc,1:3*q,:), C4(1:3*nkc,1:3*q,:), C5(1:3*nkc,1:3*q,:))
           call sdspecialquad_r64(nkc, zc(1:nkc), q, Yq, nvq, wxpq, zac, zbc, iside, &
                As(1:q,1:nkc), Ad(1:q,1:nkc), A1(1:q,1:nkc), A2(1:q,1:nkc), A3(1:q,1:nkc), A4(1:q,1:nkc))
           do md = 0, M
@@ -2408,7 +2407,7 @@ contains
                     Be_tr(p), Be_tt(p), Be_tz(p), &
                     Be_zr(p), Be_zt(p), Be_zz(p)
     real(r64)  :: n2, ifn2, n4, nr, nz
-    complex(r64), allocatable :: Br(:,:,:), Bz(:,:,:), Pmat(:,:,:), PC1(:,:,:), PC2(:,:,:), PC3(:,:,:), PC4(:,:,:)
+    complex(r64), allocatable :: Br(:,:,:), Bz(:,:,:), Pmat(:,:,:), PC1(:,:,:), PC2(:,:,:), PC3(:,:,:), PC4(:,:,:), PC5(:,:,:)
     real(r64),    allocatable :: tinp(:)
     integer(8),   allocatable :: joap(:)
     complex(r64) :: Brr, Brt, Brz, Bzr, Bzt, Bzz, Ppr, Stt
@@ -2889,7 +2888,7 @@ contains
                As(1:qq,1:nkc), Ad(1:qq,1:nkc), A1(1:qq,1:nkc), A2(1:qq,1:nkc), A3(1:qq,1:nkc), A4(1:qq,1:nkc))
           do ib = 1, 2                                          ! ib=1: e_rho normal (1,0)->Br; ib=2: e_z normal (0,1)->Bz
             if (ib == 1) then; zcn(1:nkc) = (1.0_r64,0.0_r64); else; zcn(1:nkc) = (0.0_r64,1.0_r64); end if
-            call axissymstok_dlpn_coef_nmode_r64(nkc, zc(1:nkc), zcn(1:nkc), qq, Yq, nvq, M, mu, &
+            call axissymstok_coef_r64(4_8, nkc, zc(1:nkc), zcn(1:nkc), qq, Yq, nvq, M, mu, 3*nkc, &
                  C1(1:3*nkc,1:3*qq,:), C2(1:3*nkc,1:3*qq,:), C3(1:3*nkc,1:3*qq,:), C4(1:3*nkc,1:3*qq,:), C5(1:3*nkc,1:3*qq,:))
             do md = 0, M
               do e = 1, 9
@@ -3364,7 +3363,7 @@ contains
       end do
       joap(c) = qo
     end do
-    allocate(PC1(nt,3*qq,M+1), PC2(nt,3*qq,M+1), PC3(nt,3*qq,M+1), PC4(nt,3*qq,M+1))
+    allocate(PC1(nt,3*qq,M+1), PC2(nt,3*qq,M+1), PC3(nt,3*qq,M+1), PC4(nt,3*qq,M+1), PC5(nt,3*qq,M+1))
     do qo = 1, np
       cols = (qo-1)*p
       sumwso = 0.0_r64
@@ -3453,8 +3452,8 @@ contains
           if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
         end do
         if (nkc > 0) then
-          call axissymstok_dlppres_coef_nmode_r64(nkc, zc(1:nkc), qq, Yq, nvq, M, &
-               PC1(1:nkc,1:3*qq,:), PC2(1:nkc,1:3*qq,:), PC3(1:nkc,1:3*qq,:), PC4(1:nkc,1:3*qq,:))
+          call axissymstok_coef_r64(6_8, nkc, zc(1:nkc), zc(1:nkc), qq, Yq, nvq, M, mu, nkc, &
+               PC1(1:nkc,1:3*qq,:), PC2(1:nkc,1:3*qq,:), PC3(1:nkc,1:3*qq,:), PC4(1:nkc,1:3*qq,:), PC5(1:nkc,1:3*qq,:))
           call sdspecialquad_r64(nkc, zc(1:nkc), qq, Yq, nvq, wxpq, zac, zbc, iside, &
                As(1:qq,1:nkc), Ad(1:qq,1:nkc), A1(1:qq,1:nkc), A2(1:qq,1:nkc), A3(1:qq,1:nkc), A4(1:qq,1:nkc))
           do md = 0, M

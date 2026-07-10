@@ -25,11 +25,20 @@ for k=1:numel(Np)
   sx=s.x(:); snx=s.nx(:); sws=s.ws(:); swxp=s.wxp(:);
   tpan=s.tpan(:); sxlo=s.Z(s.tpan(1:end-1)); sxlo=sxlo(:); sxhi=s.Z(s.tpan(2:end)); sxhi=sxhi(:);
   f=uexact(s);
-  D =axls_dlp_blockmat_mex(N,         sx,    p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,[]);
-  S =axls_slp_blockmat_mex(N,         sx,    p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,[]);
+  % FROZEN single-mode path (uncomment to compare): D =axls_dlp_blockmat_mex(N,         sx,    p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,[]);
+  D =real(axp_modemat_setup_mex(1,3,0,1,1,p,np,0,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,0,[1;1],zeros(3,0),zeros(3,0),eye(3),zeros(3,1),N,N));
+  % FROZEN single-mode path (uncomment to compare): S =axls_slp_blockmat_mex(N,         sx,    p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,[]);
+  S =real(axp_modemat_setup_mex(1,1,0,1,1,p,np,0,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,0,[1;1],zeros(3,0),zeros(3,0),eye(3),zeros(3,1),N,N));
   dens=(D+S)\f;
-  De=axls_dlp_blockmat_mex(numel(t.x),t.x(:),p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,[]);
-  Se=axls_slp_blockmat_mex(numel(t.x),t.x(:),p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,[]);
+  Mt=numel(t.x); T3=[real(t.x(:)).'; zeros(1,Mt); imag(t.x(:)).'];   % meridian targets in 3D (phi=0)
+  % FROZEN single-mode path (uncomment to compare): De=axls_dlp_blockmat_mex(numel(t.x),t.x(:),p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,[]);
+  De=real(axp_modemat_setup_mex(1,3,0,3,1,p,np,0,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,Mt,[1;Mt+1],T3,zeros(3,Mt),eye(3),zeros(3,1),Mt,N));
+  % FROZEN single-mode path (uncomment to compare): Se=axls_slp_blockmat_mex(numel(t.x),t.x(:),p,np,sx,snx,sws,swxp,tpan,sxlo,sxhi,iside,iclosed,[]);
+  Se=real(axp_modemat_setup_mex(1,1,0,3,1,p,np,0,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
+      sx,snx,sws,swxp,tpan,Mt,[1;Mt+1],T3,zeros(3,Mt),eye(3),zeros(3,1),Mt,N));
   tt=(De+Se)*dens;
   u=nan*zz; u(ii)=tt;
   err(k)=max(abs(u(:)-uf(:)));
@@ -44,8 +53,8 @@ fill(real([s.x;s.x(1)]),imag([s.x;s.x(1)]),'w'); plot(s.x,'-k'); plot(ysrc.x,'r.
 clim([-16 -12]); colormap('jet'); axis equal tight;
 xlabel('\rho'); ylabel('z'); title('Laplace combined (D+S) 0th-mode: log_{10} err vs exact axi-ring potential');
 
-% cmp = getPyPlot_cMap('rainbow', [], [], '"/Users/hzhu/.pyenv/versions/3.11.13/bin/python"');
-% colormap(cmp)
+cmp = getPyPlot_cMap('rainbow', [], [], '"/Users/hzhu/.pyenv/versions/3.11.13/bin/python"');
+colormap(cmp)
 
 % exportgraphics(figure(1),'axissymslap_lap_dlp0th_convergence.png','Resolution',200)
 % exportgraphics(figure(2),'axissymslap_lap_dlp0th_error.png','Resolution',200)

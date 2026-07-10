@@ -6,10 +6,4 @@ mex_id_ = 'axlk_dlpn_coef_nmode_r64(c i int64_t[x], c i dcomplex[x], c i dcomple
 C1=reshape(C1,nt,nq,Mp1); C2=reshape(C2,nt,nq,Mp1); C3a=reshape(C3a,nt,nq,Mp1); C3b=reshape(C3b,nt,nq,Mp1); C4=reshape(C4,nt,nq,Mp1);
 end
 
-% ============================================================
-% Stokes kernel-split coef mexes (axsk_): n-mode close-eval split coefficients.
-% Same compiled split as the Fortran builders, for utils/axss_*_blockmat_nmode.m.
-% Outputs are dcomplex, shape (3*nt, 3*nq, M+1).
-% ============================================================
-
-% SLP n-mode split coefs: C1(log), C2(smooth), C3(Cauchy)
+% LEVEL-1 MASTER (Laplace): coef dispatch, ilayer 1 SLP / 2 SLPn / 3 DLP / 4 DLPn.  Unused slots zeroed.
