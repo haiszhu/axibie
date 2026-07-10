@@ -54,6 +54,35 @@ u = A * ones(numel(s.x),1);                        % single-layer potential of a
 
 `A` is the `nt x N` close-evaluation operator (here `1 x 224`); swap `axls_slp_blockmat_mex` for `axls_{slpn,dlp,dlpn}_blockmat_mex` (Laplace) or `axss_*` (Stokes), and the `_nmode_mex` variants for all azimuthal modes at once. See [`/test/stokes`](test/stokes) and [`/test/laplace`](test/laplace) for full boundary-value-problem drivers.
 
+### Single particle — one signature, two spaces (`modemat` / `physmat`)
+
+The two level-2 setup masters share one argument list; a flag switches the solve space.
+`iinter = 1` is the self operator (targets ignored); `iinter = 3` + 3D points evaluates.
+
+```matlab
+addpath utils matlab
+p = 16; np = 14; pmodes = 8; iside = 1; iclosed = 0;
+s = []; s.p = p; s.Z = @(t) sin(t) - 1i*cos(t);              % unit-sphere meridian
+s.tpan = linspace(0,pi,np+1)'; s = quadr(s,[],'p','G');  N = numel(s.x);
+sx = s.x(:); snx = s.nx(:); sws = s.ws(:); swxp = s.wxp(:); tpan = s.tpan(:);
+
+space = 'modal';                       % 'modal' (Fourier, mode-by-mode) | 'phys' (dense physical)
+ik = 1; il = 3; prm = 0;               % Laplace DLP; Stokes: ik=2, prm=mu (il: 1 SLP,2 SLPn,3 DLP,4 DLPn)
+switch space
+  case 'modal'                         % A(:,:,m) = azimuthal mode m-1 block, N x N x (pmodes+1)
+    A = axp_modemat_setup_mex(ik, il, prm, 1, 1, p, np, pmodes, iside, iclosed, [1;N+1], [1;np+2], ...
+          N, np+1, sx, snx, sws, swxp, tpan, 0, [1;1], zeros(3,0), zeros(3,0), eye(3), zeros(3,1), N, N);
+  case 'phys'                          % assembled dense operator, node-interleaved, nblk x nblk
+    nblk = N*(2*pmodes+1);             %   (x3 for Stokes: nc=3 dof per node)
+    A = axp_physmat_setup_mex(ik, il, prm, 1, 1, p, np, pmodes, iside, iclosed, [1;N+1], [1;np+2], ...
+          N, np+1, sx, snx, sws, swxp, tpan, 0, [1;1], zeros(3,0), zeros(3,0), eye(3), zeros(3,1), nblk, nblk);
+end
+```
+
+Modal: solve each mode's small system, reconstruct with `e^(i*m*theta)` (single particle only —
+modes decouple).  Physical: one dense solve, any azimuthal data.  Live drivers:
+`test/laplace`/`test/stokes` `*_bvp.m` (modal) and `*_bvp_physmat*.m` (physical).
+
 ### A few particles — explicit full matrix + direct solve (whatever since problem size is not that large...)
 
 Calling `axpso_close_setup` to build per-particle block in physical space. (particle by particle, then x-y-z-x-y-z..., ordering convention is different from `axpso_corr_setup`. It might be better to use particle by particle, then xxx-yyy-zzz from debugging perspective for me...)
