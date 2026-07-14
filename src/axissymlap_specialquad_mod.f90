@@ -117,7 +117,7 @@ contains
         do jp = 1, p
           rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
           rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(rr2/(2.0_r64*rho*rhop), 0_8, vk, ve, Fn, An, dFn)
           SK = sqrt(rhop/rho)/twopi
           ff(jp) = SK*vk*wsp(jp)
         end do
@@ -405,7 +405,7 @@ contains
         do jp = 1, p
           rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
           rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(rr2/(2.0_r64*rho*rhop), 0_8, vk, ve, Fn, An, dFn)
           Qd = -ve/(2.0_r64*(chi-1.0_r64)); SK = sqrt(rhop/rho)/twopi
           ff(jp) = SK*( -nr/(2.0_r64*rho)*vk + (nr*(rho-rhop*chi)+nz*zh)/(rho*rhop)*Qd )*wsp(jp)
         end do
@@ -699,7 +699,7 @@ contains
           rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt
           nr = real(nvp(jp),r64); nz = aimag(nvp(jp))
           rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(rr2/(2.0_r64*rho*rhop), 0_8, vk, ve, Fn, An, dFn)
           Qd = -ve/(2.0_r64*(chi-1.0_r64)); SK = sqrt(rhop/rho)/twopi
           ff(jp) = SK*( -nr/(2.0_r64*rhop)*vk + (nr*(rhop-rho*chi)-nz*zh)/(rho*rhop)*Qd )*wsp(jp)
         end do
@@ -1009,7 +1009,7 @@ contains
           rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt; drho = rho - rhop
           nrp = real(nvp(jp),r64); nzp = aimag(nvp(jp))
           rr2 = drho*drho + zh*zh; tchi = rr2/(2.0_r64*rho*rhop); chi = 1.0_r64 + tchi
-          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(rr2/(2.0_r64*rho*rhop), 0_8, vk, ve, Fn, An, dFn)
           Qd = -ve/(2.0_r64*tchi); Qdd = (2.0_r64*chi*Qd + 0.25_r64*vk)/(1.0_r64-chi*chi)
           Bq = 1.0_r64/sqrt(rho*rhop); Br = -Bq/(2.0_r64*rho); Brp = -Bq/(2.0_r64*rhop); Brrp = Bq/(4.0_r64*rho*rhop)
           chir = drho/(rho*rhop) - rr2/(2.0_r64*rho*rho*rhop)

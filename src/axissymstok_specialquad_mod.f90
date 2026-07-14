@@ -135,7 +135,7 @@ contains
         do jp = 1, p
           rhop = real(Yp(jp),r64); zh = zti - aimag(Yp(jp)); rho = rt; drho = rho - rhop
           rr2 = drho*drho + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(rr2/(2.0_r64*rho*rhop), 0_8, vk, ve, Fn, An, dFn)
           pref = sqrt(rhop/rho)*ipi/8.0_r64 * wsp(jp) * muinv
           SKrr = (rho*rho + rhop*rhop + 2.0_r64*zh*zh)/(rho*rhop); SErr = -2.0_r64-4.0_r64*chi+2.0_r64*chi*drho*drho/rr2
           SKrz = zh/rho;   SErz = 2.0_r64*(drho*zh/rr2 - zh/(2.0_r64*rho))
@@ -528,7 +528,7 @@ contains
             cycle
           end if
           chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(rr2/(2.0_r64*rho*rhop), 0_8, vk, ve, Fn, An, dFn)
           block
             real(r64) :: t2,t3,t4,t5,t6,t7,t8,t9,t11,t13,t15,t16,t17,t18,t19,t20,t23,t24,t25,t26,t29,t30,t31
             real(r64) :: t32,t33,t38,t39,t44,t45,t46,t47,t52,t55,t56,t59,t62,t66
@@ -1204,7 +1204,7 @@ contains
         do jp = 1, p
           jj = cols + jp; rhop = real(sx(jj),r64); zh = zti - aimag(sx(jj)); ws = sws(jj)
           rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call modal_green_all_r64(chi, M, vka, vea, Fna, Ana, dFna)        ! all modes ONCE per node
+          call modal_green_all_r64(rr2/(2.0_r64*rho*rhop), M, vka, vea, Fna, Ana, dFna)        ! all modes ONCE per node
           do md = 0, M
             vk = vka(md); ve = vea(md)
             block
@@ -1305,7 +1305,7 @@ contains
           do jp = 1, p                                          ! carrier_all ONCE per node (was M+1 modal_green_r64 calls)
             rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp))
             rr2 = (rho-rhop)**2 + zh*zh; chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-            call modal_green_all_r64(chi, M, vka, vea, Fna, Ana, dFna)
+            call modal_green_all_r64(rr2/(2.0_r64*rho*rhop), M, vka, vea, Fna, Ana, dFna)
             vkmat(jp,0:M) = vka(0:M); vemat(jp,0:M) = vea(0:M)
           end do
           do md = 0, M
@@ -1677,7 +1677,7 @@ contains
             cycle
           end if
           chi = 1.0_r64 + rr2/(2.0_r64*rho*rhop)
-          call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+          call modal_green_r64(rr2/(2.0_r64*rho*rhop), 0_8, vk, ve, Fn, An, dFn)
           block
             real(r64) :: t2,t3,t4,t5,t6,t7,t8,t9,t11,t13,t15,t16,t17,t18,t19,t20,t21,t23,t24,t25,t26,t27
             real(r64) :: t30,t31,t32,t33,t39,t40,t41,t43,t44,t45,t46,t47,t48,t49,t50,t57,t58,t59,t62,t65,t70
@@ -2208,7 +2208,7 @@ contains
                 real(r64) :: t101, t104, t109, t110, t113, t115, t121, t105, t108, t111, t116, t117
                 real(r64) :: t118, t106, t112, t119, t120, t122, t123, et1, et2, et3, et4
                 chi = (rho*rho+rhop*rhop+zh*zh)/(2.0_r64*rho*rhop)
-                call modal_green_r64(chi, 0_8, vk, ve, Fn, An, dFn)
+                call modal_green_r64(rr2/(2.0_r64*rho*rhop), 0_8, vk, ve, Fn, An, dFn)
                 t2 = nr*rho
                 t3 = nps*rhop
                 t4 = rho*rhop
