@@ -152,6 +152,15 @@ GMRES drivers, scaling from `K=8` to the `K=3375` ultra:
 [`test/laplace_max`](test/laplace_max) (Laplace SLPn) and [`test/stokes_max`](test/stokes_max)
 (Stokes SLPn traction + the combined-field `(D+S)` Dirichlet variant).
 
+## Verification
+
+- `test/laplace/test_axissymslap_lap_greens_identity.m` — Laplace Green's identity on a torus
+  (exterior GRF, all modes): naive eval is `O(1)` wrong at targets near the surface; swapping in
+  the per-panel physical-space close eval for the k-th panel
+  restores machine precision at its close targets.
+
+  ![Verification for Laplace Green's identity](test/laplace/imgs/axissymslap_lap_greens_identity.png)
+
 ## References
 
 1. The Pozrikidis
