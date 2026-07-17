@@ -56,6 +56,25 @@ subroutine axmg_modal_green_all_far_r64(chi, M, vk, ve)
   call mg(chi, M, vk, ve)
 end subroutine axmg_modal_green_all_far_r64
 
+subroutine axmg_modal_green_qleg_half_miller_vec_r64(n, t, m, qm, qmd, qmdd, pm, pmd, pmdd)
+  use axisym_modal_green_mod, only: qhm => modal_green_qleg_half_miller_vec_r64
+  implicit none
+  integer(8), intent(in)    :: n, m
+  real(8),    intent(in)    :: t(n)
+  real(8),    intent(inout) :: qm(m+1,n), qmd(m+1,n), qmdd(m+1,n)
+  real(8),    intent(inout) :: pm(m+1,n), pmd(m+1,n), pmdd(m+1,n)
+  call qhm(n, t, m, qm, qmd, qmdd, pm, pmd, pmdd)
+end subroutine axmg_modal_green_qleg_half_miller_vec_r64
+
+subroutine axmg_modal_green_all_r64(chim1, M, vk, ve, Fn, An, dFn)
+  use axisym_modal_green_mod, only: mg => modal_green_all_r64
+  implicit none
+  integer(8), intent(in)    :: M
+  real(8),    intent(in)    :: chim1
+  real(8),    intent(inout) :: vk(M+1), ve(M+1), Fn(M+1), An(M+1), dFn(M+1)
+  call mg(chim1, M, vk, ve, Fn, An, dFn)
+end subroutine axmg_modal_green_all_r64
+
 subroutine axsq_sdspecialquad_r64(nt, zt, p, zsrc, nzsrc, wzp, za, zb, iside, As, Ad, A1, A2, A3, A4)
   use specialquad_mod, only: sq => sdspecialquad_r64
   implicit none

@@ -8,4 +8,4 @@ mex_id_ = 'axls_dlp_blockmat_r64(c i int64_t[x], c i dcomplex[x], c i int64_t[x]
 [A] = AxiStokes3D_mex(mex_id_, nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, A, 1, nt, 1, 1, nsp, nsp, nsp, nsp, npp1, np, np, 1, 1, nt, nsp);
 end
 
-% DLP n-mode
+% DLP n-mode (optional trailing nskip, skippanidx: coarse panels 1..np whose p columns stay zero)

@@ -7,4 +7,4 @@ mex_id_ = 'axsq_sdspecialquad_r64(c i int64_t[x], c i dcomplex[x], c i int64_t[x
 [As, Ad, A1, A2, A3, A4] = AxiStokes3D_mex(mex_id_, nt, zt, p, zsrc, nzsrc, wzp, za, zb, iside, As, Ad, A1, A2, A3, A4, 1, nt, 1, p, p, p, 1, 1, 1, p, nt, p, nt, p, nt, p, nt, p, nt, p, nt);
 end
 
-% SLP n-mode split coefs C1(log), C2(smooth)
+% single-panel Laplace S+D LP close-eval physical operators As3d, Ad3d [nt x nang*p]

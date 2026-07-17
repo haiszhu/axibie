@@ -129,7 +129,7 @@ contains
     deallocate(tin, cl, ci, zc, C1, C2, As, Ad, A1, A2, A3, A4, Gcq, Gpc)
   end subroutine axissymlap_slp_blockmat_r64
 
-  subroutine axissymlap_slp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+  subroutine axissymlap_slp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A, nskip, skippanidx)
     ! scalar Laplace SLP (single-layer value) all-modes block, real A(nt, np*p, M+1).
     ! TWO-LEVEL close-eval (mirror axissymlap_slpn_blockmat_nmode_r64, value variant -- no normal, no Cauchy):
     ! outer COARSE panel pq with a 1.85 gate -> Ksub=4 uniform subpanels + dyadic pole refine -> inner 1.5 gate
@@ -141,6 +141,8 @@ contains
     complex(r64), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
     real(r64),    intent(in)    :: sws(p*np), tpan(np+1)
     real(r64),    intent(inout) :: A(nt, np*p, M+1)
+    integer(8),   intent(in), optional :: nskip, skippanidx(*)
+    logical    :: lskip(np)
     integer(8), parameter :: Ksub = 4
     integer(8) :: q, nso, i, j, jp, iq, ia, l, c, pq, qo, ne, npa, nk, nkc, jj, cols, md
     real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, SK
@@ -194,7 +196,14 @@ contains
     allocate(C1(nt,q,M+1), C2(nt,q,M+1), C3a(nt,q,M+1), C3b(nt,q,M+1), C4(nt,q,M+1))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
     A = 0.0_r64
+    lskip = .false.                                                 ! coarse panels to skip: their p columns stay zero
+    if (present(nskip)) then
+      do i = 1, nskip
+        if (skippanidx(i) >= 1 .and. skippanidx(i) <= np) lskip(skippanidx(i)) = .true.
+      end do
+    end if
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
+      if (lskip(pq)) cycle
       cols = (pq-1)*p
       sumwso = 0.0_r64
       do jp = 1, p; sumwso = sumwso + sws(cols+jp); end do
@@ -711,7 +720,7 @@ contains
     deallocate(tin, cl, ci, zc, C1, C2, C3, As, Ad, A1, A2, A3, A4, Gcq)
   end subroutine axissymlap_dlp_blockmat_r64
 
-  subroutine axissymlap_dlp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+  subroutine axissymlap_dlp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A, nskip, skippanidx)
     ! scalar Laplace DLP (double-layer value, D=d_n' G, SOURCE-normal) all-modes block, real A(nt, np*p, M+1).
     ! TWO-LEVEL close-eval (mirror axissymlap_slpn_blockmat_nmode_r64, source-normal variant): outer COARSE panel
     ! pq with a 1.85 gate -> Ksub=4 uniform subpanels + dyadic pole refine -> inner 1.5 gate that RE-DETECTS
@@ -723,6 +732,8 @@ contains
     complex(r64), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
     real(r64),    intent(in)    :: sws(p*np), tpan(np+1)
     real(r64),    intent(inout) :: A(nt, np*p, M+1)
+    integer(8),   intent(in), optional :: nskip, skippanidx(*)
+    logical    :: lskip(np)
     integer(8), parameter :: Ksub = 4
     integer(8) :: q, nso, i, j, jp, iq, ia, l, c, pq, qo, ne, npa, nk, nkc, jj, cols, md
     real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, nr, nz, SK
@@ -776,7 +787,14 @@ contains
     allocate(C1(nt,q,M+1), C2(nt,q,M+1), C3(nt,q,M+1), C3b(nt,q,M+1), C4(nt,q,M+1))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
     A = 0.0_r64
+    lskip = .false.                                                 ! coarse panels to skip: their p columns stay zero
+    if (present(nskip)) then
+      do i = 1, nskip
+        if (skippanidx(i) >= 1 .and. skippanidx(i) <= np) lskip(skippanidx(i)) = .true.
+      end do
+    end if
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
+      if (lskip(pq)) cycle
       cols = (pq-1)*p
       sumwso = 0.0_r64
       do jp = 1, p; sumwso = sumwso + sws(cols+jp); end do

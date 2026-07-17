@@ -14,14 +14,14 @@ subroutine axls_slp_blockmat_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, 
   call blk(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, A)
 end subroutine axls_slp_blockmat_r64
 
-subroutine axls_slp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+subroutine axls_slp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A, nskip, skippanidx)
   use axissymlap_specialquad_mod, only: blk => axissymlap_slp_blockmat_nmode_r64
   implicit none
-  integer(8), intent(in)    :: nt, p, np, M, iside, iclosed
+  integer(8), intent(in)    :: nt, p, np, M, iside, iclosed, nskip, skippanidx(*)
   complex(8), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
   real(8),    intent(in)    :: sws(p*np), tpan(np+1)
   real(8),    intent(inout) :: A(nt, np*p, M+1)
-  call blk(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+  call blk(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A, nskip, skippanidx)
 end subroutine axls_slp_blockmat_nmode_r64
 
 subroutine axls_slpn_blockmat_r64(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, A)
@@ -54,14 +54,14 @@ subroutine axls_dlp_blockmat_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, 
   call blk(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, A)
 end subroutine axls_dlp_blockmat_r64
 
-subroutine axls_dlp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+subroutine axls_dlp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A, nskip, skippanidx)
   use axissymlap_specialquad_mod, only: blk => axissymlap_dlp_blockmat_nmode_r64
   implicit none
-  integer(8), intent(in)    :: nt, p, np, M, iside, iclosed
+  integer(8), intent(in)    :: nt, p, np, M, iside, iclosed, nskip, skippanidx(*)
   complex(8), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
   real(8),    intent(in)    :: sws(p*np), tpan(np+1)
   real(8),    intent(inout) :: A(nt, np*p, M+1)
-  call blk(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
+  call blk(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A, nskip, skippanidx)
 end subroutine axls_dlp_blockmat_nmode_r64
 
 subroutine axls_dlpn_blockmat_r64(nt, tx, tnx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, iside, iclosed, A)

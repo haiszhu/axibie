@@ -143,14 +143,17 @@ A=zeros(nt,nsp);
 # FORTRAN axls_slp_blockmat_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] iside, int[1] iclosed, inout double[nt,nsp] A);
 end
 
-% SLP n-mode
-@function A = axls_slp_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
-nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed);
+% SLP n-mode (optional trailing nskip, skippanidx: coarse panels 1..np whose p columns stay zero)
+@function A = axls_slp_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A, nskip, skippanidx)
+if nargin<16 || isempty(nskip), nskip=0; end
+if nargin<17, skippanidx=[]; end
+nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed); nskip=double(nskip);
 tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
 sws=double(sws(:)); tpan=double(tpan(:));
+skippanidx=double(skippanidx(:)); skippanidx=skippanidx(1:nskip); if nskip==0, skippanidx=0; end, nsk1=max(nskip,1);
 nsp=p*np; npp1=np+1; Mp1=M+1; cm=nsp*Mp1;
 A=zeros(nt,cm);
-# FORTRAN axls_slp_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, inout double[nt,cm] A);
+# FORTRAN axls_slp_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, inout double[nt,cm] A, int[1] nskip, int[nsk1] skippanidx);
 A=reshape(A, nt, nsp, Mp1);
 end
 
@@ -185,14 +188,17 @@ A=zeros(nt,nsp);
 # FORTRAN axls_dlp_blockmat_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] iside, int[1] iclosed, inout double[nt,nsp] A);
 end
 
-% DLP n-mode
-@function A = axls_dlp_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A)
-nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed);
+% DLP n-mode (optional trailing nskip, skippanidx: coarse panels 1..np whose p columns stay zero)
+@function A = axls_dlp_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, A, nskip, skippanidx)
+if nargin<16 || isempty(nskip), nskip=0; end
+if nargin<17, skippanidx=[]; end
+nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed); nskip=double(nskip);
 tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
 sws=double(sws(:)); tpan=double(tpan(:));
+skippanidx=double(skippanidx(:)); skippanidx=skippanidx(1:nskip); if nskip==0, skippanidx=0; end, nsk1=max(nskip,1);
 nsp=p*np; npp1=np+1; Mp1=M+1; cm=nsp*Mp1;
 A=zeros(nt,cm);
-# FORTRAN axls_dlp_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, inout double[nt,cm] A);
+# FORTRAN axls_dlp_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, inout double[nt,cm] A, int[1] nskip, int[nsk1] skippanidx);
 A=reshape(A, nt, nsp, Mp1);
 end
 
@@ -476,6 +482,27 @@ vk=zeros(Mp1,1); ve=zeros(Mp1,1);
 # FORTRAN axmg_modal_green_all_far_r64(double[1] chi, int[1] M, inout double[Mp1] vk, inout double[Mp1] ve);
 end
 
+% All-modes full carrier (chim1=chi-1): Q-side vk=Q_{n-1/2}, ve, and P-side Fn=P_{n-1/2}, An,
+% dFn=dP_{n-1/2}/dchi, n=0..M  (scalar chim1).  == modal_green_all_r64.
+@function [vk, ve, Fn, An, dFn] = axmg_modal_green_all_mex(chim1, M)
+chim1=double(chim1); M=double(M); Mp1=M+1;
+vk=zeros(Mp1,1); ve=zeros(Mp1,1); Fn=zeros(Mp1,1); An=zeros(Mp1,1); dFn=zeros(Mp1,1);
+# FORTRAN axmg_modal_green_all_r64(double[1] chim1, int[1] M, inout double[Mp1] vk, inout double[Mp1] ve, inout double[Mp1] Fn, inout double[Mp1] An, inout double[Mp1] dFn);
+end
+
+% Vectorized chunkie carrier (mirror of utils/axmg_modal_green_qleg_half_miller_vec.m, same
+% signature): qm=Q_{k-1/2}(chi), qmd=Q'_{k-1/2}, qmdd=Q''_{k-1/2}, k=0..M, chi=t+1, one column
+% per point, t=chi-1 with shape [1,nt,ns].  Swap the .m name -> name_mex verbatim at call sites.
+@function [qm, qmd, qmdd, pm, pmd, pmdd] = axmg_modal_green_qleg_half_miller_vec_mex(nc, t, M, qm, qmd, qmdd, pm, pmd, pmdd)
+M=double(M); Mp1=M+1; nt=size(t,2); ns=size(t,3);
+t=double(t(:)); nc=numel(t);
+qm=zeros(Mp1,nc); qmd=zeros(Mp1,nc); qmdd=zeros(Mp1,nc);
+pm=zeros(Mp1,nc); pmd=zeros(Mp1,nc); pmdd=zeros(Mp1,nc);
+# FORTRAN axmg_modal_green_qleg_half_miller_vec_r64(int[1] nc, double[nc] t, int[1] M, inout double[Mp1,nc] qm, inout double[Mp1,nc] qmd, inout double[Mp1,nc] qmdd, inout double[Mp1,nc] pm, inout double[Mp1,nc] pmd, inout double[Mp1,nc] pmdd);
+qm=reshape(qm,Mp1,nt,ns); qmd=reshape(qmd,Mp1,nt,ns); qmdd=reshape(qmdd,Mp1,nt,ns);
+pm=reshape(pm,Mp1,nt,ns); pmd=reshape(pmd,Mp1,nt,ns); pmdd=reshape(pmdd,Mp1,nt,ns);
+end
+
 % Helsing close-eval special quadrature: log(As), Cauchy(Ad), deriv(A1,A2), hyper(A3,A4)
 @function [As, Ad, A1, A2, A3, A4] = axsq_sdspecialquad_mex(nt, zt, p, zsrc, nzsrc, wzp, za, zb, iside)
 nt=double(nt); p=double(p); iside=double(iside);
@@ -483,6 +510,28 @@ zt=double(zt(:)); zsrc=double(zsrc(:)); nzsrc=double(nzsrc(:)); wzp=double(wzp(:
 za=double(za(1)); zb=double(zb(1));
 As=zeros(p,nt); A1=zeros(p,nt); A2=zeros(p,nt); A3=zeros(p,nt); A4=zeros(p,nt); Ad=complex(zeros(p,nt));
 # FORTRAN axsq_sdspecialquad_r64(int[1] nt, dcomplex[nt] zt, int[1] p, dcomplex[p] zsrc, dcomplex[p] nzsrc, dcomplex[p] wzp, dcomplex[1] za, dcomplex[1] zb, int[1] iside, inout double[p,nt] As, inout dcomplex[p,nt] Ad, inout double[p,nt] A1, inout double[p,nt] A2, inout double[p,nt] A3, inout double[p,nt] A4);
+end
+
+% single-panel Laplace S+D LP close-eval physical operators As3d, Ad3d [nt x nang*p]
+@function [As3d, Ad3d] = axps_closelapsdlp_panel_mex(nt, tx, t3dx, tn3dx, p, nang, sx, snx, sws, swxp, sxlo, sxhi, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, idxall, iform, As3d, Ad3d)
+nt=double(nt); p=double(p); nang=double(nang); M=double(pmodes); iside=double(iside); nangp=nang*p;
+tx=double(tx(:)); t3dx=double(t3dx); sx=double(sx(:)); sxlo=double(sxlo(1)); sxhi=double(sxhi(1));
+if isempty(tn3dx), tn3dx=zeros(3,nt); else, tn3dx=double(tn3dx); end
+if isempty(snx), snx=complex(zeros(p,1)); else, snx=complex(double(snx(:))); end
+if isempty(sws), sws=zeros(p,1); else, sws=double(sws(:)); end
+if isempty(swxp), swxp=complex(zeros(p,1)); else, swxp=complex(double(swxp(:))); end
+if isempty(tpan), tpan=zeros(2,1); else, tpan=double(tpan(:)); end
+if isempty(gate), gate=0.0; else, gate=double(gate(1)); end
+if isempty(s3dx), s3dx=zeros(3,1); else, s3dx=double(s3dx(:)); end
+if isempty(s3dnx), s3dnx=zeros(3,1); else, s3dnx=double(s3dnx(:)); end
+if isempty(s3dw), s3dw=zeros(1,1); else, s3dw=double(s3dw(1)); end
+if isempty(iclosed), iclosed=0; else, iclosed=double(iclosed(1)); end
+if isempty(ntcx), ntcx=0; else, ntcx=double(ntcx(1)); end
+if isempty(tcxi), tcxi=zeros(1,1); else, tcxi=double(tcxi(:)); end
+if isempty(idxall), idxall=zeros(1,1); else, idxall=double(idxall(:)); end
+if isempty(iform), iform=0; else, iform=double(iform(1)); end
+As3d=zeros(nt,nangp); Ad3d=zeros(nt,nangp);
+# FORTRAN axps_closelapsdlp_panel_r64(int[1] nt, dcomplex[nt] tx, double[3,nt] t3dx, double[3,nt] tn3dx, int[1] p, int[1] nang, dcomplex[p] sx, dcomplex[p] snx, double[p] sws, dcomplex[p] swxp, dcomplex[1] sxlo, dcomplex[1] sxhi, double[2] tpan, double[1] gate, double[3,1] s3dx, double[3,1] s3dnx, double[1] s3dw, int[1] M, int[1] iside, int[1] iclosed, int[1] ntcx, double[1] tcxi, double[1] idxall, int[1] iform, inout double[nt,nangp] As3d, inout double[nt,nangp] Ad3d);
 end
 
 % SLP n-mode split coefs C1(log), C2(smooth)
