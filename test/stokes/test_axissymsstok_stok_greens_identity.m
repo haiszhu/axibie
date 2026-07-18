@@ -6,9 +6,10 @@ clear all
 
 % set parameters
 p    = 16;
-% np   = 8; % 7.54e-09
-% np   = 12; % 5.12e-11
-np   = 16; % 1.02e-13
+np   = 8; % 1.42e-06
+np   = 12; % 1.1e-08
+np   = 16; % 3.78e-10
+% np   = 20; % 1.16e-09, it is unclear why... need to figure out
 M    = 4*np;
 nphi = 2*M+1;
 type = 'torus';
