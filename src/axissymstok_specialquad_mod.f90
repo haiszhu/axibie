@@ -155,7 +155,7 @@ contains
     deallocate(tin, cl, ci, zc, C1, C2, C3, As, Ad, A1, A2, A3, A4, Gcl, Gp, ff)
   end subroutine axissymstok_slp_blockmat_r64
 
-  subroutine axissymstok_slp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
+  subroutine axissymstok_slp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A, nskip, skippanidx)
     ! Two-level with Ksub=1 (dyadic-pole inner mesh).  Outer COARSE panel pq: FAR targets -> naive on the COARSE
     ! nodes, straight into A.  NEAR targets -> per dyadic sub-panel of pq, inner-near = close-eval (targets near
     ! that sub-panel), inner-far = naive (targets far from it; well-separated in the dyadic mesh -> accurate),
@@ -164,6 +164,8 @@ contains
     complex(r64), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
     real(r64),    intent(in)    :: sws(p*np), tpan(np+1), mu
     complex(r64), intent(inout) :: A(3*nt, 3*np*p, M+1)
+    integer(8),   intent(in), optional :: nskip, skippanidx(*)
+    logical    :: lskip(np)
     integer(8) :: q, pq, k, nso, i, j, jp, iq, ia, l, e, md, ar, b, ne, npa, nk, nkc, coff
     real(r64)  :: twopi, sumws, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, vk, ve, rn, n2, fn2, ifn2
     real(r64)  :: muinv, ipi, rr, srt, rrt, cm1, cp1, icm1, t1, tN, tm, denom, rlo, rhi, tgi, split
@@ -217,7 +219,14 @@ contains
     allocate(C1(3*nt,3*q,M+1), C2(3*nt,3*q,M+1), C3(3*nt,3*q,M+1), C4(3*nt,3*q,M+1), C5(3*nt,3*q,M+1))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
     A = (0.0_r64,0.0_r64)
+    lskip = .false.                                                 ! coarse panels to skip: their p columns stay zero
+    if (present(nskip)) then
+      do i = 1, nskip
+        if (skippanidx(i) >= 1 .and. skippanidx(i) <= np) lskip(skippanidx(i)) = .true.
+      end do
+    end if
     do pq = 1, np                                                   ! ===== outer: COARSE panel pq =====
+      if (lskip(pq)) cycle
       coff = (pq-1)*p
       sumws = 0.0_r64
       do jp = 1, p
@@ -1717,11 +1726,13 @@ contains
     deallocate(tin, tt_az, ww_az, cl, ci, zc, C1, C2, C3, C4, As, Ad, A1, A2, A3, A4, Gcl, Gp, ff)
   end subroutine axissymstok_dlp_blockmat_r64
 
-  subroutine axissymstok_dlp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
+  subroutine axissymstok_dlp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A, nskip, skippanidx)
     integer(8),   intent(in)    :: nt, p, np, M, iside, iclosed
     complex(r64), intent(in)    :: tx(nt), sx(p*np), snx(p*np), swxp(p*np), sxlo(np), sxhi(np)
     real(r64),    intent(in)    :: sws(p*np), tpan(np+1), mu
     complex(r64), intent(inout) :: A(3*nt, 3*np*p, M+1)
+    integer(8),   intent(in), optional :: nskip, skippanidx(*)
+    logical    :: lskip(np)
     integer(8), parameter :: Ksub = 4
     integer(8) :: q, pq, nso, i, j, jp, iq, ia, l, e, md, ar, b, c, qo, ne, npa, nk, nkc, jj, cols
     real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, nrp, nzp, vk, ve, Fn, An, dFn, rn
@@ -1780,7 +1791,14 @@ contains
     allocate(C1(3*nt,3*q,M+1), C2(3*nt,3*q,M+1), C3(3*nt,3*q,M+1), C4(3*nt,3*q,M+1), C5(3*nt,3*q,M+1))
     allocate(As(q,nt), Ad(q,nt), A1(q,nt), A2(q,nt), A3(q,nt), A4(q,nt), Gcq(nt,q), Gpc(nt,p))
     A = (0.0_r64,0.0_r64)
+    lskip = .false.                                                 ! coarse panels to skip: their p columns stay zero
+    if (present(nskip)) then
+      do i = 1, nskip
+        if (skippanidx(i) >= 1 .and. skippanidx(i) <= np) lskip(skippanidx(i)) = .true.
+      end do
+    end if
     do pq = 1, np                                                   ! ===== outer level: original panel pq =====
+      if (lskip(pq)) cycle
       cols = (pq-1)*p
       do i = 1, p
         Ypc(i) = xc(i,pq)

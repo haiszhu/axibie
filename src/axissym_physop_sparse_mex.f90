@@ -127,3 +127,15 @@ subroutine axps_closelapsdlp_panel_r64(nt, tx, t3dx, tn3dx, p, nang, sx, snx, sw
   call panel(nt, tx, t3dx, tn3dx, p, nang, sx, snx, sws, swxp, sxlo, sxhi, tpan, gate, &
              s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, idxall, iform, As3d, Ad3d)
 end subroutine axps_closelapsdlp_panel_r64
+
+subroutine axps_closestoksdlp_panel_r64(nt, tx, t3dx, tn3dx, p, nang, sx, snx, sws, swxp, sxlo, sxhi, tpan, gate, &
+                             s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, idxall, iform, As3d, Ad3d)
+  use axissym_physop_sparse_mod, only: panel => axissym_closestoksdlp_panel_r64
+  implicit none
+  integer(8), intent(in)    :: nt, p, nang, pmodes, iside, iclosed, ntcx, iform
+  complex(8), intent(in)    :: tx(nt), sx(p), snx(p), swxp(p), sxlo, sxhi
+  real(8),    intent(in)    :: t3dx(3,nt), tn3dx(3,nt), sws(p), tpan(*), gate, s3dx(3,*), s3dnx(3,*), s3dw(*), mu, tcxi(*), idxall(*)
+  real(8),    intent(inout) :: As3d(3*nt,3*nang*p), Ad3d(3*nt,3*nang*p)
+  call panel(nt, tx, t3dx, tn3dx, p, nang, sx, snx, sws, swxp, sxlo, sxhi, tpan, gate, &
+             s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, idxall, iform, As3d, Ad3d)
+end subroutine axps_closestoksdlp_panel_r64

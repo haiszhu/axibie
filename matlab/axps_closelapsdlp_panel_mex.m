@@ -20,4 +20,4 @@ mex_id_ = 'axps_closelapsdlp_panel_r64(c i int64_t[x], c i dcomplex[x], c i doub
 [As3d, Ad3d] = AxiStokes3D_mex(mex_id_, nt, tx, t3dx, tn3dx, p, nang, sx, snx, sws, swxp, sxlo, sxhi, tpan, gate, s3dx, s3dnx, s3dw, M, iside, iclosed, ntcx, tcxi, idxall, iform, As3d, Ad3d, 1, nt, 3, nt, 3, nt, 1, 1, p, p, p, p, 1, 1, 2, 1, 3, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, nt, nangp, nt, nangp);
 end
 
-% SLP n-mode split coefs C1(log), C2(smooth)
+% single-panel Stokes S+D LP close-eval physical operators As3d, Ad3d [3*nt x 3*nang*p]

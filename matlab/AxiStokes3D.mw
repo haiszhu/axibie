@@ -38,13 +38,16 @@ A=zeros(r2t,c2);
 end
 
 % SLP n-mode
-@function A = axss_slp_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
+@function A = axss_slp_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A, nskip, skippanidx)
+if nargin<17 || isempty(nskip), nskip=0; end
+if nargin<18, skippanidx=[]; end
 nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed); mu=double(mu);
 tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
 sws=double(sws(:)); tpan=double(tpan(:));
+skippanidx=double(skippanidx(:)); skippanidx=skippanidx(1:nskip); if nskip==0, skippanidx=0; end, nsk1=max(nskip,1);
 nsp=p*np; npp1=np+1; Mp1=M+1; r3t=3*nt; c3m=3*nsp*Mp1;
 A=zeros(r3t,c3m);
-# FORTRAN axss_slp_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, double[1] mu, inout dcomplex[r3t,c3m] A);
+# FORTRAN axss_slp_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, double[1] mu, inout dcomplex[r3t,c3m] A, int[1] nskip, int[nsk1] skippanidx);
 A=reshape(A, r3t, 3*nsp, Mp1);
 end
 
@@ -101,13 +104,16 @@ A=reshape(A, r3t, 3*nsp, Mp1);
 end
 
 % DLP n-mode
-@function A = axss_dlp_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A)
+@function A = axss_dlp_blockmat_nmode_mex(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A, nskip, skippanidx)
+if nargin<17 || isempty(nskip), nskip=0; end
+if nargin<18, skippanidx=[]; end
 nt=double(nt); p=double(p); np=double(np); M=double(M); iside=double(iside); iclosed=double(iclosed); mu=double(mu);
 tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:)); sxlo=double(sxlo(:)); sxhi=double(sxhi(:));
 sws=double(sws(:)); tpan=double(tpan(:));
 nsp=p*np; npp1=np+1; Mp1=M+1; r3t=3*nt; c3m=3*nsp*Mp1;
+skippanidx=double(skippanidx(:)); skippanidx=skippanidx(1:nskip); if nskip==0, skippanidx=0; end, nsk1=max(nskip,1);
 A=zeros(r3t,c3m);
-# FORTRAN axss_dlp_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, double[1] mu, inout dcomplex[r3t,c3m] A);
+# FORTRAN axss_dlp_blockmat_nmode_r64(int[1] nt, dcomplex[nt] tx, int[1] p, int[1] np, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, dcomplex[np] sxlo, dcomplex[np] sxhi, int[1] M, int[1] iside, int[1] iclosed, double[1] mu, inout dcomplex[r3t,c3m] A, int[1] nskip, int[nsk1] skippanidx);
 A=reshape(A, r3t, 3*nsp, Mp1);
 end
 
@@ -532,6 +538,28 @@ if isempty(idxall), idxall=zeros(1,1); else, idxall=double(idxall(:)); end
 if isempty(iform), iform=0; else, iform=double(iform(1)); end
 As3d=zeros(nt,nangp); Ad3d=zeros(nt,nangp);
 # FORTRAN axps_closelapsdlp_panel_r64(int[1] nt, dcomplex[nt] tx, double[3,nt] t3dx, double[3,nt] tn3dx, int[1] p, int[1] nang, dcomplex[p] sx, dcomplex[p] snx, double[p] sws, dcomplex[p] swxp, dcomplex[1] sxlo, dcomplex[1] sxhi, double[2] tpan, double[1] gate, double[3,1] s3dx, double[3,1] s3dnx, double[1] s3dw, int[1] M, int[1] iside, int[1] iclosed, int[1] ntcx, double[1] tcxi, double[1] idxall, int[1] iform, inout double[nt,nangp] As3d, inout double[nt,nangp] Ad3d);
+end
+
+% single-panel Stokes S+D LP close-eval physical operators As3d, Ad3d [3*nt x 3*nang*p]
+@function [As3d, Ad3d] = axps_closestoksdlp_panel_mex(nt, tx, t3dx, tn3dx, p, nang, sx, snx, sws, swxp, sxlo, sxhi, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, idxall, iform, As3d, Ad3d)
+nt=double(nt); p=double(p); nang=double(nang); M=double(pmodes); iside=double(iside); mu=double(mu(1)); nt3=3*nt; cm3=3*nang*p;
+tx=double(tx(:)); t3dx=double(t3dx); sx=double(sx(:)); sxlo=double(sxlo(1)); sxhi=double(sxhi(1));
+if isempty(tn3dx), tn3dx=zeros(3,nt); else, tn3dx=double(tn3dx); end
+if isempty(snx), snx=complex(zeros(p,1)); else, snx=complex(double(snx(:))); end
+if isempty(sws), sws=zeros(p,1); else, sws=double(sws(:)); end
+if isempty(swxp), swxp=complex(zeros(p,1)); else, swxp=complex(double(swxp(:))); end
+if isempty(tpan), tpan=zeros(2,1); else, tpan=double(tpan(:)); end
+if isempty(gate), gate=0.0; else, gate=double(gate(1)); end
+if isempty(s3dx), s3dx=zeros(3,1); else, s3dx=double(s3dx(:)); end
+if isempty(s3dnx), s3dnx=zeros(3,1); else, s3dnx=double(s3dnx(:)); end
+if isempty(s3dw), s3dw=zeros(1,1); else, s3dw=double(s3dw(1)); end
+if isempty(iclosed), iclosed=0; else, iclosed=double(iclosed(1)); end
+if isempty(ntcx), ntcx=0; else, ntcx=double(ntcx(1)); end
+if isempty(tcxi), tcxi=zeros(1,1); else, tcxi=double(tcxi(:)); end
+if isempty(idxall), idxall=zeros(1,1); else, idxall=double(idxall(:)); end
+if isempty(iform), iform=0; else, iform=double(iform(1)); end
+As3d=zeros(nt3,cm3); Ad3d=zeros(nt3,cm3);
+# FORTRAN axps_closestoksdlp_panel_r64(int[1] nt, dcomplex[nt] tx, double[3,nt] t3dx, double[3,nt] tn3dx, int[1] p, int[1] nang, dcomplex[p] sx, dcomplex[p] snx, double[p] sws, dcomplex[p] swxp, dcomplex[1] sxlo, dcomplex[1] sxhi, double[2] tpan, double[1] gate, double[3,1] s3dx, double[3,1] s3dnx, double[1] s3dw, int[1] M, int[1] iside, int[1] iclosed, double[1] mu, int[1] ntcx, double[1] tcxi, double[1] idxall, int[1] iform, inout double[nt3,cm3] As3d, inout double[nt3,cm3] Ad3d);
 end
 
 % SLP n-mode split coefs C1(log), C2(smooth)
