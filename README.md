@@ -160,13 +160,17 @@ GMRES drivers, scaling from `K=8` to the `K=3375` ultra:
   restores near machine precision at its close targets.
 
   ![Verification for Laplace Green's identity](test/laplace/imgs/axissymslap_lap_greens_identity.png)
-  
+    sphere near pole results.
+  ![Verification for Laplace Green's identity](test/laplace/imgs/axissymslap_lap_greens_identity_pole.png)
+
 - `test/stokes/test_axissymsstok_stok_greens_identity.m` — Stokes Green's identity on a torus
   (exterior GRF, all modes): naive eval is `O(1)` wrong at targets near the surface; swapping in
   the per-panel physical-space close eval for the k-th panel
   restores near machine precision at its close targets.
 
   ![Verification for Stokes Green's identity](test/stokes/imgs/axissymsstok_stok_greens_identity.png)
+  sphere near pole results.
+  ![Verification for Stokes Green's identity](test/stokes/imgs/axissymsstok_stok_greens_identity_pole.png)
 
 
 ## References

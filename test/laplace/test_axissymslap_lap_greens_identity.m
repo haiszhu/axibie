@@ -12,20 +12,33 @@ np   = 16; % 1.02e-13
 M    = 4*np;
 nphi = 2*M+1;
 type = 'torus';
+type = 'sphere';
 side = 'e';
 N    = np*p;
-k    = 5;
+k    = 5; isclosed = 0;
 iside = double(side=='e');
+k    = 1; isclosed = -1;
+if strcmp(type,'sphere'), vel = -45; else, vel = 55; end   % sphere targets sit under the south cap
 
 % generate torus/sphere geometry (full 3d + axisymmetric)
 so.a = 1.0; so.b = 0.5;
 s = [];
-s.p = p; s.Z  = @(t) (so.a+so.b*cos(t-pi/2)) + 1i*(so.b*sin(t-pi/2)); s.tpan = linspace(0, 2*pi, np+1)'; 
+switch type
+  case 'torus'
+    s.p = p; s.Z  = @(t) (so.a+so.b*cos(t-pi/2)) + 1i*(so.b*sin(t-pi/2)); s.tpan = linspace(0, 2*pi, np+1)'; 
+
+    % define density function
+    [f, gradf]= torus_surf_den(so,side); % for GRF
+    phi = inoutfun_torus(so,side);
+  case 'sphere'
+    s.p = p; s.Z  = @(t) sin(t) - 1i*cos(t); s.tpan = linspace(0, pi, np+1)';
+
+    % define density function
+    [f, gradf]= sphere_surf_den(side); % for GRF
+    phi = inoutfun_sphere(side);
+end
 s   = quadr(s,[],'p','G');
 s3d = axisym_to_3d_quadrature( real(s.x), imag(s.x), s.ws, real(s.nx), imag(s.nx), nphi);
-
-% define density function
-[f, gradf]= torus_surf_den(so,side); % for GRF
 
 % all on surface node
 sx = s3d.x; snx = s3d.nx; sw = s3d.w;
@@ -34,9 +47,14 @@ sigma = sum(snx.*gradf(sx),1)'; tau = -f(sx)';     % densities for GRF (col vecs
 
 % exterior GRF test
 nt = 50000;
-rng = 4;
-t3d.x = [0.8520;0.4919;0.4819] + 2.0*(rand(3,nt)-1/2); % random targets, shrink 2*sqrt(sum(pan{k}.w)), or increase nt to observe closer targets...
-phi = inoutfun(so,side);
+rng(2);
+switch type
+  case 'torus'
+    c0 = [0.8520;0.4919;0.4819];
+  case 'sphere'
+    tm = (k-0.5)*pi/np; c0 = [sin(tm); 0; -cos(tm)];
+end
+t3d.x = c0 + 2.0*(rand(3,nt)-1/2); % random targets, shrink 2*sqrt(sum(pan{k}.w)), or increase nt to observe closer targets...
 inout_flag = phi(t3d.x(1,:),t3d.x(2,:),t3d.x(3,:));
 t3d_inout.x = t3d.x(:,inout_flag);
 X = reshape(s3d.x(1,:), numel(s.x), nphi); Y = reshape(s3d.x(2,:), numel(s.x), nphi); Z = reshape(s3d.x(3,:), numel(s.x), nphi); X=X([1:end 1],[1:end 1]); Y=Y([1:end 1],[1:end 1]); Z=Z([1:end 1],[1:end 1]);
@@ -66,7 +84,7 @@ subplot(1,3,1)
 scatter3(t3d_inout.x(1,:),t3d_inout.x(2,:),t3d_inout.x(3,:),7,log10(err3d),'filled'),colorbar,
 hold on, h=surf(X,Y,Z); set(h,'ambientstrength',0.7,'facelighting','gouraud'); shading interp; set(h,'FaceColor','w'); lightangle(45,0); axis equal vis3d; set(gca,'clipping','off'); xlabel('x'); ylabel('y'); zlabel('z'); colorbar;
 caxis([-16 2]),title(sprintf('naive full-3D (max err = %.1e)', max(err3d)))
-view(150,55)   % close-target arc (panel k=3, azim ~ -20..100 deg) on near side, unoccluded
+view(150,vel)   % close-target arc on near side, unoccluded (sphere: from below the south cap)
 colorbar off; ax=gca; cb=colorbar; drawnow; ax.Position=ax.Position; p=cb.Position; cb.Position=[p(1) p(2)+p(4)/4 p(3) p(4)/2];
 cmp = getPyPlot_cMap('rainbow', [], [], '"/Users/hzhu/.pyenv/versions/3.11.13/bin/python"'); colormap(cmp)
 
@@ -116,13 +134,13 @@ scatter3(tk3d_inout.x(1,:), tk3d_inout.x(2,:), tk3d_inout.x(3,:), 12, log10(err2
 hold on, h=surf(X,Y,Z); set(h,'ambientstrength',0.7,'facelighting','gouraud'); shading interp; set(h,'FaceColor','w'); lightangle(45,0); axis equal vis3d; set(gca,'clipping','off'); xlabel('x'); ylabel('y'); zlabel('z'); colorbar;
 axis equal vis3d; set(gca,'clipping','off'); xlabel('x'); ylabel('y'); zlabel('z'); caxis([-16 2]);
 title(sprintf('naive eval (panel k=%d / %d)', k, np))
-view(150,55)
+view(150,vel)
 colorbar off; ax=gca; cb=colorbar; drawnow; ax.Position=ax.Position; p=cb.Position; cb.Position=[p(1) p(2)+p(4)/4 p(3) p(4)/2];
 
 % use close k-th panel contribution instead
 skx = s.x((k-1)*s.p + (1:s.p));
 [As3d, Ad3d] = axps_closelapsdlp_panel_mex(nk, tk_inout.x, tk3d_inout.x, [], s.p, nphi, skx, [], [], [], ...
-                                          s.xlo(k), s.xhi(k), [], [], [], [], [], M, iside, [], ...
+                                          s.xlo(k), s.xhi(k), [], [], [], [], [], M, iside, isclosed, ...
                                           [], [], [], [], [], []);
 cols = (k-1)*s.p;
 ring = reshape((cols+(1:s.p)).' + (0:nphi-1)*N, [], 1);
@@ -136,11 +154,12 @@ scatter3(tk3d_inout.x(1,:), tk3d_inout.x(2,:), tk3d_inout.x(3,:), 12, log10(err3
 hold on, h=surf(X,Y,Z); set(h,'ambientstrength',0.7,'facelighting','gouraud'); shading interp; set(h,'FaceColor','w'); lightangle(45,0); axis equal vis3d; set(gca,'clipping','off'); xlabel('x'); ylabel('y'); zlabel('z'); colorbar;
 axis equal vis3d; set(gca,'clipping','off'); xlabel('x'); ylabel('y'); zlabel('z'); caxis([-16 2]);
 title(sprintf('with close eval (panel k=%d / %d)', k, np))
-view(150,55)
+view(150,vel)
 colorbar off; ax=gca; cb=colorbar; drawnow; ax.Position=ax.Position; p=cb.Position; cb.Position=[p(1) p(2)+p(4)/4 p(3) p(4)/2];
 
 % keyboard
 % exportgraphics(figure(1),'axissymslap_lap_greens_identity.png','Resolution',200)
+% exportgraphics(figure(1),'axissymslap_lap_greens_identity_pole.png','Resolution',200)
 
 function G = LapSLPAxiMattmp(t,s,n)
 n = abs(n);                                        % kernel is even in the mode index
@@ -182,7 +201,7 @@ SE = 2*sqrty1x1.*(bsxfun(@times,ny1,x1).*(chi-1)+mp)./r2;
 A  = 1/(4*pi)*(VK.*SK + VE.*SE)*diag(s.ws);
 end
 
-function phi = inoutfun(so,side)
+function phi = inoutfun_torus(so,side)
 % define indicator function for torus
 my_eps = 1e-9;
 if side == 'e'
@@ -192,10 +211,29 @@ else
 end
 end
 
+function phi = inoutfun_sphere(side)
+my_eps = 1e-9;
+if side == 'e'
+  phi = @(x,y,z) (x.^2 + y.^2 + z.^2) > 1 + my_eps;
+else
+  phi = @(x,y,z) (x.^2 + y.^2 + z.^2) < 1 - my_eps;
+end
+end
+
 function [f, gradf, y_src] = torus_surf_den(so, side)
 switch side
   case 'e', y_src = [so.a; 0; 0]; 
   case 'i', y_src = [1.0; 1.0; 1.2]; 
+end
+r     = @(x) sqrt(sum((x - y_src).^2, 1));
+f     = @(x) 1./(4*pi*r(x));
+gradf = @(x) -(x - y_src)./(4*pi*r(x).^3);
+end
+
+function [f, gradf, y_src] = sphere_surf_den(side)
+switch side
+  case 'e', y_src = [0.2; 0.1; -0.3];    % inside the unit sphere
+  case 'i', y_src = [1.0; 1.0; 1.2];     % outside
 end
 r     = @(x) sqrt(sum((x - y_src).^2, 1));
 f     = @(x) 1./(4*pi*r(x));

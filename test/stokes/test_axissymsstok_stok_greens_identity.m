@@ -13,20 +13,30 @@ np   = 16; % 3.78e-10
 M    = 4*np;
 nphi = 2*M+1;
 type = 'torus';
+type = 'sphere';
 side = 'e';
 N    = np*p;
-k    = 5;
+k    = 5; isclosed = 0;
+k    = 1; isclosed = -1;
+if strcmp(type,'sphere'), vel = -45; else, vel = 55; end   % sphere targets sit under the south cap
 iside = double(side=='e');
 
 % generate torus/sphere geometry (full 3d + axisymmetric)
 so.a = 1.0; so.b = 0.5;
 s = [];
-s.p = p; s.Z  = @(t) (so.a+so.b*cos(t-pi/2)) + 1i*(so.b*sin(t-pi/2)); s.tpan = linspace(0, 2*pi, np+1)'; 
+s = [];
+switch type
+  case 'torus'
+    s.p = p; s.Z  = @(t) (so.a+so.b*cos(t-pi/2)) + 1i*(so.b*sin(t-pi/2)); s.tpan = linspace(0, 2*pi, np+1)';
+    [u_vel, f_trac] = torus_surf_den(so,side);
+    phi = inoutfun_torus(so,side);
+  case 'sphere'
+    s.p = p; s.Z  = @(t) sin(t) - 1i*cos(t); s.tpan = linspace(0, pi, np+1)';
+    [u_vel, f_trac] = sphere_surf_den(side);
+    phi = inoutfun_sphere(side);
+end
 s   = quadr(s,[],'p','G');
 s3d = axisym_to_3d_quadrature( real(s.x), imag(s.x), s.ws, real(s.nx), imag(s.nx), nphi);
-
-% define density function for GRF from a source
-[u_vel, f_trac]= torus_surf_den(so,side);
 
 % all on surface node
 sx = s3d.x; snx = s3d.nx; sw = s3d.w;
@@ -35,9 +45,15 @@ sigma = f_trac(sx,snx); tau = -u_vel(sx); % densities for GRF
 
 % exterior GRF test
 nt = 50000;
-rng = 4;
-t3d.x = [0.8520;0.4919;0.4819] + 2.0*(rand(3,nt)-1/2); % random targets, shrink 2*sqrt(sum(pan{k}.w)), or increase nt to observe closer targets...
-phi = inoutfun(so,side);
+% nt = 5000;
+rng(4);
+switch type
+  case 'torus'
+    c0 = [0.8520;0.4919;0.4819];
+  case 'sphere'
+    tm = (k-0.5)*pi/np; c0 = [sin(tm); 0; -cos(tm)];
+end
+t3d.x = c0 + 2.0*(rand(3,nt)-1/2);
 inout_flag = phi(t3d.x(1,:),t3d.x(2,:),t3d.x(3,:));
 t3d_inout.x = t3d.x(:,inout_flag);
 X = reshape(s3d.x(1,:), numel(s.x), nphi); Y = reshape(s3d.x(2,:), numel(s.x), nphi); Z = reshape(s3d.x(3,:), numel(s.x), nphi); X=X([1:end 1],[1:end 1]); Y=Y([1:end 1],[1:end 1]); Z=Z([1:end 1],[1:end 1]);
@@ -73,7 +89,7 @@ subplot(1,3,1)
 scatter3(t3d_inout.x(1,:),t3d_inout.x(2,:),t3d_inout.x(3,:),7,log10(err3d),'filled'),colorbar,
 hold on, h=surf(X,Y,Z); set(h,'ambientstrength',0.7,'facelighting','gouraud'); shading interp; set(h,'FaceColor','w'); lightangle(45,0); axis equal vis3d; set(gca,'clipping','off'); xlabel('x'); ylabel('y'); zlabel('z'); colorbar;
 caxis([-16 2]),title(sprintf('naive full-3D (max err = %.1e)', max(err3d)))
-view(150,55)
+view(150,vel)
 if ismac
   pyCmd = '"/Users/hzhu/.pyenv/versions/3.11.13/bin/python"';
   % pyCmd = '/Users/hzhu/.venvs/mpl/bin/python';   % macOS venv alt
@@ -140,13 +156,13 @@ scatter3(tk3d_inout.x(1,:), tk3d_inout.x(2,:), tk3d_inout.x(3,:), 12, log10(errk
 hold on, h=surf(X,Y,Z); set(h,'ambientstrength',0.7,'facelighting','gouraud'); shading interp; set(h,'FaceColor','w'); lightangle(45,0); axis equal vis3d; set(gca,'clipping','off'); xlabel('x'); ylabel('y'); zlabel('z'); colorbar;
 axis equal vis3d; set(gca,'clipping','off'); xlabel('x'); ylabel('y'); zlabel('z'); caxis([-16 2]);
 title(sprintf('naive eval (panel k=%d / %d)', k, np))
-view(150,55)
+view(150,vel)
 colorbar off; ax=gca; cb=colorbar; drawnow; ax.Position=ax.Position; p=cb.Position; cb.Position=[p(1) p(2)+p(4)/4 p(3) p(4)/2];
 
 % use close k-th panel contribution instead
 skx = s.x((k-1)*s.p+(1:s.p));
 [As3d, Ad3d] = axps_closestoksdlp_panel_mex(nk, tk_inout.x, tk3d_inout.x, [], s.p, nphi, skx, [], [], [], ...
-                                          s.xlo(k), s.xhi(k), [], [], [], [], [], M, iside, [], mu, ...
+                                          s.xlo(k), s.xhi(k), [], [], [], [], [], M, iside, isclosed, mu, ...
                                           [], [], [], [], [], []);
 cols = (k-1)*s.p;
 ring3 = reshape(3*(reshape((cols+(1:s.p)).' + (0:nphi-1)*N,1,[])-1) + (1:3).', [], 1);
@@ -164,11 +180,12 @@ scatter3(tk3d_inout.x(1,:), tk3d_inout.x(2,:), tk3d_inout.x(3,:), 12, log10(errk
 hold on, h=surf(X,Y,Z); set(h,'ambientstrength',0.7,'facelighting','gouraud'); shading interp; set(h,'FaceColor','w'); lightangle(45,0); axis equal vis3d; set(gca,'clipping','off'); xlabel('x'); ylabel('y'); zlabel('z'); colorbar;
 axis equal vis3d; set(gca,'clipping','off'); xlabel('x'); ylabel('y'); zlabel('z'); caxis([-16 2]);
 title(sprintf('with close eval (panel k=%d / %d)', k, np))
-view(150,55)
+view(150,vel)
 colorbar off; ax=gca; cb=colorbar; drawnow; ax.Position=ax.Position; p=cb.Position; cb.Position=[p(1) p(2)+p(4)/4 p(3) p(4)/2];
 
 % keyboard
 % exportgraphics(figure(1),'axissymsstok_stok_greens_identity.png','Resolution',200)
+% exportgraphics(figure(1),'axissymsstok_stok_greens_identity_pole.png','Resolution',200)
 
 function A = StoSLPAxiMattmp(t,s,n)
 rho  = real(t.x(:));   zt = imag(t.x(:));           % target (column)
@@ -264,13 +281,22 @@ A(2:3:end,1:3:end)=G{4}; A(2:3:end,2:3:end)=G{5}; A(2:3:end,3:3:end)=G{6};
 A(3:3:end,1:3:end)=G{7}; A(3:3:end,2:3:end)=G{8}; A(3:3:end,3:3:end)=G{9};
 end
 
-function phi = inoutfun(so,side)
+function phi = inoutfun_torus(so,side)
 % define indicator function for torus
 my_eps = 1e-9;
 if side == 'e'
   phi = @(x,y,z) ((x-so.a*cos(atan2(y,x))).^2 + (y-so.a*sin(atan2(y,x))).^2 + z.^2) > so.b^2+my_eps; 
 else
   phi = @(x,y,z) ((x-so.a*cos(atan2(y,x))).^2 + (y-so.a*sin(atan2(y,x))).^2 + z.^2) < so.b^2-my_eps;
+end
+end
+
+function phi = inoutfun_sphere(side)
+my_eps = 1e-9;
+if side == 'e'
+  phi = @(x,y,z) (x.^2 + y.^2 + z.^2) > 1 + my_eps;
+else
+  phi = @(x,y,z) (x.^2 + y.^2 + z.^2) < 1 - my_eps;
 end
 end
 
@@ -290,4 +316,18 @@ function T = Sto3dSLPnmat_il(t,s)
 [~, T] = Sto3dSLPmat_il(t,s);
 end
 
+end
+
+function [u, f, y_force] = sphere_surf_den(side)
+rng(4); pt_force = rand(3,1); pt_force = 10*pt_force/norm(pt_force);
+switch side
+  case 'e', y_force.x = [0.2; 0.1; -0.3];    % inside the unit sphere
+  case 'i', y_force.x = [1.0; 1.0; 1.2];     % outside
+end
+y_force.w = 1;
+u = @(x)    reshape(Sto3dSLPmat_il(struct('x',x),y_force)*pt_force,3,[]);
+f = @(x,nx) reshape(Sto3dSLPnmat_il(struct('x',x,'nx',nx),y_force)*pt_force,3,[]);
+function T = Sto3dSLPnmat_il(t,s)
+[~, T] = Sto3dSLPmat_il(t,s);
+end
 end

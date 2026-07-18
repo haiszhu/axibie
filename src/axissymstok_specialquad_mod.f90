@@ -156,7 +156,7 @@ contains
   end subroutine axissymstok_slp_blockmat_r64
 
   subroutine axissymstok_slp_blockmat_nmode_r64(nt, tx, p, np, sx, snx, sws, swxp, tpan, sxlo, sxhi, M, iside, iclosed, mu, A, nskip, skippanidx)
-    ! Two-level with Ksub=1 (dyadic-pole inner mesh).  Outer COARSE panel pq: FAR targets -> naive on the COARSE
+    ! Two-level with Ksub=4 uniform subpanels per panel (+ dyadic-pole inner mesh).  Outer COARSE panel pq: FAR targets -> naive on the COARSE
     ! nodes, straight into A.  NEAR targets -> per dyadic sub-panel of pq, inner-near = close-eval (targets near
     ! that sub-panel), inner-far = naive (targets far from it; well-separated in the dyadic mesh -> accurate),
     ! folded back via IPk.  A middle panel is ONE sub-panel == the coarse panel (no split, no cross-panel bug).
@@ -167,7 +167,7 @@ contains
     integer(8),   intent(in), optional :: nskip, skippanidx(*)
     logical    :: lskip(np)
     integer(8) :: q, pq, k, nso, i, j, jp, iq, ia, l, e, md, ar, b, ne, npa, nk, nkc, coff
-    real(r64)  :: twopi, sumws, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, vk, ve, rn, n2, fn2, ifn2
+    real(r64)  :: twopi, sumws, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, vk, ve, rn, n2, fn2, ifn2, chimax
     real(r64)  :: muinv, ipi, rr, srt, rrt, cm1, cp1, icm1, t1, tN, tm, denom, rlo, rhi, tgi, split
     real(r64)  :: vka(0:M), vea(0:M), vkmat(p,0:M), vemat(p,0:M)
     real(r64)  :: sk1a(p),sk3a(p),se3a(p),sk5a(p),sk7a(p),se7a(p),sk9a(p),se9a(p),cse5a(p),prefa(p),p0a(p),p1a(p),wsa(p)
@@ -199,7 +199,13 @@ contains
       end do
     end do
     t1 = tc(1,1); tN = tc(p,np)
-    allocate(tin(np+1+256)); ne = np+1; tin(1:ne) = tpan(1:np+1)
+    allocate(tin(np*4+1+256)); ne = 0
+    do j = 1, np
+      do i = 0, 3
+        ne = ne+1; tin(ne) = tpan(j) + (tpan(j+1)-tpan(j))*real(i,r64)/4.0_r64
+      end do
+    end do
+    ne = ne+1; tin(ne) = tpan(np+1)
     do while (tin(2) > t1)
       split = 0.5_r64*(tin(1)+tin(2)); do i = ne, 2, -1; tin(i+1) = tin(i); end do; tin(2) = split; ne = ne+1
     end do
@@ -322,6 +328,16 @@ contains
         nkc = 0
         do i = 1, nk
           ikc(i) = (abs(znear(i)-za) + abs(znear(i)-zb)) < 1.5_r64*sumwsc
+          if (ikc(i)) then                                    ! chi router: split only if e^{M xi} stays tame
+            rho = real(znear(i),r64); zti = aimag(znear(i))
+            chimax = 1.0_r64
+            do jp = 1, p
+              rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp))
+              chi = 1.0_r64 + ((rho-rhop)**2 + zh*zh)/(2.0_r64*rho*rhop)
+              if (chi > chimax) chimax = chi
+            end do
+            ikc(i) = real(M,r64)*acosh(chimax) < 30.0_r64
+          end if
           if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
         end do
         ! inner-near: close-eval the nkc targets near sub-panel k, fold q -> coarse via IPqc
@@ -1735,7 +1751,7 @@ contains
     logical    :: lskip(np)
     integer(8), parameter :: Ksub = 4
     integer(8) :: q, pq, nso, i, j, jp, iq, ia, l, e, md, ar, b, c, qo, ne, npa, nk, nkc, jj, cols
-    real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, nrp, nzp, vk, ve, Fn, An, dFn, rn
+    real(r64)  :: twopi, sumwso, sumwsc, rho, rhop, zh, rr2, chi, ws, spd, rt, zti, nrp, nzp, vk, ve, Fn, An, dFn, rn, chimax
     real(r64)  :: vka(0:M), vea(0:M), Fna(0:M), Ana(0:M), dFna(0:M), vkmat(p,0:M), vemat(p,0:M)
     complex(r64) :: coK(9), coE(9), pcs(27), pcsm(27,p)
     complex(r64) :: Be_rr(p), Be_rt(p), Be_rz(p), &       ! 9 entries of the 3x3 block, per panel node
@@ -1919,6 +1935,16 @@ contains
         nkc = 0
         do i = 1, nk
           ikc(i) = (abs(znear(i)-zac) + abs(znear(i)-zbc)) < 1.5_r64*sumwsc
+          if (ikc(i)) then                                    ! chi router: split only if e^{M xi} stays tame
+            rho = real(znear(i),r64); zti = aimag(znear(i))
+            chimax = 1.0_r64
+            do jp = 1, p
+              rhop = real(Ypb(jp),r64); zh = zti - aimag(Ypb(jp))
+              chi = 1.0_r64 + ((rho-rhop)**2 + zh*zh)/(2.0_r64*rho*rhop)
+              if (chi > chimax) chimax = chi
+            end do
+            ikc(i) = real(M,r64)*acosh(chimax) < 30.0_r64
+          end if
           if (ikc(i)) then; nkc = nkc + 1; ci(nkc) = i; zc(nkc) = znear(i); end if
         end do
         ! ---- inner near: 2p DLP close (coef + sdspecialquad), fold q->p_sub (IP2) -> p_coarse (Lc) ----

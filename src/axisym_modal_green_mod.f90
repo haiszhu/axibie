@@ -197,6 +197,7 @@ contains
       rk = real(k,r64)
       Qkm1 = (2.0_r64*rk*chi*Qlo - (rk+0.5_r64)*Qhi)/(rk-0.5_r64)
       Qhi = Qlo; Qlo = Qkm1
+      ! laplace green's identity test for target points near sphere north/south pole would reveal this
       if (abs(Qlo) > 1.0e150_r64) then
         Qhi = Qhi*sf; Qlo = Qlo*sf
         do n = max(k,0_8), M+1; Qm(n) = Qm(n)*sf; end do
@@ -409,6 +410,10 @@ contains
         do i = 1, m-1                               ! backward from m to 1
           jr = m - i + 1
           qm(jr-2,j) = cC(jr)*chi*qm(jr-1,j) - cD(jr)*qm(jr,j)
+          ! laplace green's identity test for target points near sphere north/south pole would reveal this
+          if (abs(qm(jr-2,j)) > 1.0e150_r64) then
+            do k = jr-2, m; qm(k,j) = qm(k,j)*2.0_r64**(-512); end do
+          end if
         end do
         ratio = q0(j) / qm(0,j)                     ! 3. scale by known Q_{-1/2}
         do k = 0, m
