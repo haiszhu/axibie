@@ -8,4 +8,6 @@ mex_id_ = 'axps_naivelapsdlp_physmat_r64(c i int64_t[x], c i dcomplex[x], c i do
 [As3d, Ad3d] = AxiStokes3D_mex(mex_id_, nt, tx, t3dx, p, np, nang, sx, snx, sws, M, ifself, nrA, As3d, Ad3d, 1, nt, 3, nt, 1, 1, 1, N, N, N, 1, 1, 1, nrA, Nnang, nrA, Nnang);
 end
 
-% SLP n-mode split coefs C1(log), C2(smooth)
+% whole-particle naive (smooth-quadrature) Laplace S'+D' (TARGET-normal derivative) physical operators
+% t3dnx = lab-frame 3D target normals (3 x nt), REQUIRED (no empty default)
+% ifself=1: [N*nang x N*nang] SELF (theta=0 block-row + circulant tile, n_theta==0 checked); ifself=0: [nt x N*nang] field
