@@ -562,6 +562,17 @@ As3d=zeros(nt3,cm3); Ad3d=zeros(nt3,cm3);
 # FORTRAN axps_closestoksdlp_panel_r64(int[1] nt, dcomplex[nt] tx, double[3,nt] t3dx, double[3,nt] tn3dx, int[1] p, int[1] nang, dcomplex[p] sx, dcomplex[p] snx, double[p] sws, dcomplex[p] swxp, dcomplex[1] sxlo, dcomplex[1] sxhi, double[2] tpan, double[1] gate, double[3,1] s3dx, double[3,1] s3dnx, double[1] s3dw, int[1] M, int[1] iside, int[1] iclosed, double[1] mu, int[1] ntcx, double[1] tcxi, double[1] idxall, int[1] iform, inout double[nt3,cm3] As3d, inout double[nt3,cm3] Ad3d);
 end
 
+% whole-particle naive (smooth-quadrature) Laplace S+D physical operators As3d, Ad3d
+% ifself=1: [N*nang x N*nang] SELF (theta=0 block-row + circulant tile); ifself=0: [nt x N*nang] field
+@function [As3d, Ad3d] = axps_naivelapsdlp_physmat_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, pmodes, ifself, nrA, As3d, Ad3d)
+nt=double(nt); p=double(p); np=double(np); nang=double(nang); M=double(pmodes); ifself=double(ifself(1)); nrA=double(nrA(1));
+tx=double(tx(:)); t3dx=double(t3dx); sx=double(sx(:)); N=np*p; Nnang=N*nang;
+if isempty(snx), snx=complex(zeros(N,1)); else, snx=complex(double(snx(:))); end
+if isempty(sws), sws=zeros(N,1); else, sws=double(sws(:)); end
+As3d=zeros(nrA,Nnang); Ad3d=zeros(nrA,Nnang);
+# FORTRAN axps_naivelapsdlp_physmat_r64(int[1] nt, dcomplex[nt] tx, double[3,nt] t3dx, int[1] p, int[1] np, int[1] nang, dcomplex[N] sx, dcomplex[N] snx, double[N] sws, int[1] M, int[1] ifself, int[1] nrA, inout double[nrA,Nnang] As3d, inout double[nrA,Nnang] Ad3d);
+end
+
 % SLP n-mode split coefs C1(log), C2(smooth)
 @function [C1, C2] = axlk_slp_coef_nmode_mex(nt, tx, nq, sx, M)
 nt=double(nt); nq=double(nq); M=double(M); tx=double(tx(:)); sx=double(sx(:)); Mp1=M+1; cm=nq*Mp1;

@@ -1,6 +1,8 @@
 clearvars; format short e;
+addpath('../../../axibie/utils');
 addpath('../../utils');
 addpath('../../matlab');
+addpath('../../external/kdtree/toolbox')
 addpath('../../external/fmm3d/matlab');   % lfmm3d/Lap3dDLPfmm
 
 % ---- geometry switch (mirror axibie/testStokesDir.m / the SLP & SLPn tests) ----
@@ -50,93 +52,71 @@ for kk=1:numel(np_vals)
   phis=2*pi*(0:nang-1)/nang;                            % 3D ring UNIT normals [azimuth outer, meridian inner]
   s3dnx=[reshape(real(s.nx(:))*cos(phis),1,[]); reshape(real(s.nx(:))*sin(phis),1,[]); repmat(imag(s.nx(:)).',1,nang)];
 
-  % 2. loop over patch and compute close interaction nodes, and this is essentially 2 x N computation
-  % FROZEN close-correction path (uncomment to compare): t = s;                                                % self: target t is source s
-  % FROZEN close-correction path (uncomment to compare): tx = t.x(:); nt = numel(tx);
-  % FROZEN close-correction path (uncomment to compare): t3dx = [real(tx).'; zeros(1,nt); imag(tx).'];
-  % FROZEN close-correction path (uncomment to compare): sx_r = [real(s.x(:)) imag(s.x(:))]';
-  % FROZEN close-correction path (uncomment to compare): tx_r = [real(t.x(:)) imag(t.x(:))]';
-  % FROZEN close-correction path (uncomment to compare): tcxi = zeros(np+1,1); ntcx = 0;                       % preallocate (INOUT, mex-style)
-  % [tcxi, ntcx] = axps_closesize(nt, tx, t3dx, p, np, sx, sws, gate, tcxi, ntcx);
-  % FROZEN close-correction path (uncomment to compare): [tcxi, ntcx] = axps_closesize_mex(nt, tx, t3dx, p, np, sx, sws, gate, tcxi, ntcx);
+  % 2. per-panel SELF system matrix: naive physical matrix in ONE call (theta=0
+  %    block-row evaluated + circulant tile inside), then per-panel close-overwrite
+  %    written into ALL azimuth row-blocks with the same circulant shift
+  % to be updated to level-2 axp_physmat_setup_mex
+  t0 = [real(sx).'; zeros(1,N); imag(sx).'];          % theta=0 meridian 3D coords
+  [As, Ad] = axps_naivelapsdlp_physmat_mex(N, sx, t0, p, np, nang, sx, snx, sws, pmodes, 1, N*nang, [], []);
+  Aself = As + Ad;
+  for j = 1:np
+    idxj = (j-1)*p + (1:p);
+    Tj = find(abs(sx - sxlo(j)) + abs(sx - sxhi(j)) < 1.85*sum(sws(idxj)));
+    if isempty(Tj), continue, end
+    icl = 0; if j==1, icl = -1; elseif j==np, icl = 1; end
+    P0 = [real(sx(Tj)).'; zeros(1,numel(Tj)); imag(sx(Tj)).'];
+    skx = sx(idxj);
+    [S3p,D3p] = axps_closelapsdlp_panel_mex(numel(Tj), sx(Tj).', P0, [], p, nang, skx, ...
+                [],[],[], sxlo(j), sxhi(j), [],[],[],[],[], pmodes, iside, icl, ...
+                [],[],[],[],[],[]);
+    SD = S3p + D3p;
+    for a = 1:nang                                    % evaluated once, written nang times
+      rows = (a-1)*N + Tj;
+      cols = reshape(idxj(:) + mod((a-1)+(0:nang-1), nang)*N, 1, []);
+      Aself(rows, cols) = SD;
+    end
+  end
 
-  % 3. allocate space for correction matrix, value, and I J index
-  % FROZEN close-correction path (uncomment to compare): S_ij = zeros(ntcx,nang*p); % for self correction, per panel correction
-  % FROZEN close-correction path (uncomment to compare): K_ij = zeros(ntcx,nang*p);
-  % FROZEN close-correction path (uncomment to compare): idxall = zeros(ntcx,1);
-
-  % 4. actual computation
-  % FROZEN close-correction path (uncomment to compare): [S_ij, idxall] = axps_closeslp_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, ...
-  % FROZEN close-correction path (uncomment to compare):     s3d.x, s3dnx, s3d.w, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall);
-  % FROZEN close-correction path (uncomment to compare): [K_ij, idxall] = axps_closedlp_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, ...
-  % FROZEN close-correction path (uncomment to compare):     s3d.x, s3dnx, s3d.w, pmodes, iside, iclosed, ntcx, tcxi, K_ij, idxall);
-
-  % 5. build actual system matrix
-  % FROZEN close-correction path (uncomment to compare): As = zeros(N*nang);                                    % preallocate (INOUT, mex-style)
-  % FROZEN close-correction path (uncomment to compare): Ad = zeros(N*nang);
-  % As = axps_closeasm(1,1,1, nt, tx, t3dx, p, np, nang, s3d.x, s3dnx, s3d.w, 1.0, ntcx, tcxi, idxall, S_ij, 1, As);
-  % Ad = axps_closeasm(1,3,1, nt, tx, t3dx, p, np, nang, s3d.x, s3dnx, s3d.w, 1.0, ntcx, tcxi, idxall, K_ij, 1, Ad);
-  % FROZEN close-correction path (uncomment to compare): As = axps_closeasm_mex(1,1,1, nt, tx, t3dx, p, np, nang, s3d.x, s3dnx, s3d.w, 1.0, ntcx, tcxi, idxall, S_ij, 1, As);
-  % FROZEN close-correction path (uncomment to compare): Ad = axps_closeasm_mex(1,3,1, nt, tx, t3dx, p, np, nang, s3d.x, s3dnx, s3d.w, 1.0, ntcx, tcxi, idxall, K_ij, 1, Ad);
-
-  % 5'. LEVEL-2 PHYSICAL master (axp_physmat_setup_mex): assembled dense self operators, LAB
-  %     node-interleaved (== axp_physmat_mex's xA); DLP self carries the exterior jump (+1/2 I + D)
-  nblk = N*nang;
-  As = axp_physmat_setup_mex(1,1,0.0,1,1,p,np,pmodes,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
-      sx,snx,sws,swxp,tpan,0,[1;1],zeros(3,0),zeros(3,0),eye(3),zeros(3,1),nblk,nblk);   % S
-  Ad = axp_physmat_setup_mex(1,3,0.0,1,1,p,np,pmodes,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
-      sx,snx,sws,swxp,tpan,0,[1;1],zeros(3,0),zeros(3,0),eye(3),zeros(3,1),nblk,nblk);   % +1/2 I + D
-
-  % 6. solve (dense direct backslash, as the multi dense reference: combined (D+S) full-rank)
+  % 3. solve (dense direct backslash, as the multi dense reference: combined (D+S) full-rank)
   uphys = Lap3dSLPmat(struct('x',s3d.x), struct('x',[y1 y2],'w',[1 1]))*[q1;q2];   % Dirichlet data = interior-charge potential at the 3D surface nodes ([azimuth-outer, node-inner])
-  A = As + Ad;
-  % FROZEN close-correction path (uncomment to compare): [sigphys,flag,relres,iter] = gmres(A, uphys, [], 1e-14, 200);
-  % FROZEN close-correction path (uncomment to compare): fprintf('  gmres: flag=%d  iters=%d  relres=%.3e\n', flag, iter(2), relres);
-  sigphys = A\uphys;
+  sigphys = Aself\uphys;
 
-  % 7.
-  % FROZEN close-correction path (uncomment to compare): ns=N*nang;
-  % FROZEN close-correction path (uncomment to compare): ttx = (rho3 + 1i*z3).'; nt3 = M3;
-  % FROZEN close-correction path (uncomment to compare): tcxi3 = zeros(np+1,1); ntcx3 = 0;
-  % [tcxi3, ntcx3] = axps_closesize(nt3, ttx, P, p, np, sx, sws, gate, tcxi3, ntcx3);
-  % FROZEN close-correction path (uncomment to compare): [tcxi3, ntcx3] = axps_closesize_mex(nt3, ttx, P, p, np, sx, sws, gate, tcxi3, ntcx3);
-
-  % 8.
-  % FROZEN close-correction path (uncomment to compare): S3 = zeros(ntcx3,nang*p); idx3 = zeros(ntcx3,1);
-  % FROZEN close-correction path (uncomment to compare): D3 = zeros(ntcx3,nang*p);
-  % FROZEN close-correction path (uncomment to compare): [S3, idx3] = axps_closeslp_mex(nt3, ttx, P, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3d.x, s3dnx, s3d.w, pmodes, iside, iclosed, ntcx3, tcxi3, S3, idx3);
-  % FROZEN close-correction path (uncomment to compare): [D3, idx3] = axps_closedlp_mex(nt3, ttx, P, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3d.x, s3dnx, s3d.w, pmodes, iside, iclosed, ntcx3, tcxi3, D3, idx3);
-
-  % 9'. matrix-free
-  % FROZEN close-correction path (uncomment to compare): u3sv = zeros(nt3,1);
-  % FROZEN close-correction path (uncomment to compare): u3dv = zeros(nt3,1);
-  % u3sv = axps_closeopasm(1,1,1, nt3, ttx, P, p, np, nang, s3d.x, s3dnx, s3d.w, ntcx3, tcxi3, idx3, S3, sigphys, 0, 1e-14, u3sv);
-  % u3dv = axps_closeopasm(1,3,1, nt3, ttx, P, p, np, nang, s3d.x, s3dnx, s3d.w, ntcx3, tcxi3, idx3, D3, sigphys, 0, 1e-14, u3dv);
-  % FROZEN close-correction path (uncomment to compare): u3sv = Lap3dSLPfmm(struct('x',P), struct('x',s3d.x,'w',s3d.w), sigphys, 1e-14);
-  % FROZEN close-correction path (uncomment to compare): u3sv = axps_closecorrapply_mex(1, nt3, p, np, nang, ntcx3, tcxi3, idx3, S3, sigphys, 0, u3sv);
-  % FROZEN close-correction path (uncomment to compare): u3dv = Lap3dDLPfmm(struct('x',P), struct('x',s3d.x,'nx',s3dnx,'w',s3d.w), sigphys, 1e-14);
-  % FROZEN close-correction path (uncomment to compare): u3dv = axps_closecorrapply_mex(1, nt3, p, np, nang, ntcx3, tcxi3, idx3, D3, sigphys, 0, u3dv);
-  % FROZEN close-correction path (uncomment to compare): u3 = u3sv.'+u3dv.';
-
-  % 9''. LEVEL-2 PHYSICAL master eval (iinter=3): master fills its internal near zone (far rows
-  %      stay 0) -> dense naive (D+S) base at all grid targets, master rows replace it
-  AevS = axp_physmat_setup_mex(1,1,0.0,3,1,p,np,pmodes,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
-      sx,snx,sws,swxp,tpan,M3,[1;M3+1],P,zeros(3,M3),eye(3),zeros(3,1),M3,nblk);
-  AevD = axp_physmat_setup_mex(1,3,0.0,3,1,p,np,pmodes,iside,iclosed,[1;N+1],[1;np+2],N,np+1, ...
-      sx,snx,sws,swxp,tpan,M3,[1;M3+1],P,zeros(3,M3),eye(3),zeros(3,1),M3,nblk);
-  Aev = AevS + AevD;
-  u3v = (Lap3dDLPmat(struct('x',P), struct('x',s3d.x,'w',s3d.w,'nx',s3dnx)) ...
-       + Lap3dSLPmat(struct('x',P), struct('x',s3d.x,'w',s3d.w)))*sigphys;   % dense naive (D+S) base
-  fillm = any(Aev~=0,2);                                % targets the master filled (its internal near zone)
-  uev = Aev*sigphys; u3v(fillm) = uev(fillm);
-  u3 = u3v.';
+  % 4. per-panel post-eval: naive physical matrix in ONE call, then per-panel
+  %    close-overwrite on each panel's 1.85 near zone
+  ttx = (rho3 + 1i*z3).';
+  [Astargs, Adtargs] = axps_naivelapsdlp_physmat_mex(M3, ttx, P, p, np, nang, sx, snx, sws, pmodes, 0, M3, [], []);
+  Atargs = Astargs + Adtargs;
+  %%%%% 
+  for j = 1:np
+    idxj = (j-1)*p + (1:p);
+    Tj = find(abs(ttx - sxlo(j)) + abs(ttx - sxhi(j)) < 1.85*sum(sws(idxj)));
+    if isempty(Tj), continue, end
+    iclosed = 0; if j==1, iclosed = -1; elseif j==np, iclosed = 1; end
+    skx = sx(idxj);
+    [S3p,D3p] = axps_closelapsdlp_panel_mex(numel(Tj), ttx(Tj).', P(:,Tj), [], p, nang, skx, ...
+                [],[],[], sxlo(j), sxhi(j), [],[],[],[],[], pmodes, iside, iclosed, ...
+                [],[],[],[],[],[]);
+    ring = reshape(idxj(:) + (0:nang-1)*N, [], 1);
+    Atargs(Tj, ring) = S3p + D3p;
+  end
+  u3p = (Atargs*sigphys).';
 
   % 5. log10 error
-  Uex3=uex(P); err3=abs(u3-Uex3)/max(abs(Uex3));
-  inb=d3<0.1; errmax(kk)=max(err3);
+  Uex3=uex(P); 
   fprintf('Laplace combined (D+S) all-modes Dirichlet BVP [%s] (delta mex): N=%d, np=%d, pmodes=%d, M3=%d\n',shape,N,np,pmodes,M3);
-  if any(inb), fprintf('  near band (d<0.1):  max err = %.3e  (%d pts)\n',max(err3(inb)),nnz(inb)); end
-  fprintf('  far field (d>=0.1): max err = %.3e  (%d pts)\n',max(err3(~inb)),nnz(~inb));
+  err3p=abs(u3p-Uex3)/max(abs(Uex3));
+  errmax(kk)=max(err3p);
+  fprintf('  4  per-panel eval (all-axi): max err over ALL %d targets = %.3e\n', M3, max(errmax(kk)));
+
+  % per-loop scatter3 log10 error of the 9''' solution (which region is causing issue)
+  figure(3); clf,
+  thm=linspace(0,2*pi,49);
+  mesh(real(s.x)*cos(thm), real(s.x)*sin(thm), imag(s.x)*ones(size(thm)), ...
+       'EdgeColor',[0.55 0.55 0.55],'FaceColor','none','EdgeAlpha',0.35);
+  scatter3(P(1,:),P(2,:),P(3,:),8,log10(max(err3p,1e-17)),'filled');
+  axis equal; view(35,18); grid on; colormap('jet'); colorbar;
+  title(sprintf('9'''''' np=%d (max %.1e)', np, max(err3p)));
+  drawnow;
 end
 
 figure(1),clf; semilogy(np_vals,errmax,'o-k'); xlabel('n_p'); ylabel('max err'); grid on;
@@ -147,7 +127,7 @@ figure(2),clf; hold on;
 thm=linspace(0,2*pi,49);
 Lx=real(s.x)*cos(thm); Ly=real(s.x)*sin(thm); Lz=imag(s.x)*ones(size(thm));
 mesh(Lx,Ly,Lz,'EdgeColor',[0.55 0.55 0.55],'FaceColor','none','EdgeAlpha',0.35);
-scatter3(P(1,:),P(2,:),P(3,:),18,log10(max(err3,1e-17)),'filled');
+scatter3(P(1,:),P(2,:),P(3,:),18,log10(max(err3p,1e-17)),'filled');
 plot3(y1(1),y1(2),y1(3),'p','MarkerSize',16,'MarkerFaceColor',[0.85 0.1 0.1],'MarkerEdgeColor','k');
 plot3(y2(1),y2(2),y2(3),'p','MarkerSize',16,'MarkerFaceColor',[0.85 0.1 0.1],'MarkerEdgeColor','k');
 cb=colorbar; cb.Label.String='log_{10}|u_h-u_{exact}|/max|u_{exact}|';
