@@ -152,6 +152,18 @@ subroutine axps_closestoksdlp_panel_r64(nt, tx, t3dx, tn3dx, p, nang, sx, snx, s
              s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, idxall, iform, As3d, Ad3d)
 end subroutine axps_closestoksdlp_panel_r64
 
+subroutine axps_closestoksdlpn_panel_r64(nt, tx, t3dx, tn3dx, p, nang, sx, snx, sws, swxp, sxlo, sxhi, tpan, gate, &
+                             s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, idxall, iform, Asn3d, Adn3d)
+  use axissym_physop_sparse_mod, only: panel => axissym_closestoksdlpn_panel_r64
+  implicit none
+  integer(8), intent(in)    :: nt, p, nang, pmodes, iside, iclosed, ntcx, iform
+  complex(8), intent(in)    :: tx(nt), sx(p), snx(p), swxp(p), sxlo, sxhi
+  real(8),    intent(in)    :: t3dx(3,nt), tn3dx(3,nt), sws(p), tpan(*), gate, s3dx(3,*), s3dnx(3,*), s3dw(*), mu, tcxi(*), idxall(*)
+  real(8),    intent(inout) :: Asn3d(3*nt,3*nang*p), Adn3d(3*nt,3*nang*p)
+  call panel(nt, tx, t3dx, tn3dx, p, nang, sx, snx, sws, swxp, sxlo, sxhi, tpan, gate, &
+             s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, idxall, iform, Asn3d, Adn3d)
+end subroutine axps_closestoksdlpn_panel_r64
+
 subroutine axps_naivelapsdlp_physmat_r64(nt, tx, t3dx, p, np, nang, sx, snx, sws, pmodes, ifself, nrA, As3d, Ad3d)
   use axissym_physop_sparse_mod, only: physmat => axissym_naivelapsdlp_physmat_r64
   implicit none
@@ -171,3 +183,23 @@ subroutine axps_naivelapsdlpn_physmat_r64(nt, tx, t3dx, t3dnx, p, np, nang, sx, 
   real(8),    intent(inout) :: As3d(nrA,np*p*nang), Ad3d(nrA,np*p*nang)
   call physmat(nt, tx, t3dx, t3dnx, p, np, nang, sx, snx, sws, pmodes, ifself, nrA, As3d, Ad3d)
 end subroutine axps_naivelapsdlpn_physmat_r64
+
+subroutine axps_naivestoksdlp_physmat_r64(nt, tx, t3dx, p, np, nang, sx, snx, sws, pmodes, mu, ifself, nrA, As3d, Ad3d)
+  use axissym_physop_sparse_mod, only: physmat => axissym_naivestoksdlp_physmat_r64
+  implicit none
+  integer(8), intent(in)    :: nt, p, np, nang, pmodes, ifself, nrA
+  complex(8), intent(in)    :: tx(nt), sx(p*np), snx(p*np)
+  real(8),    intent(in)    :: t3dx(3,nt), sws(p*np), mu
+  real(8),    intent(inout) :: As3d(nrA,3*np*p*nang), Ad3d(nrA,3*np*p*nang)
+  call physmat(nt, tx, t3dx, p, np, nang, sx, snx, sws, pmodes, mu, ifself, nrA, As3d, Ad3d)
+end subroutine axps_naivestoksdlp_physmat_r64
+
+subroutine axps_naivestoksdlpn_physmat_r64(nt, tx, t3dx, t3dnx, p, np, nang, sx, snx, sws, pmodes, mu, ifself, nrA, Asn3d, Adn3d)
+  use axissym_physop_sparse_mod, only: physmat => axissym_naivestoksdlpn_physmat_r64
+  implicit none
+  integer(8), intent(in)    :: nt, p, np, nang, pmodes, ifself, nrA
+  complex(8), intent(in)    :: tx(nt), sx(p*np), snx(p*np)
+  real(8),    intent(in)    :: t3dx(3,nt), t3dnx(3,nt), sws(p*np), mu
+  real(8),    intent(inout) :: Asn3d(nrA,3*np*p*nang), Adn3d(nrA,3*np*p*nang)
+  call physmat(nt, tx, t3dx, t3dnx, p, np, nang, sx, snx, sws, pmodes, mu, ifself, nrA, Asn3d, Adn3d)
+end subroutine axps_naivestoksdlpn_physmat_r64

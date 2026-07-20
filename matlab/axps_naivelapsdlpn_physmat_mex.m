@@ -8,4 +8,5 @@ mex_id_ = 'axps_naivelapsdlpn_physmat_r64(c i int64_t[x], c i dcomplex[x], c i d
 [As3d, Ad3d] = AxiStokes3D_mex(mex_id_, nt, tx, t3dx, t3dnx, p, np, nang, sx, snx, sws, M, ifself, nrA, As3d, Ad3d, 1, nt, 3, nt, 3, nt, 1, 1, 1, N, N, N, 1, 1, 1, nrA, Nnang, nrA, Nnang);
 end
 
-% SLP n-mode split coefs C1(log), C2(smooth)
+% whole-particle naive (smooth-quadrature) Stokes S+D physical operators As3d, Ad3d (LAB xyz innermost)
+% ifself=1: [3*N*nang x 3*N*nang] SELF (theta=0 block-rows + rotz-conjugated circulant tile); ifself=0: [3*nt x 3*N*nang] field

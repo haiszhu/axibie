@@ -20,5 +20,4 @@ mex_id_ = 'axps_closestoksdlp_panel_r64(c i int64_t[x], c i dcomplex[x], c i dou
 [As3d, Ad3d] = AxiStokes3D_mex(mex_id_, nt, tx, t3dx, tn3dx, p, nang, sx, snx, sws, swxp, sxlo, sxhi, tpan, gate, s3dx, s3dnx, s3dw, M, iside, iclosed, mu, ntcx, tcxi, idxall, iform, As3d, Ad3d, 1, nt, 3, nt, 3, nt, 1, 1, p, p, p, p, 1, 1, 2, 1, 3, 1, 3, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, nt3, cm3, nt3, cm3);
 end
 
-% whole-particle naive (smooth-quadrature) Laplace S+D physical operators As3d, Ad3d
-% ifself=1: [N*nang x N*nang] SELF (theta=0 block-row + circulant tile); ifself=0: [nt x N*nang] field
+% single-panel Stokes S'+D' (TARGET traction, sigma.n) close-eval physical operators Asn3d, Adn3d [3*nt x 3*nang*p]
