@@ -11,7 +11,7 @@ The quadrature for modal/toroidal Laplace and Stokes Green's function is high-or
 
 ## Installation
 
-Prerequisites: MATLAB (with its MEX compiler SDK), a recent `gfortran` (the [`Makefile`](Makefile) uses `gfortran-15`), and [mwrap](https://github.com/zgimbutas/mwrap) (expected at `~/mwrap/mwrap`).
+Prerequisites: MATLAB (with its MEX compiler SDK), homebrew `gfortran`, and [mwrap](https://github.com/zgimbutas/mwrap) (expected at `~/mwrap/mwrap`).
 
 Build the Fortran compute layer and the MEX gateway from the repository root:
 
@@ -27,6 +27,7 @@ You can now run any driver in [`/test/stokes`](test/stokes) or [`/test/laplace`]
 ```matlab
 run('test/laplace/test_axissymslap_lap_slp_bvp_0th.m')
 run('test/laplace/test_axissymslap_lap_slp_bvp.m')
+run('test/laplace/test_axissymslap_lap_slp_bvp_physmat.m')
 ```
 
 ## Examples
@@ -89,11 +90,12 @@ Calling `axpso_close_setup` to build per-particle block in physical space. (part
 
 ```matlab
 % two handles per layer: SELF (iinter=1) and CROSS (iinter=2); here Stokes SLP (2, 1, mu).
+% args 3-4: ipanel (0 per-particle | 1 per-panel fill), dbg (0 handle-only).
 % Geometry packed as in the FMM rung below (flat per-particle arrays + prefix-sum offsets).
-hself  = axpso_close_setup_mex(2, 1, mu, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
+hself  = axpso_close_setup_mex(2, 1, 1, 0, mu, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
            geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
            rball, K*Nnod, targoff, Xall, Nall, Rm, Cc, 0);          % FULL close-eval entries
-hcross = axpso_close_setup_mex(2, 1, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
+hcross = axpso_close_setup_mex(2, 1, 1, 0, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
            geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
            rball, K*Nnod, targoff, Xall, Nall, Rm, Cc, 0);
 axpso_close2corr_set_mex(hself,  K, geomoff, nsx, sxf, snxf, swsf, targoff, K*Nnod, Xall, Nall, Cc);
@@ -125,11 +127,12 @@ At scale the close-evaluation becomes a *sparse* correction added to a global FM
 % drivers below.  Here: Laplace SLPn (ikernel=1, ilayer=2, params=0), exterior (iside=1).
 n = K*Nnod;                                        % scalar Laplace: 1 dof per node
 
-% the near correction as two handles -- SELF (iinter=1) and CROSS (iinter=2):
-hself  = axpso_corr_setup_mex(1, 2, 0.0, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
+% the near correction as two handles -- SELF (iinter=1) and CROSS (iinter=2);
+% args 3-4: ipanel (0 per-particle | 1 per-panel fill), dbg (0 handle-only):
+hself  = axpso_corr_setup_mex(1, 2, 1, 0, 0.0, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
            geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
            rball, n, targoff, Xall, Nall, Rm, Cc, 0);
-hcross = axpso_corr_setup_mex(1, 2, 0.0, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
+hcross = axpso_corr_setup_mex(1, 2, 1, 0, 0.0, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
            geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
            rball, n, targoff, Xall, Nall, Rm, Cc, 0);
 
@@ -189,12 +192,26 @@ GMRES drivers, scaling from `K=8` to the `K=3375` ultra:
 
 7. James Garritano, Yuval Kluger, Vladimir Rokhlin, Kirill Serkh. 2022. "On the efficient evaluation of the azimuthal Fourier components of the Green's function for Helmholtz's equation in cylindrical coordinates." *Journal of Computational Physics* 471: 111585.
 
+## Difficulty
+
+The work climbs a ladder where each rung is somewhat more complicated than the one above
+it:
+
+- **Laplace, 0th mode** — the easiest case (scalar kernel, single azimuthal mode).
+- **Laplace, all modes** — somewhat more complicated than the 0th mode.
+- **Stokes, all modes** — somewhat more complicated than Laplace modal (vector kernel).
+- **Stokes modal kernel split** — somewhat more complicated than Stokes modal.
+- **Multi-particle** — somewhat more complicated than a single particle.
+- **Sparse close correction + FMM iterative solver** — somewhat more complicated than the
+  dense multi-particle operator.
+- **HPC implementation** — somewhat more complicated than the naive iterative
+  solver, and the rung I had to stop on before it is done...
 
 ## To do list
 
-* (debug DLPn done, need more testing) Implement high order Fourier modes to enable nonsymmetric potential and flow simulation
-* (prototype done, need cleanup and memory footprint reduction) Implement multiple partciles + possible interaction with confined geometry
-* (what is SLPnn, DLPnn? Azz in Dspecialquad for 2D?) Laplace case is a by-product, why not
-* (prototype done) Accelerate via FMM3D/PVFMM/DMK
-* (need to learn) 3d flow visualization
-* (do we need variation in centerline/not axisymmetric any more) CSBQ
+* (done) Implement high order Fourier modes to enable nonsymmetric potential and flow simulation
+* (multiple particles done, confined geometry not) Implement multiple partciles + possible interaction with confined geometry
+* (done, but what is SLPnn, DLPnn?) Laplace case is a by-product, why not
+* (done, via FMM3D) Accelerate via FMM3D/PVFMM/DMK
+* (prototype done, need to learn more) 3d flow visualization
+* (maybe for later, variation in centerline/not axisymmetric any more) CSBQ
