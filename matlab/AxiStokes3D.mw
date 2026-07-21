@@ -322,7 +322,7 @@ A=reshape(A, nra, nca, mp1);
 end
 
 % ==== physical-space SPARSE close-correction (pass 2/3): per-panel fourier COMPUTE (Laplace SLP) ====
-@function [S_ij, idxall] = axps_closeslp_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall)
+@function [S_ij, idxall] = axps_closeslp_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall, iform)
 nt=double(nt); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
 iside=double(iside); iclosed=double(iclosed); ntcx=double(ntcx); gate=double(gate);
 tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:));
@@ -330,11 +330,12 @@ sws=double(sws(:)); tpan=double(tpan(:)); tcxi=double(tcxi(:)); s3dw=double(s3dw
 nsp=p*np; npp1=np+1; nsf=nsp*nang; nt3=3*nt; ns3=3*nsf; nap=nang*p;
 t3dx=double(reshape(t3dx,3,nt)); s3dx=double(reshape(s3dx,3,nsf)); s3dnx=double(reshape(s3dnx,3,nsf));
 S_ij=double(reshape(S_ij,ntcx,nap)); idxall=double(idxall(:));
-# FORTRAN axps_closeslp_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, int[1] ntcx, double[npp1] tcxi, inout double[ntcx,nap] S_ij, inout double[ntcx] idxall);
+if ~exist('iform','var') || isempty(iform), iform=1; else, iform=double(iform(1)); end
+# FORTRAN axps_closeslp_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, int[1] ntcx, double[npp1] tcxi, inout double[ntcx,nap] S_ij, inout double[ntcx] idxall, int[1] iform);
 end
 
 % ==== physical-space SPARSE close-correction (pass 2/3): per-panel fourier COMPUTE (Laplace SLPn, S') ====
-@function [S_ij, idxall] = axps_closeslpn_mex(nt, tx, t3dx, tn3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall)
+@function [S_ij, idxall] = axps_closeslpn_mex(nt, tx, t3dx, tn3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall, iform)
 nt=double(nt); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
 iside=double(iside); iclosed=double(iclosed); ntcx=double(ntcx); gate=double(gate);
 tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:));
@@ -342,11 +343,12 @@ sws=double(sws(:)); tpan=double(tpan(:)); tcxi=double(tcxi(:)); s3dw=double(s3dw
 nsp=p*np; npp1=np+1; nsf=nsp*nang; nt3=3*nt; ns3=3*nsf; nap=nang*p;
 t3dx=double(reshape(t3dx,3,nt)); tn3dx=double(reshape(tn3dx,3,nt)); s3dx=double(reshape(s3dx,3,nsf)); s3dnx=double(reshape(s3dnx,3,nsf));
 S_ij=double(reshape(S_ij,ntcx,nap)); idxall=double(idxall(:));
-# FORTRAN axps_closeslpn_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, double[nt3] tn3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, int[1] ntcx, double[npp1] tcxi, inout double[ntcx,nap] S_ij, inout double[ntcx] idxall);
+if ~exist('iform','var') || isempty(iform), iform=1; else, iform=double(iform(1)); end
+# FORTRAN axps_closeslpn_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, double[nt3] tn3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, int[1] ntcx, double[npp1] tcxi, inout double[ntcx,nap] S_ij, inout double[ntcx] idxall, int[1] iform);
 end
 
 % ==== physical-space SPARSE close-correction (pass 2/3): per-panel fourier COMPUTE (Laplace DLP) ====
-@function [S_ij, idxall] = axps_closedlp_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall)
+@function [S_ij, idxall] = axps_closedlp_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall, iform)
 nt=double(nt); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
 iside=double(iside); iclosed=double(iclosed); ntcx=double(ntcx); gate=double(gate);
 tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:));
@@ -354,7 +356,21 @@ sws=double(sws(:)); tpan=double(tpan(:)); tcxi=double(tcxi(:)); s3dw=double(s3dw
 nsp=p*np; npp1=np+1; nsf=nsp*nang; nt3=3*nt; ns3=3*nsf; nap=nang*p;
 t3dx=double(reshape(t3dx,3,nt)); s3dx=double(reshape(s3dx,3,nsf)); s3dnx=double(reshape(s3dnx,3,nsf));
 S_ij=double(reshape(S_ij,ntcx,nap)); idxall=double(idxall(:));
-# FORTRAN axps_closedlp_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, int[1] ntcx, double[npp1] tcxi, inout double[ntcx,nap] S_ij, inout double[ntcx] idxall);
+if ~exist('iform','var') || isempty(iform), iform=1; else, iform=double(iform(1)); end
+# FORTRAN axps_closedlp_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, int[1] ntcx, double[npp1] tcxi, inout double[ntcx,nap] S_ij, inout double[ntcx] idxall, int[1] iform);
+end
+
+% Laplace DLPn (traction D', target normals) close fill worker: family clone of axps_closeslpn_mex.
+@function [S_ij, idxall] = axps_closedlpn_mex(nt, tx, t3dx, tn3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, ntcx, tcxi, S_ij, idxall, iform)
+nt=double(nt); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
+iside=double(iside); iclosed=double(iclosed); ntcx=double(ntcx); gate=double(gate);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:));
+sws=double(sws(:)); tpan=double(tpan(:)); tcxi=double(tcxi(:)); s3dw=double(s3dw(:));
+nsp=p*np; npp1=np+1; nsf=nsp*nang; nt3=3*nt; ns3=3*nsf; nap=nang*p;
+t3dx=double(reshape(t3dx,3,nt)); tn3dx=double(reshape(tn3dx,3,nt)); s3dx=double(reshape(s3dx,3,nsf)); s3dnx=double(reshape(s3dnx,3,nsf));
+S_ij=double(reshape(S_ij,ntcx,nap)); idxall=double(idxall(:));
+if ~exist('iform','var') || isempty(iform), iform=1; else, iform=double(iform(1)); end
+# FORTRAN axps_closedlpn_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, double[nt3] tn3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, int[1] ntcx, double[npp1] tcxi, inout double[ntcx,nap] S_ij, inout double[ntcx] idxall, int[1] iform);
 end
 
 % ==== physical-space SPARSE close-correction (pass 1/3): kdtree SIZING ====
@@ -390,7 +406,7 @@ if iself, nrU=ncnsf; else, nrU=nc*nt; end
 end
 
 % ==== physical-space SPARSE close-correction (pass 2/3): Stokes SLP velocity COMPUTE (nc=3) ====
-@function [S_ij, idxall] = axps_closestokslp_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, S_ij, idxall)
+@function [S_ij, idxall] = axps_closestokslp_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, S_ij, idxall, iform)
 nt=double(nt); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
 iside=double(iside); iclosed=double(iclosed); ntcx=double(ntcx); gate=double(gate); mu=double(mu);
 tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:));
@@ -398,11 +414,12 @@ sws=double(sws(:)); tpan=double(tpan(:)); tcxi=double(tcxi(:)); s3dw=double(s3dw
 nsp=p*np; npp1=np+1; nsf=nsp*nang; nt3=3*nt; ns3=3*nsf; r3=3*ntcx; c3=3*nang*p;
 t3dx=double(reshape(t3dx,3,nt)); s3dx=double(reshape(s3dx,3,nsf)); s3dnx=double(reshape(s3dnx,3,nsf));
 S_ij=double(reshape(S_ij,r3,c3)); idxall=double(idxall(:));
-# FORTRAN axps_closestokslp_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, double[1] mu, int[1] ntcx, double[npp1] tcxi, inout double[r3,c3] S_ij, inout double[ntcx] idxall);
+if ~exist('iform','var') || isempty(iform), iform=1; else, iform=double(iform(1)); end
+# FORTRAN axps_closestokslp_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, double[1] mu, int[1] ntcx, double[npp1] tcxi, inout double[r3,c3] S_ij, inout double[ntcx] idxall, int[1] iform);
 end
 
 % ==== physical-space SPARSE close-correction (pass 2/3): Stokes SLPn traction S' COMPUTE (nc=3) ====
-@function [S_ij, idxall] = axps_closestokslpn_mex(nt, tx, t3dx, tn3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, S_ij, idxall)
+@function [S_ij, idxall] = axps_closestokslpn_mex(nt, tx, t3dx, tn3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, S_ij, idxall, iform)
 nt=double(nt); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
 iside=double(iside); iclosed=double(iclosed); ntcx=double(ntcx); gate=double(gate); mu=double(mu);
 tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:));
@@ -411,11 +428,25 @@ nsp=p*np; npp1=np+1; nsf=nsp*nang; nt3=3*nt; ns3=3*nsf; r3=3*ntcx; c3=3*nang*p;
 t3dx=double(reshape(t3dx,3,nt)); tn3dx=double(reshape(tn3dx,3,nt));
 s3dx=double(reshape(s3dx,3,nsf)); s3dnx=double(reshape(s3dnx,3,nsf));
 S_ij=double(reshape(S_ij,r3,c3)); idxall=double(idxall(:));
-# FORTRAN axps_closestokslpn_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, double[nt3] tn3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, double[1] mu, int[1] ntcx, double[npp1] tcxi, inout double[r3,c3] S_ij, inout double[ntcx] idxall);
+if ~exist('iform','var') || isempty(iform), iform=1; else, iform=double(iform(1)); end
+# FORTRAN axps_closestokslpn_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, double[nt3] tn3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, double[1] mu, int[1] ntcx, double[npp1] tcxi, inout double[r3,c3] S_ij, inout double[ntcx] idxall, int[1] iform);
+end
+
+% Stokes DLP (stresslet velocity, source normals) close fill worker: family clone of axps_closestokslp_mex.
+@function [S_ij, idxall] = axps_closestokdlp_mex(nt, tx, t3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, S_ij, idxall, iform)
+nt=double(nt); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
+iside=double(iside); iclosed=double(iclosed); ntcx=double(ntcx); gate=double(gate); mu=double(mu);
+tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:));
+sws=double(sws(:)); tpan=double(tpan(:)); tcxi=double(tcxi(:)); s3dw=double(s3dw(:));
+nsp=p*np; npp1=np+1; nsf=nsp*nang; nt3=3*nt; ns3=3*nsf; r3=3*ntcx; c3=3*nang*p;
+t3dx=double(reshape(t3dx,3,nt)); s3dx=double(reshape(s3dx,3,nsf)); s3dnx=double(reshape(s3dnx,3,nsf));
+S_ij=double(reshape(S_ij,r3,c3)); idxall=double(idxall(:));
+if ~exist('iform','var') || isempty(iform), iform=1; else, iform=double(iform(1)); end
+# FORTRAN axps_closestokdlp_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, double[1] mu, int[1] ntcx, double[npp1] tcxi, inout double[r3,c3] S_ij, inout double[ntcx] idxall, int[1] iform);
 end
 
 % ==== physical-space SPARSE close-correction (pass 2/3): Stokes DLPn traction D' COMPUTE (nc=3) ====
-@function [S_ij, idxall] = axps_closestokdlpn_mex(nt, tx, t3dx, tn3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, S_ij, idxall)
+@function [S_ij, idxall] = axps_closestokdlpn_mex(nt, tx, t3dx, tn3dx, p, np, nang, sx, snx, sws, swxp, tpan, gate, s3dx, s3dnx, s3dw, pmodes, iside, iclosed, mu, ntcx, tcxi, S_ij, idxall, iform)
 nt=double(nt); p=double(p); np=double(np); nang=double(nang); pmodes=double(pmodes);
 iside=double(iside); iclosed=double(iclosed); ntcx=double(ntcx); gate=double(gate); mu=double(mu);
 tx=double(tx(:)); sx=double(sx(:)); snx=double(snx(:)); swxp=double(swxp(:));
@@ -424,7 +455,8 @@ nsp=p*np; npp1=np+1; nsf=nsp*nang; nt3=3*nt; ns3=3*nsf; r3=3*ntcx; c3=3*nang*p;
 t3dx=double(reshape(t3dx,3,nt)); tn3dx=double(reshape(tn3dx,3,nt));
 s3dx=double(reshape(s3dx,3,nsf)); s3dnx=double(reshape(s3dnx,3,nsf));
 S_ij=double(reshape(S_ij,r3,c3)); idxall=double(idxall(:));
-# FORTRAN axps_closestokdlpn_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, double[nt3] tn3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, double[1] mu, int[1] ntcx, double[npp1] tcxi, inout double[r3,c3] S_ij, inout double[ntcx] idxall);
+if ~exist('iform','var') || isempty(iform), iform=1; else, iform=double(iform(1)); end
+# FORTRAN axps_closestokdlpn_r64(int[1] nt, dcomplex[nt] tx, double[nt3] t3dx, double[nt3] tn3dx, int[1] p, int[1] np, int[1] nang, dcomplex[nsp] sx, dcomplex[nsp] snx, double[nsp] sws, dcomplex[nsp] swxp, double[npp1] tpan, double[1] gate, double[ns3] s3dx, double[ns3] s3dnx, double[nsf] s3dw, int[1] pmodes, int[1] iside, int[1] iclosed, double[1] mu, int[1] ntcx, double[npp1] tcxi, inout double[r3,c3] S_ij, inout double[ntcx] idxall, int[1] iform);
 end
 
 % ============================================================
@@ -897,8 +929,8 @@ end
 % ikernel 1 lap|2 stok|3 helm|4 maxw ; ilayer 1 SLP|2 SLPn|3 DLP|4 DLPn ; iinter 1 self|2 cross
 % params = scalar kernel parameter (complex): wavenumber (helm/maxw); stokes reads real(params)
 % as viscosity mu; laplace unused (0).
-@function [handle, nbytes] = axpso_corr_setup_mex(ikernel, ilayer, params, iinter, K, p, np, pmodes, iside, iclosed, gate, geomoff, tpanoff, nsx, ntpan, sx, snx, sws, swxp, tpan, rball, ntarg, targoff, targ, targnx, Rm, Cc, handle)
-ikernel=double(ikernel); ilayer=double(ilayer); iinter=double(iinter);
+@function [handle, nbytes] = axpso_corr_setup_mex(ikernel, ilayer, ipanel, dbg, params, iinter, K, p, np, pmodes, iside, iclosed, gate, geomoff, tpanoff, nsx, ntpan, sx, snx, sws, swxp, tpan, rball, ntarg, targoff, targ, targnx, Rm, Cc, handle)
+ikernel=double(ikernel); ilayer=double(ilayer); ipanel=double(ipanel(1)); dbg=double(dbg(1)); iinter=double(iinter);
 K=double(K); iside=double(iside); iclosed=double(iclosed);
 params=complex(double(params)); gate=double(gate); rball=double(rball); ntarg=double(ntarg);
 nsx=double(nsx); ntpan=double(ntpan); kp1=K+1; k9=9*K; k3=3*K;
@@ -908,13 +940,29 @@ sx=reshape(double(sx),nsx,1); snx=reshape(double(snx),nsx,1); swxp=reshape(doubl
 sws=reshape(double(sws),nsx,1); tpan=reshape(double(tpan),ntpan,1);
 targ=double(reshape(targ,3,ntarg)); targnx=double(reshape(targnx,3,ntarg));
 Rm=double(reshape(Rm,9,K)); Cc=double(reshape(Cc,3,K)); handle=double(handle); nbytes=0;
-# FORTRAN axpso_corr_setup_r64(int[1] ikernel, int[1] ilayer, dcomplex[1] params, int[1] iinter, int[1] K, int[K] p, int[K] np, int[K] pmodes, int[1] iside, int[1] iclosed, double[1] gate, int[kp1] geomoff, int[kp1] tpanoff, int[1] nsx, int[1] ntpan, dcomplex[nsx] sx, dcomplex[nsx] snx, double[nsx] sws, dcomplex[nsx] swxp, double[ntpan] tpan, double[1] rball, int[1] ntarg, int[kp1] targoff, double[3,ntarg] targ, double[3,ntarg] targnx, double[k9] Rm, double[k3] Cc, inout double[1] handle, inout double[1] nbytes);
+# FORTRAN axpso_corr_setup_r64(int[1] ikernel, int[1] ilayer, int[1] ipanel, int[1] dbg, dcomplex[1] params, int[1] iinter, int[1] K, int[K] p, int[K] np, int[K] pmodes, int[1] iside, int[1] iclosed, double[1] gate, int[kp1] geomoff, int[kp1] tpanoff, int[1] nsx, int[1] ntpan, dcomplex[nsx] sx, dcomplex[nsx] snx, double[nsx] sws, dcomplex[nsx] swxp, double[ntpan] tpan, double[1] rball, int[1] ntarg, int[kp1] targoff, double[3,ntarg] targ, double[3,ntarg] targnx, double[k9] Rm, double[k3] Cc, inout double[1] handle, inout double[1] nbytes);
 end
 
 % unified handle-based FULL close-eval operator setup -- SAME signature/workflow as corr_setup,
 % but the fill stores the full close-eval value (for explicit assembly) instead of the correction.
 % CROSS/EVAL targets are rotated into each source frame INSIDE the module (loc = R_k' (targ-C_k)).
-@function [handle, nbytes] = axpso_close_setup_mex(ikernel, ilayer, params, iinter, K, p, np, pmodes, iside, iclosed, gate, geomoff, tpanoff, nsx, ntpan, sx, snx, sws, swxp, tpan, rball, ntarg, targoff, targ, targnx, Rm, Cc, handle)
+@function [handle, nbytes] = axpso_close_setup_mex(ikernel, ilayer, ipanel, dbg, params, iinter, K, p, np, pmodes, iside, iclosed, gate, geomoff, tpanoff, nsx, ntpan, sx, snx, sws, swxp, tpan, rball, ntarg, targoff, targ, targnx, Rm, Cc, handle)
+ikernel=double(ikernel); ilayer=double(ilayer); ipanel=double(ipanel(1)); dbg=double(dbg(1)); iinter=double(iinter);
+K=double(K); iside=double(iside); iclosed=double(iclosed);
+params=complex(double(params)); gate=double(gate); rball=double(rball); ntarg=double(ntarg);
+nsx=double(nsx); ntpan=double(ntpan); kp1=K+1; k9=9*K; k3=3*K;
+p=double(p(:)); np=double(np(:)); pmodes=double(pmodes(:));
+geomoff=double(geomoff(:)); tpanoff=double(tpanoff(:)); targoff=double(targoff(:));
+sx=reshape(double(sx),nsx,1); snx=reshape(double(snx),nsx,1); swxp=reshape(double(swxp),nsx,1);
+sws=reshape(double(sws),nsx,1); tpan=reshape(double(tpan),ntpan,1);
+targ=double(reshape(targ,3,ntarg)); targnx=double(reshape(targnx,3,ntarg));
+Rm=double(reshape(Rm,9,K)); Cc=double(reshape(Cc,3,K)); handle=double(handle); nbytes=0;
+# FORTRAN axpso_close_setup_r64(int[1] ikernel, int[1] ilayer, int[1] ipanel, int[1] dbg, dcomplex[1] params, int[1] iinter, int[1] K, int[K] p, int[K] np, int[K] pmodes, int[1] iside, int[1] iclosed, double[1] gate, int[kp1] geomoff, int[kp1] tpanoff, int[1] nsx, int[1] ntpan, dcomplex[nsx] sx, dcomplex[nsx] snx, double[nsx] sws, dcomplex[nsx] swxp, double[ntpan] tpan, double[1] rball, int[1] ntarg, int[kp1] targoff, double[3,ntarg] targ, double[3,ntarg] targnx, double[k9] Rm, double[k3] Cc, inout double[1] handle, inout double[1] nbytes);
+end
+
+% CREATE-only half of the handle setups: descriptor + DETECT+SIZE + zeroed vals/idx -> handle.
+% NO kernel work; fill later via axpso_close_setup(_mex) with handle>0 or corr_set push.
+@function [handle, nbytes] = axpso_create_mex(ikernel, ilayer, params, iinter, K, p, np, pmodes, iside, iclosed, gate, geomoff, tpanoff, nsx, ntpan, sx, snx, sws, swxp, tpan, rball, ntarg, targoff, targ, targnx, Rm, Cc, handle)
 ikernel=double(ikernel); ilayer=double(ilayer); iinter=double(iinter);
 K=double(K); iside=double(iside); iclosed=double(iclosed);
 params=complex(double(params)); gate=double(gate); rball=double(rball); ntarg=double(ntarg);
@@ -925,7 +973,7 @@ sx=reshape(double(sx),nsx,1); snx=reshape(double(snx),nsx,1); swxp=reshape(doubl
 sws=reshape(double(sws),nsx,1); tpan=reshape(double(tpan),ntpan,1);
 targ=double(reshape(targ,3,ntarg)); targnx=double(reshape(targnx,3,ntarg));
 Rm=double(reshape(Rm,9,K)); Cc=double(reshape(Cc,3,K)); handle=double(handle); nbytes=0;
-# FORTRAN axpso_close_setup_r64(int[1] ikernel, int[1] ilayer, dcomplex[1] params, int[1] iinter, int[1] K, int[K] p, int[K] np, int[K] pmodes, int[1] iside, int[1] iclosed, double[1] gate, int[kp1] geomoff, int[kp1] tpanoff, int[1] nsx, int[1] ntpan, dcomplex[nsx] sx, dcomplex[nsx] snx, double[nsx] sws, dcomplex[nsx] swxp, double[ntpan] tpan, double[1] rball, int[1] ntarg, int[kp1] targoff, double[3,ntarg] targ, double[3,ntarg] targnx, double[k9] Rm, double[k3] Cc, inout double[1] handle, inout double[1] nbytes);
+# FORTRAN axpso_create_r64(int[1] ikernel, int[1] ilayer, dcomplex[1] params, int[1] iinter, int[1] K, int[K] p, int[K] np, int[K] pmodes, int[1] iside, int[1] iclosed, double[1] gate, int[kp1] geomoff, int[kp1] tpanoff, int[1] nsx, int[1] ntpan, dcomplex[nsx] sx, dcomplex[nsx] snx, double[nsx] sws, dcomplex[nsx] swxp, double[ntpan] tpan, double[1] rball, int[1] ntarg, int[kp1] targoff, double[3,ntarg] targ, double[3,ntarg] targnx, double[k9] Rm, double[k3] Cc, inout double[1] handle, inout double[1] nbytes);
 end
 
 % unified access: copy entry k's block (flat, reshape to nc*ntcxk x nc*nang*p) + idx + tcxi out of a handle
@@ -936,14 +984,14 @@ blk=double(blk(:)); ik=double(ik(:)); tcxik=double(tcxik(:));
 # FORTRAN axpso_corr_get_r64(double[1] handle, int[1] k, int[1] ntcxk, int[1] nc, int[1] p, int[1] np, int[1] pmodes, inout double[nb] blk, inout double[ntcxk] ik, inout double[npp1] tcxik);
 end
 
-% inverse of axpso_corr_get_mex: overwrite entry k's stored value block with a caller-built block
-% (e.g. close_setup full - naive = correction), leaving topology untouched so axpso_corr_apply_mex
-% scatters the new block exactly as the setup's own.
-@function axpso_corr_set_mex(handle, k, ntcxk, nc, p, np, pmodes, blk)
-handle=double(handle); k=double(k); ntcxk=double(ntcxk); nc=double(nc); p=double(p); np=double(np); pmodes=double(pmodes);
-nb=nc*nc*ntcxk*(2*pmodes+1)*p;
-blk=double(blk(:));
-# FORTRAN axpso_corr_set_r64(double[1] handle, int[1] k, int[1] ntcxk, int[1] nc, int[1] p, int[1] np, int[1] pmodes, double[nb] blk);
+% stage-3 SET (ONE call, whole record): deliver an externally computed record into the struct the
+% handle points to.  vals = ALL value blocks flat (valoff layout); iks = pair map flat (off layout;
+% self: azimuth-0 meridian index, cross: GLOBAL target id, canonicalized inside).  Lengths validated
+% against the handle's topology.  Per-particle read stays axpso_corr_get_mex.
+@function axpso_corr_set_mex(handle, vals, iks)
+handle=double(handle); vals=double(vals(:)); iks=double(iks(:));
+nvals=numel(vals); niks=numel(iks);
+# FORTRAN axpso_corr_set_r64(double[1] handle, int[1] nvals, double[nvals] vals, int[1] niks, double[niks] iks);
 end
 
 % assemble the stored correction into the caller's DENSE operator A (ACCUMULATES; seed A with the

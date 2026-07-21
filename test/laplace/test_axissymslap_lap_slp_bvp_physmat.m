@@ -68,7 +68,7 @@ for kk=1:numel(np_vals)
     skx = sx(idxj);
     [S3p,D3p] = axps_closelapsdlp_panel_mex(numel(Tj), sx(Tj).', P0, [], p, nang, skx, ...
                 [],[],[], sxlo(j), sxhi(j), [],[],[],[],[], pmodes, iside, icl, ...
-                [],[],[],[],[],[]);
+                [],[],[],1,[],[]);
     SD = S3p;                                         % SLP-only: ignore D3p
     for a = 1:nang                                    % evaluated once, written nang times
       rows = (a-1)*N + Tj;

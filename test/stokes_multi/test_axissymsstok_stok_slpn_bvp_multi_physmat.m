@@ -1,7 +1,25 @@
 clearvars; format short e;
+addpath('../../../axibie/utils');
 addpath('../../utils');
 addpath('../../matlab');
 addpath('../../external/fmm3d/matlab');                       % stfmm3d / Sto3dSLPfmm
+
+% MULTI-particle Stokes SLPn (S') exterior-Neumann BVP -- PHYSICAL-SPACE SPARSE-CORRECTION
+% version of test_axissymsstok_stok_slpn_bvp_multi.m, in the style of the single-particle
+% test_axissymsstok_stok_slpn_bvp_physmat2.m.  Same setup (2 random-pose ellipsoids,
+% interior Stokeslets), but the operator is fully MATRIX-FREE mex:
+%   SYSTEM (traction): stfmm3d naive S' at the sources (self term excluded by the FMM; the
+%     -1/2 I exterior jump rides inside the SELF corrections)
+%     + per-particle SELF corrections: axps_closesize/closestokslpn_mex on the azimuth-0
+%       orbit reps (n_theta=0 exact) -> circulant corrapply (nc=3, iself=1)
+%     + CROSS near corrections: per source particle, the OTHER particle's nodes transformed
+%       into the source frame -> axps_closestokslpn_mex (general target normals; the
+%       hybrid pressure gate) -> direct corrapply (iself=0), R-frame sandwich
+%   SOLVE: unrestarted GMRES with PER-PARTICLE pressure-gauge deflation (S[n_k]=0)
+%   EVAL (velocity): Sto3dSLPfmm global + per-particle axps_closestokslp_mex corrections.
+% Frame convention: each axps_* pass works in the SOURCE particle's frame; targets/normals
+% are pre-transformed by R{k}.'(x-C{k}); corrections come back in that frame and are
+% rotated to LAB per node (rotation equivariance).
 
 p=16; np_vals=2:8; errmax=nan(1,numel(np_vals)); mu=1.0; gate=2.0;
 rot=@(u,th) cos(th)*eye(3)+sin(th)*[0 -u(3) u(2); u(3) 0 -u(1); -u(2) u(1) 0]+(1-cos(th))*(u*u');
@@ -50,7 +68,7 @@ for kk=1:numel(np_vals)
   nsx=K2*N; ntpan=K2*(np+1);
   sxf=sxs(:); snxf=snxs(:); swsf=swss(:); swxpf=swxps(:); tpanf=tpans(:);
   rnear=gate*sqrt(max(arrayfun(@(j) sum(geo{1}.sws((j-1)*p+(1:p))), 1:np)));
-  [hself,~]=axpso_close_setup_mex(2, 2, mu, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  [hself,~]=axpso_close_setup_mex(2, 2, 1, 0, mu, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
             1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
   axpso_close2corr_set_mex(hself, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);   % full - naive -> correction (Fortran)
@@ -68,7 +86,7 @@ for kk=1:numel(np_vals)
   % 3. CROSS corrections, same recipe: FULL close-eval (iinter=2, targets = the other particle's
   %    nodes, own block dropped via targoff, rotated into each source frame inside the module) minus
   %    the naive SLPn traction, formed here (corr_get returns each near row's GLOBAL target index).
-  [hcross,~]=axpso_close_setup_mex(2, 2, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  [hcross,~]=axpso_close_setup_mex(2, 2, 1, 0, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
   axpso_close2corr_set_mex(hcross, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);  % full - naive (Fortran)
@@ -98,7 +116,7 @@ for kk=1:numel(np_vals)
   sigblk = reshape(reshape(sigma,3,[]).',[],1);               % interlocked -> component-block
   ublk   = Sto3dSLPfmm(struct('x',Pe), struct('x',Xall,'w',wall), sigblk, 1e-14);
   ucm    = reshape(reshape(ublk,[],3).',[],1);                % component-block -> interlocked (3*Me)
-  heval = axpso_close_setup_mex(2, 1, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  heval = axpso_close_setup_mex(2, 1, 1, 0, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
             1.0+rnear, Me, ones(K2+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);
   axpso_close2corr_set_mex(heval, K2, geomoff, nsx, sxf, snxf, swsf, ones(K2+1,1), Me, Pe, Pe, [C{:}]);   % full - naive (SLP, Fortran)

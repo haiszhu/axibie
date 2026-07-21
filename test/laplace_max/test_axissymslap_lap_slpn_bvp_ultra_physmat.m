@@ -1,7 +1,12 @@
 clearvars; format short e;
+addpath('../../../axibie/utils');
 addpath('../../utils');
 addpath('../../matlab');
 addpath('../../external/fmm3d/matlab');                       % lfmm3d / Lap3dSLPfmm
+
+% ULTRA single case (K=15^3=3375, gap 0.4) of the Laplace SLPn (S') exterior-Neumann
+% benchmark on the handle framework.  SCALAR (nc=1): no mu, no R sandwich, no deflation
+% ((-1/2 + S') is full-rank second-kind); ~1/9 the Stokes footprint.
 
 global APPLY_T APPLY_N
 
@@ -70,14 +75,14 @@ sxf=sxs(:); snxf=snxs(:); swsf=swss(:); swxpf=swxps(:); tpanf=tpans(:);
 
 % 3. self corrections (laplace SLPn, iinter=1)
 tself=tic;
-[hself, nbself] = axpso_corr_setup_mex(1, 2, 0.0, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
+[hself, nbself] = axpso_corr_setup_mex(1, 2, 1, 0, 0.0, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
           geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
           Rbound+rnear, K*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
 tself=toc(tself); selfMB=nbself/1e6;
 
 % 4. cross corrections (iinter=2)
 tcross=tic;
-[hcross, nbcross] = axpso_corr_setup_mex(1, 2, 0.0, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
+[hcross, nbcross] = axpso_corr_setup_mex(1, 2, 1, 0, 0.0, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
            geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
            Rbound+rnear, K*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
 tcross=toc(tcross); crossMB=nbcross/1e6;
@@ -102,7 +107,7 @@ for k=1:K
   keep=keep & (sd>1.10);
 end
 Pe=Pe(:,keep); Me=size(Pe,2);
-heval = axpso_corr_setup_mex(1, 1, 0.0, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
+heval = axpso_corr_setup_mex(1, 1, 1, 0, 0.0, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
           geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
           Rbound+rnear, Me, ones(K+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);
 u=Lap3dSLPfmm(struct('x',Pe), struct('x',Xall,'w',wall), sigma, fmmeps);

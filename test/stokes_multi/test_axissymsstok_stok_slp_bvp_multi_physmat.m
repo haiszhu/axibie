@@ -1,7 +1,26 @@
 clearvars; format short e;
+addpath('../../../axibie/utils');
 addpath('../../utils');
 addpath('../../matlab');
 addpath('../../external/fmm3d/matlab');                       % stfmm3d (via Sto3dSLPfmm_il)
+
+% MULTI-particle Stokes SLP exterior-Dirichlet BVP -- PHYSICAL-SPACE SPARSE-CORRECTION version of
+% test_axissymsstok_stok_slp_bvp_multi.m, in the framework style of the SLPn/DLP physmat twins.
+% Single-layer representation u = S[sigma]; match the surface velocity S[sigma] = u_ex.  Fully
+% MATRIX-FREE mex; each near correction is FULL close-eval minus naive, in Fortran:
+%   SETUP (per pass): axpso_close_setup_mex returns the FULL close-eval matrix (iform=0) via the
+%     WHOLE-PARTICLE split-open closestokslp build, then axpso_close2corr_set_mex subtracts the naive
+%     Sto3d Stokeslet IN FORTRAN (compact layout, self node auto-zero) -> the handle holds the
+%     correction.  Two SYSTEM handles: {self, cross}.
+%   SYSTEM (velocity): Sto3dSLPfmm_il naive S at the sources (targets==sources -> self dropped) +
+%     {self,cross} corr applies (ACCUMULATE, lab<->local R sandwich INSIDE the module).
+%   SYSTEM (explicit): naive dense Sto3dSLPmat_il (self diag zeroed) + the handle corrections read
+%     back via axpso_corr_get_mex and scattered exactly as corr_apply would (self: circulant +
+%     R(phi_a) conjugation; cross: global target rows via corr_get's canon->global map).
+%   SOLVE: DIRECT lsqminnorm (S is first-kind AND rank-deficient -- per-particle pressure null
+%     space -- so min-norm, == the dense reference; no gmres, no deflation).
+%   EVAL (velocity): Sto3dSLPfmm_il naive + SLP eval correction, same recipe.
+% VECTOR (nc=3), node-interleaved lab frame; mu=1.
 
 p=16; np_vals=2:8; errmax=nan(1,numel(np_vals)); mu=1.0; gate=2.0; fmmeps=1e-12;   % EXPLICIT dense (3*2*Nnod)^2: np=6 ~ 15 GB
 rot=@(u,th) cos(th)*eye(3)+sin(th)*[0 -u(3) u(2); u(3) 0 -u(1); -u(2) u(1) 0]+(1-cos(th))*(u*u');
@@ -46,11 +65,11 @@ for kk=1:numel(np_vals)
 
   % 3. SYSTEM corrections: FULL close-eval (close_setup ikernel=2 ilayer=1, whole-particle build) minus
   %    the naive Sto3d Stokeslet (close2corr_set, in Fortran) -- self and cross.
-  hSself = axpso_close_setup_mex(2, 1, mu, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hSself = axpso_close_setup_mex(2, 1, 1, 0, mu, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);         % SLP self
   axpso_close2corr_set_mex(hSself, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
-  hScross = axpso_close_setup_mex(2, 1, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hScross = axpso_close_setup_mex(2, 1, 1, 0, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
               geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
               1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);        % SLP cross
   axpso_close2corr_set_mex(hScross, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
@@ -76,7 +95,7 @@ for kk=1:numel(np_vals)
   % 7. field eval u = S[sigma]: Sto3dSLPfmm_il naive velocity + SLP eval correction (targoff=ones ->
   %    every source sees ALL Me grid targets), applied source 3*K*Nnod -> 3*Me (R sandwich in-module).
   u = Sto3dSLPfmm_il(struct('x',Pe), struct('x',Xall,'w',wall), sigma, fmmeps);
-  hSeval = axpso_close_setup_mex(2, 1, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hSeval = axpso_close_setup_mex(2, 1, 1, 0, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              1.0+rnear, Me, ones(K2+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);
   axpso_close2corr_set_mex(hSeval, K2, geomoff, nsx, sxf, snxf, swsf, ones(K2+1,1), Me, Pe, Pe, [C{:}]);

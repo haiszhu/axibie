@@ -120,6 +120,8 @@ mu = 1;
 uk_skip_k = zeros(3, nk);
 As = axss_slp_blockmat_nmode_mex(nk, tk_inout.x(:).', s.p, s.np, s.x, s.nx, s.ws, s.wxp, s.tpan, s.xlo, s.xhi, M, iside, 1, mu, [], 1, k);
 Ad = axss_dlp_blockmat_nmode_mex(nk, tk_inout.x(:).', s.p, s.np, s.x, s.nx, s.ws, s.wxp, s.tpan, s.xlo, s.xhi, M, iside, 1, mu, [], 1, k);
+% As = axss_slp_blockmat_nmode(nk, tk_inout.x(:).', s.p, s.np, s.x, s.nx, s.ws, s.wxp, s.tpan, s.xlo, s.xhi, M, iside, 1, mu, [], 1, k);
+% Ad = axss_dlp_blockmat_nmode(nk, tk_inout.x(:).', s.p, s.np, s.x, s.nx, s.ws, s.wxp, s.tpan, s.xlo, s.xhi, M, iside, 1, mu, [], 1, k);
 for jj = 1:numel(modes)
   n = modes(jj);
   Sblk = As(:,:,abs(n)+1);  Dblk = Ad(:,:,abs(n)+1);      % mex stores modes 0..M
@@ -161,6 +163,9 @@ colorbar off; ax=gca; cb=colorbar; drawnow; ax.Position=ax.Position; p=cb.Positi
 
 % use close k-th panel contribution instead
 skx = s.x((k-1)*s.p+(1:s.p));
+% [As3d, Ad3d] = axps_closestoksdlp_panel(nk, tk_inout.x, tk3d_inout.x, [], s.p, nphi, skx, [], [], [], ...
+%                                           s.xlo(k), s.xhi(k), [], [], [], [], [], M, iside, isclosed, mu, ...
+%                                           [], [], [], [], [], []);
 [As3d, Ad3d] = axps_closestoksdlp_panel_mex(nk, tk_inout.x, tk3d_inout.x, [], s.p, nphi, skx, [], [], [], ...
                                           s.xlo(k), s.xhi(k), [], [], [], [], [], M, iside, isclosed, mu, ...
                                           [], [], [], [], [], []);

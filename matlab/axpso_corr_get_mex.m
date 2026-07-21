@@ -6,6 +6,7 @@ mex_id_ = 'axpso_corr_get_r64(c i double[x], c i int64_t[x], c i int64_t[x], c i
 [blk, ik, tcxik] = AxiStokes3D_mex(mex_id_, handle, k, ntcxk, nc, p, np, pmodes, blk, ik, tcxik, 1, 1, 1, 1, 1, 1, 1, nb, ntcxk, npp1);
 end
 
-% inverse of axpso_corr_get_mex: overwrite entry k's stored value block with a caller-built block
-% (e.g. close_setup full - naive = correction), leaving topology untouched so axpso_corr_apply_mex
-% scatters the new block exactly as the setup's own.
+% stage-3 SET (ONE call, whole record): deliver an externally computed record into the struct the
+% handle points to.  vals = ALL value blocks flat (valoff layout); iks = pair map flat (off layout;
+% self: azimuth-0 meridian index, cross: GLOBAL target id, canonicalized inside).  Lengths validated
+% against the handle's topology.  Per-particle read stays axpso_corr_get_mex.

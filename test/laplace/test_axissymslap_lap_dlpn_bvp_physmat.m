@@ -73,7 +73,7 @@ for kk=1:numel(np_vals)
     skx = sx(idxj);
     [Sn3,Dn3] = axps_closelapsdlpn_panel_mex(numel(Tj), sx(Tj).', P0, N0, p, nang, skx, ...
                 [],[],[], sxlo(j), sxhi(j), [],[],[],[],[], pmodes, iside, icl, ...
-                [],[],[],[],[],[]);
+                [],[],[],1,[],[]);
     for a = 1:nang                                      % evaluated once, written nang times
       rows = (a-1)*N + Tj;
       cols = reshape(idxj(:) + mod((a-1)+(0:nang-1), nang)*N, 1, []);

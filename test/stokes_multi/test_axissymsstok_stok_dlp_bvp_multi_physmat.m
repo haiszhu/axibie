@@ -1,7 +1,25 @@
 clearvars; format short e;
+addpath('../../../axibie/utils');
 addpath('../../utils');
 addpath('../../matlab');
 addpath('../../external/fmm3d/matlab');                       % stfmm3d (via Sto3d{SLP,DLP}fmm_il)
+
+% MULTI-particle Stokes DLP exterior-Dirichlet BVP -- PHYSICAL-SPACE SPARSE-CORRECTION version of
+% test_axissymsstok_stok_dlp_bvp_multi.m, in the framework style of the SLPn twin
+% test_axissymsstok_stok_slpn_bvp_multi_physmat.m and the Laplace DLP twin
+% test_axissymslap_lap_dlp_bvp_multi_physmat.m.  COMBINED-FIELD (D+S)[sigma]: the +1/2 I exterior jump
+% rides in the DLP self block, the SLP regularizes the DLP rigid-body null space -> full-rank (no
+% deflation).  Fully MATRIX-FREE mex; each near correction is FULL close-eval minus naive, in Fortran:
+%   SETUP (per layer, per pass): axpso_close_setup_mex returns the FULL close-eval matrix (iform=0)
+%     via the WHOLE-PARTICLE closestokdlp/closestokslp build, then axpso_close2corr_set_mex subtracts
+%     the naive Sto3d kernel IN FORTRAN (compact layout, self node auto-zero) -> the handle holds the
+%     correction.  Four SYSTEM handles: {D,S} x {self,cross}.
+%   SYSTEM (velocity): Sto3dSLPfmm_il + Sto3dDLPfmm_il naive (D+S) at the sources (targets==sources ->
+%     self dropped; the +1/2 jump rides in the DLP self correction) + four corr applies (ACCUMULATE,
+%     the lab<->local R sandwich INSIDE the module).
+%   SOLVE: restarted gmres, combined-field second-kind well-conditioned (no deflation).
+%   EVAL (velocity): naive (D+S) FMM at the grid + {D,S} eval corrections, same recipe.
+% VECTOR (nc=3), node-interleaved lab frame; mu=1.
 
 p=16; np_vals=2:8; errmax=nan(1,numel(np_vals)); mu=1.0; fmmeps=1e-12; rfac=1.25;   % rfac: near-zone enlargement (stresslet far-Nv annulus)
 rot=@(u,th) cos(th)*eye(3)+sin(th)*[0 -u(3) u(2); u(3) 0 -u(1); -u(2) u(1) 0]+(1-cos(th))*(u*u');
@@ -49,19 +67,19 @@ for kk=1:numel(np_vals)
 
   % 3. SYSTEM corrections: FULL close-eval minus naive for BOTH layers, self and cross (D = stresslet
   %    with source normals, S = Stokeslet velocity).  hDself/hSself carry the +1/2 jump (DLP self).
-  hDself = axpso_close_setup_mex(2, 3, mu, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hDself = axpso_close_setup_mex(2, 3, 1, 0, mu, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              rball, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);         % DLP self
   axpso_close2corr_set_mex(hDself, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
-  hSself = axpso_close_setup_mex(2, 1, mu, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hSself = axpso_close_setup_mex(2, 1, 1, 0, mu, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              rball, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);         % SLP self
   axpso_close2corr_set_mex(hSself, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
-  hDcross = axpso_close_setup_mex(2, 3, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hDcross = axpso_close_setup_mex(2, 3, 1, 0, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
               geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
               rball, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);        % DLP cross
   axpso_close2corr_set_mex(hDcross, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
-  hScross = axpso_close_setup_mex(2, 1, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hScross = axpso_close_setup_mex(2, 1, 1, 0, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
               geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
               rball, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);        % SLP cross
   axpso_close2corr_set_mex(hScross, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
@@ -90,11 +108,11 @@ for kk=1:numel(np_vals)
   %    every source sees ALL Me grid targets), same full-minus-naive recipe applied source 3*K*Nnod -> 3*Me.
   u = Sto3dSLPfmm_il(struct('x',Pe), struct('x',Xall,'w',wall), sigma, fmmeps) ...
     + Sto3dDLPfmm_il(struct('x',Pe), struct('x',Xall,'w',wall,'nx',Nall), sigma, fmmeps);
-  hDeval = axpso_close_setup_mex(2, 3, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hDeval = axpso_close_setup_mex(2, 3, 1, 0, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              rball, Me, ones(K2+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);            % DLP eval
   axpso_close2corr_set_mex(hDeval, K2, geomoff, nsx, sxf, snxf, swsf, ones(K2+1,1), Me, Pe, Pe, [C{:}]);
-  hSeval = axpso_close_setup_mex(2, 1, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hSeval = axpso_close_setup_mex(2, 1, 1, 0, mu, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              rball, Me, ones(K2+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);            % SLP eval
   axpso_close2corr_set_mex(hSeval, K2, geomoff, nsx, sxf, snxf, swsf, ones(K2+1,1), Me, Pe, Pe, [C{:}]);

@@ -1,7 +1,22 @@
 clearvars; format short e;
+addpath('../../../axibie/utils');
 addpath('../../utils');
 addpath('../../matlab');
-addpath('../../external/fmm3d/matlab');                      % lfmm3d / Lap3dSLPfmm
+addpath('../../external/fmm3d/matlab');                       % lfmm3d / Lap3dSLPfmm
+
+% MULTI-particle Laplace SLPn (S') exterior-Neumann BVP -- PHYSICAL-SPACE SPARSE-CORRECTION version
+% of test_axissymslap_lap_slpn_bvp_multi.m, in the framework style of the Stokes twin
+% test_axissymsstok_stok_slpn_bvp_multi_physmat.m.  Same setup (2 random-pose ellipsoids, interior
+% point charges), but the operator is fully MATRIX-FREE mex and the near correction is built via the
+% FULL close-eval operator minus the naive kernel:
+%   SETUP (per pass): axpso_close_setup_mex returns the FULL Laplace close-eval matrix (iform=0);
+%     axpso_close2corr_set_mex subtracts the naive Lap3d kernel IN FORTRAN (compact layout, self node
+%     auto-zero) -> the handle now holds the correction == what corr_setup would store.
+%   SYSTEM (flux): lfmm3d naive S' = grad(pot).n at the sources (self i~=j excluded by the FMM; the
+%     -1/2 exterior jump rides in the SELF correction) + hself/hcross corr apply (each ACCUMULATES).
+%   SOLVE: gmres, NO deflation -- (-1/2 + S') is second-kind FULL-RANK for Laplace exterior-Neumann.
+%   EVAL (potential): Lap3dSLPfmm naive + heval (ilayer=1 SLP value) correction, same recipe.
+% SCALAR (nc=1): one dof/node, no lab<->local R sandwich.
 
 p=16; np_vals=2:12; errmax=nan(1,numel(np_vals)); gate=2.0; fmmeps=1e-12;
 rot=@(u,th) cos(th)*eye(3)+sin(th)*[0 -u(3) u(2); u(3) 0 -u(1); -u(2) u(1) 0]+(1-cos(th))*(u*u');
@@ -46,7 +61,7 @@ for kk=1:numel(np_vals)
 
   % 3. SELF corrections: FULL close-eval (close_setup ikernel=1 laplace, ilayer=2 SLPn) minus the naive
   %    Lap3d S' flux (close2corr_set, in Fortran; the self node auto-zeros).  hself holds the correction.
-  hself = axpso_close_setup_mex(1, 2, 0.0, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hself = axpso_close_setup_mex(1, 2, 1, 0, 0.0, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
             1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
   axpso_close2corr_set_mex(hself, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
@@ -62,7 +77,7 @@ for kk=1:numel(np_vals)
 
   % 4. CROSS corrections: FULL close-eval (iinter=2, targets = the other particle's nodes, own block
   %    dropped via targoff, rotated into each source frame in-module) minus the naive S' flux.
-  hcross = axpso_close_setup_mex(1, 2, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hcross = axpso_close_setup_mex(1, 2, 1, 0, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
   axpso_close2corr_set_mex(hcross, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
@@ -83,7 +98,7 @@ for kk=1:numel(np_vals)
   % 8. field eval u = S[sigma]: Lap3dSLPfmm naive potential + heval (ilayer=1 SLP value) correction,
   %    FULL close-eval minus naive SLP potential (close2corr_set), applied source K*Nnod -> target Me.
   u=Lap3dSLPfmm(struct('x',Pe), struct('x',Xall,'w',wall), sigma, fmmeps);
-  heval = axpso_close_setup_mex(1, 1, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  heval = axpso_close_setup_mex(1, 1, 1, 0, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
             1.0+rnear, Me, ones(K2+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);
   axpso_close2corr_set_mex(heval, K2, geomoff, nsx, sxf, snxf, swsf, ones(K2+1,1), Me, Pe, Pe, [C{:}]);

@@ -1,7 +1,23 @@
 clearvars; format short e;
+addpath('../../../axibie/utils');
 addpath('../../utils');
 addpath('../../matlab');
 addpath('../../external/fmm3d/matlab');                       % lfmm3d
+
+% MULTI-particle Laplace DLP exterior-Dirichlet BVP -- PHYSICAL-SPACE SPARSE-CORRECTION version of
+% test_axissymslap_lap_dlp_bvp_multi.m, in the framework style of the SLPn twin
+% test_axissymslap_lap_slpn_bvp_multi_physmat.m.  COMBINED-FIELD representation (D+S)[sigma]: the
+% +1/2 I exterior jump rides in the DLP self block, the SLP carries the monopole the DLP cannot
+% represent -> full-rank (interior charges need NOT sum to zero).  Fully MATRIX-FREE mex; each near
+% correction is FULL close-eval minus naive, built in Fortran:
+%   SETUP (per layer, per pass): axpso_close_setup_mex returns the FULL close-eval matrix (iform=0),
+%     then axpso_close2corr_set_mex subtracts the naive Lap3d kernel IN FORTRAN (compact layout, self
+%     node auto-zero) -> the handle holds the correction.  Four SYSTEM handles: {D,S} x {self,cross}.
+%   SYSTEM (potential): lfmm3d naive (D+S) = charges (S) + dipoles (D) at the sources (self i~=j
+%     excluded; the +1/2 jump rides in the DLP self correction) + the four corr applies (ACCUMULATE).
+%   SOLVE: gmres, second-kind full-rank (no deflation).
+%   EVAL (potential): lfmm3d naive (D+S) at the grid + {D,S} eval corrections, same recipe.
+% SCALAR (nc=1): one dof/node, no lab<->local R sandwich.
 
 p=16; np_vals=2:12; errmax=nan(1,numel(np_vals)); gate=2.0; fmmeps=1e-12;
 rot=@(u,th) cos(th)*eye(3)+sin(th)*[0 -u(3) u(2); u(3) 0 -u(1); -u(2) u(1) 0]+(1-cos(th))*(u*u');
@@ -43,19 +59,19 @@ for kk=1:numel(np_vals)
 
   % 3. SYSTEM corrections: FULL close-eval minus naive for BOTH layers, self and cross (D uses source
   %    normals, S is scalar-value).  hDself/hSself carry the +1/2 jump (DLP self); hDcross/hScross near.
-  hDself = axpso_close_setup_mex(1, 3, 0.0, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hDself = axpso_close_setup_mex(1, 3, 1, 0, 0.0, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);         % DLP self
   axpso_close2corr_set_mex(hDself, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
-  hSself = axpso_close_setup_mex(1, 1, 0.0, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hSself = axpso_close_setup_mex(1, 1, 1, 0, 0.0, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);         % SLP self
   axpso_close2corr_set_mex(hSself, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
-  hDcross = axpso_close_setup_mex(1, 3, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hDcross = axpso_close_setup_mex(1, 3, 1, 0, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
               geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
               1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);        % DLP cross
   axpso_close2corr_set_mex(hDcross, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
-  hScross = axpso_close_setup_mex(1, 1, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hScross = axpso_close_setup_mex(1, 1, 1, 0, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
               geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
               1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);        % SLP cross
   axpso_close2corr_set_mex(hScross, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
@@ -85,11 +101,11 @@ for kk=1:numel(np_vals)
   %    every source sees ALL Me grid targets), same full-minus-naive recipe applied source K*Nnod -> Me.
   cw=(sigma(:).').*wall; srcinfo=[]; srcinfo.sources=Xall; srcinfo.charges=cw; srcinfo.dipoles=Nall.*cw;
   U=lfmm3d(fmmeps,srcinfo,0,Pe,1); u=U.pottarg(:);
-  hDeval = axpso_close_setup_mex(1, 3, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hDeval = axpso_close_setup_mex(1, 3, 1, 0, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              1.0+rnear, Me, ones(K2+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);            % DLP eval
   axpso_close2corr_set_mex(hDeval, K2, geomoff, nsx, sxf, snxf, swsf, ones(K2+1,1), Me, Pe, Pe, [C{:}]);
-  hSeval = axpso_close_setup_mex(1, 1, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hSeval = axpso_close_setup_mex(1, 1, 1, 0, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              1.0+rnear, Me, ones(K2+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);            % SLP eval
   axpso_close2corr_set_mex(hSeval, K2, geomoff, nsx, sxf, snxf, swsf, ones(K2+1,1), Me, Pe, Pe, [C{:}]);

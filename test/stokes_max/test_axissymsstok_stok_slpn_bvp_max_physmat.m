@@ -1,13 +1,32 @@
 clearvars; format short e;
+addpath('../../../axibie/utils');
 addpath('../../utils');
 addpath('../../matlab');
 addpath('../../external/fmm3d/matlab');                       % stfmm3d / Sto3dSLPfmm
+addpath('../../external/kdtree/toolbox');                    % KDTree (one canonical tree per K)
+
+% K-particle Stokes SLPn (S') exterior-Neumann BVP -- the stokes_max SCALING BENCHMARK
+% (issue #43).  Generalizes test_axissymsstok_stok_slpn_bvp_multi_physmat.m from 2 to K
+% particles on a regular Kside^3 lattice (random rotations, lattice spacing chosen so the
+% worst-case surface gap is 0.6 -- the validated near-zone regime, no lubrication gaps).
+% Fully matrix-free axps pipeline:
+%   naive S' = stfmm3d traction at the sources (self excluded; -1/2 I rides in the self
+%   corrections) + PER-PARTICLE self corrections + CROSS corrections per NEIGHBOR pair
+%   (centroid prefilter), GMRES + rank-K per-particle pressure-gauge deflation.
+% GENERIC setup: every particle gets its OWN self pass (no type-sharing shortcut), so the
+% timings extrapolate to random radii/shapes later; type-sharing remains a lever when
+% shapes repeat.
+% Timing convention follows Li-Malhotra-Veerapaneni (2605.30805): T_self/T_cross = the
+% per-configuration operator SETUP; T_eval = per-GMRES-iteration operator apply time,
+% averaged over all applies inside the solve (excludes gmres orthogonalization and the
+% first-call warm-up bias); T_eval_off = off-surface evaluation of the final solution;
+% gmres iteration count reported as its own column.
 
 global APPLY_T APPLY_N                                        % T_eval accumulator (set in applytimed)
 
 p=16; np=4; mu=1.0; gate=2.0; iside=1; iclosed=0;
 M=2*np; nphi=2*M+1;
-Ksides=[2 3 4];                                                 % K = 8, 27 (K=64/125: user run, per task-5 brief)
+Ksides=[2 3 4 5];                                                 % K = 8, 27  (extend: 5 -> 125, ...)
 rot=@(u,th) cos(th)*eye(3)+sin(th)*[0 -u(3) u(2); u(3) 0 -u(1); -u(2) u(1) 0]+(1-cos(th))*(u*u');
 Zf={@(t) 0.5*sin(t)-1i*1.0*cos(t), @(t) 1.0*sin(t)-1i*0.5*cos(t)};   % 2 particle shapes (prolate/oblate)
 ac=[0.5 1.0; 1.0 0.5];                                        % semi-axes (rho, z) per shape
@@ -53,6 +72,7 @@ for Kside=Ksides
     nodeidx=(k-1)*Nnod+(1:Nnod); blk{k}=(k-1)*3*Nnod+(1:3*Nnod);
     Xall(:,nodeidx)=X{k}; Nall(:,nodeidx)=NX{k}; wall(nodeidx)=sq{ty(k)}.w;
   end
+  kd=KDTree(Xall.');                                          % ONE canonical 3D target tree
 
   % 2. interior Stokeslets (2 per particle) -> exact velocity + surface traction data
   Y=zeros(3,2*K); Fg=zeros(3,2*K);
@@ -62,41 +82,59 @@ for Kside=Ksides
   for j=1:2*K, g_tr=g_tr+stktrac(Xall,Nall,Y(:,j),Fg(:,j)); end
   g_tr=g_tr(:);                                               % exact traction, node-interleaved (lab)
 
-  % 3. SELF corrections (NEW handle framework): stacked (N,K) meridian geometry -> flat
-  %    per-particle layout (geomoff/tpanoff), ONE handle-based corr_setup call.  ikernel=2
-  %    (stokes), ilayer=2 (SLPn), params=mu (real part read as viscosity), iinter=1 (self).
-  %    closesize + closestokslpn per particle happen INSIDE the module, addressed by hself.
-  sxs=zeros(N,K); snxs=sxs; swss=zeros(N,K); swxps=zeros(N,K); tpans=zeros(np+1,K);
+  % 3. SELF corrections PER PARTICLE (generic path: own pass each, azimuth-0 orbit reps)
+  tself=tic; Ssl=cell(K,1); isl=cell(K,1); tcxis=cell(K,1); ntcxs=zeros(K,1);
   for k=1:K
     gs=geo{ty(k)};
-    sxs(:,k)=gs.sx; snxs(:,k)=gs.snx; swss(:,k)=gs.sws; swxps(:,k)=gs.swxp; tpans(:,k)=gs.tpan;
+    t3d0=[real(gs.sx).'; zeros(1,N); imag(gs.sx).']; tn3d0=[real(gs.snx).'; zeros(1,N); imag(gs.snx).'];
+    tcxi=zeros(np+1,1); ntcx=0;
+    [tcxi,ntcx]=axps_closesize_mex(N, gs.sx, t3d0, p, np, gs.sx, gs.sws, gate, tcxi, ntcx);
+    Sk=zeros(3*ntcx,3*nphi*p); ik=zeros(ntcx,1);
+    [Sk,ik]=axps_closestokslpn_mex(N, gs.sx, t3d0, tn3d0, p, np, nphi, gs.sx, gs.snx, gs.sws, gs.swxp, gs.tpan, gate, ...
+        sq{ty(k)}.x, sq{ty(k)}.nx, sq{ty(k)}.w, M, iside, iclosed, mu, ntcx, tcxi, Sk, ik);
+    Ssl{k}=Sk; isl{k}=ik; tcxis{k}=tcxi; ntcxs(k)=ntcx;
   end
-  pv=p*ones(K,1); npv=np*ones(K,1); pmv=M*ones(K,1);
-  geomoff=1+(0:K)'*N; tpanoff=1+(0:K)'*(np+1); targoff=1+(0:K)'*Nnod;
-  nsx=K*N; ntpan=K*(np+1);
-  sxf=sxs(:); snxf=snxs(:); swsf=swss(:); swxpf=swxps(:); tpanf=tpans(:);
-  tself=tic;
-  [hself, nbself] = axpso_corr_setup_mex(2, 2, mu, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
-            geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
-            Rbound+rnear, K*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
-  tself=toc(tself); selfMB=nbself/1e6;
+  tself=toc(tself); selfMB=sum(cellfun(@numel,Ssl))*8/1e6;
 
-  % 4. CROSS corrections (NEW handle framework): ONE handle-based corr_setup call (iinter=2);
-  %    the module builds its own canonical kdtree, ball query / own-block drop / rotation into
-  %    each source frame / sizing / canonical compaction, addressed by hcross.  Reuses the
-  %    flat per-particle geometry built in section 3.
-  tcross=tic;
-  [hcross, nbcross] = axpso_corr_setup_mex(2, 2, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
-             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
-             Rbound+rnear, K*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
-  tcross=toc(tcross); crossMB=nbcross/1e6;
+  % 4. CROSS corrections: ONE loop over source particles; targets = the CANONICAL node
+  %    array minus the own block (self handled by the circulant pass; removing the own
+  %    contiguous block BEFORE the compute pass keeps the compression's benefit).  The
+  %    pass's kdtree does the near detection; its local idxall is mapped back to canonical
+  %    node ids (O(ntcx) local op) and remapped to a COMPACT unique-target enumeration so
+  %    the matvec allocates O(near targets), not O(K*Nnod), per source.
+  tcross=tic; Sx=cell(K,1); tcxix=cell(K,1); ntcxx=zeros(K,1);
+  idxc=cell(K,1); canonl=cell(K,1); nu=zeros(K,1);
+  for k=1:K
+    % candidate preselect: ONE ball query on the canonical tree, then drop the own
+    % contiguous block (self is handled by the circulant pass).  Fine per-panel
+    % detection happens inside the passes on the SMALL candidate set.
+    cand = kd.ball(C{k}.', Rbound+rnear); cand=cand(:).';
+    cand = cand(cand<=(k-1)*Nnod | cand>k*Nnod);
+    if isempty(cand), continue, end
+    loc = R{k}.'*(Xall(:,cand)-C{k}); nloc = R{k}.'*Nall(:,cand);
+    ttx = (hypot(loc(1,:),loc(2,:)) + 1i*loc(3,:)).';
+    gs=geo{ty(k)};
+    tcxi=zeros(np+1,1); ntcx=0;
+    [tcxi,ntcx]=axps_closesize_mex(numel(cand), ttx, loc, p, np, gs.sx, gs.sws, gate, tcxi, ntcx);
+    ntcxx(k)=ntcx; tcxix{k}=tcxi;
+    if ntcx==0, continue, end
+    Sk=zeros(3*ntcx,3*nphi*p); ik=zeros(ntcx,1);
+    [Sk,ik]=axps_closestokslpn_mex(numel(cand), ttx, loc, nloc, p, np, nphi, gs.sx, gs.snx, gs.sws, gs.swxp, gs.tpan, gate, ...
+        sq{ty(k)}.x, sq{ty(k)}.nx, sq{ty(k)}.w, M, iside, iclosed, mu, ntcx, tcxi, Sk, ik);
+    Sx{k}=Sk;
+    canon = cand(ik).';                                       % local -> canonical node ids
+    [canonl{k},~,idxc{k}] = unique(canon);                    % compact enumeration 1..nu
+    nu(k)=numel(canonl{k});
+  end
+  npair=nnz(ntcxx); tcross=toc(tcross);
+  crossMB=sum(cellfun(@numel,Sx))*8/1e6;
 
-  % 5. matrix-free operator (timed per apply via the wrapper) + rank-K deflation.  The near
-  %    correction now rides the handles hself/hcross (the R sandwich is INSIDE the module).
+  % 5. matrix-free operator (timed per apply via the wrapper) + rank-K deflation
   Nh=zeros(3*K*Nnod,K);
   for k=1:K, Nh(blk{k},k)=NX{k}(:); Nh(:,k)=Nh(:,k)/norm(Nh(:,k)); end
   APPLY_T=0; APPLY_N=0;
-  applyA=@(x) applytimed(x, Nh, fmmeps, Xall, Nall, wall, hself, hcross);
+  applyA=@(x) applytimed(x, Nh, fmmeps, Xall, Nall, wall, R, blk, N, p, np, nphi, Nnod, ...
+                         Ssl, isl, tcxis, ntcxs, Sx, idxc, canonl, nu, tcxix, ntcxx);
 
   % 6. solve;  T_eval = mean apply time over ALL applies inside the solve
   tso=tic;
@@ -104,75 +142,76 @@ for Kside=Ksides
   tsolve=toc(tso);
   Teval=APPLY_T/APPLY_N;
 
-  % 7. off-surface TARGET SETUP: regular ng^3 grid, exact spheroid inside-filter
-  %    (replaces physmat2's random check-point shells).  The evaluation itself --
-  %    Sto3dSLPfmm seed + ONE fortran fieldeval call -- is added next.
+  % 7. off-surface evaluation of the FINAL solution (timed): near/mid/far check points
+  %    pushed off random surface nodes; Sto3dSLPfmm + per-particle SLP corrections
   teo=tic;
-  ng=16; margin=0.9;
-  glo=-Lsp*(Kside-1)/2 - Rbound - margin;
-  xs=linspace(glo,-glo,ng);
-  [xg,yg,zg]=ndgrid(xs,xs,xs);                                % first index fastest = x
-  Pg=[xg(:).'; yg(:).'; zg(:).'];
-  inside=false(1,size(Pg,2));                                 % exact spheroid inside-test
-  for k=1:K
-    loc=R{k}.'*(Pg-C{k});
-    sd=(hypot(loc(1,:),loc(2,:))/ac(ty(k),1)).^2+(loc(3,:)/ac(ty(k),2)).^2;
-    inside=inside | (sd<1.0);
+  rng(2); nchk=min(200,Nnod); Pe=[];
+  for d=[0.05 0.3 1.0]
+    isel=randperm(K*Nnod,nchk);
+    Pe=[Pe, Xall(:,isel)+d*Nall(:,isel)]; %#ok<AGROW>
   end
-  Pe=Pg(:,~inside); Me=size(Pe,2);
-  fprintf('  targets: %d^3 grid, %d outside particles (h=%.3f)\n', ng, Me, xs(2)-xs(1));
-  % exact solution
-  Ue = zeros(3,size(Pg,2));
-  Ue(:,~inside) = uexf(Pg(:,~inside));
-  sigblk=reshape(reshape(sigma,3,[]).',[],1);                 % node-interleaved -> component-blocked
-  ublk=Sto3dSLPfmm(struct('x',Pe), struct('x',Xall,'w',wall), sigblk, fmmeps);  % FMM velocity at outside targets
-  Uh=zeros(3,size(Pg,2)); Uh(:,~inside)=reshape(ublk,[],3).'; % full-grid shape (inside zeroed)
-  uc=reshape(Uh(:,~inside),[],1);                             % seed with naive velocity (node-interleaved)
-  % FIELD-EVAL correction (NEW handle framework): reuse the cross path (iinter=2) with ilayer=1
-  % (SLP VELOCITY) and targets=Pe; targoff=ones(K+1,1) -> NO own-block drop.  ONE apply, source
-  % 3*K*Nnod -> target 3*Me (the lab<->local R sandwich is inside the module).
-  heval = axpso_corr_setup_mex(2, 1, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
-            geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
-            Rbound+rnear, Me, ones(K+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);
-  uc=axpso_corr_apply_mex(heval, 3*K*Nnod, sigma, 3*Me, uc);
-  Uh(:,~inside)=reshape(uc,3,[]);
+  keep=true(1,size(Pe,2));                                    % exact spheroid inside-test per particle
+  for k=1:K
+    loc=R{k}.'*(Pe-C{k});
+    sd=(hypot(loc(1,:),loc(2,:))/ac(ty(k),1)).^2+(loc(3,:)/ac(ty(k),2)).^2;
+    keep=keep & (sd>1.10);
+  end
+  Pe=Pe(:,keep); Me=size(Pe,2);
+  sigblk=reshape(reshape(sigma,3,[]).',[],1);
+  ublk=Sto3dSLPfmm(struct('x',Pe), struct('x',Xall,'w',wall), sigblk, fmmeps);
+  ucm=reshape(reshape(ublk,[],3).',[],1);
+  for k=1:K
+    gs=geo{ty(k)};
+    loc=R{k}.'*(Pe-C{k});
+    if min(vecnorm(loc)) > Rbound+rnear, continue, end
+    ttx=(hypot(loc(1,:),loc(2,:)) + 1i*loc(3,:)).';
+    tcxi=zeros(np+1,1); ntcx=0;
+    [tcxi,ntcx]=axps_closesize_mex(Me, ttx, loc, p, np, gs.sx, gs.sws, gate, tcxi, ntcx);
+    if ntcx==0, continue, end
+    Sk=zeros(3*ntcx,3*nphi*p); ik=zeros(ntcx,1);
+    [Sk,ik]=axps_closestokslp_mex(Me, ttx, loc, p, np, nphi, gs.sx, gs.snx, gs.sws, gs.swxp, gs.tpan, gate, ...
+        sq{ty(k)}.x, sq{ty(k)}.nx, sq{ty(k)}.w, M, iside, iclosed, mu, ntcx, tcxi, Sk, ik);
+    sigk=reshape(R{k}.'*reshape(sigma(blk{k}),3,[]),[],1);
+    uc=zeros(3*Me,1);
+    uc=axps_closecorrapply_mex(3, Me, p, np, nphi, ntcx, tcxi, ik, Sk, sigk, 0, uc);
+    ucm=ucm+reshape(R{k}*reshape(uc,3,[]),[],1);
+  end
   tevaloff=toc(teo);
-  Ue=uexf(Pe);
-  scal=max(vecnorm(Ue));
-  errg=zeros(1,size(Pg,2)); errg(~inside)=vecnorm(Uh(:,~inside)-Ue)/scal;   % per-point (step 9 field)
-  err=max(errg);
+  U=reshape(ucm,3,Me); Ue=uexf(Pe);
+  err=vecnorm(U-Ue)/max(vecnorm(Ue));
 
-  % 8. the data point (paper-style, two lines: SETUP is the OpenMP solver-module pass
-  %    (mex built with OMP=ON -- default libomp thread count = ncores); EVAL/SOLVE is
-  %    dominated by the multithreaded FMM.  dof = 3 x quadrature points (Stokes
-  %    3-vector); dof/s/core normalizes each phase by the cores it actually uses.
+  % ---- in-loop visualization: field error at the check points, updated per K ----
+  dsurf=zeros(1,Me);
+  for i=1:Me, dsurf(i)=min(vecnorm(Xall-Pe(:,i))); end        % dist to nearest surface node
+  figure(2),clf; hold on;
+  for k=1:K, plot3(X{k}(1,:),X{k}(2,:),X{k}(3,:),'.','Color',[.7 .7 .7],'MarkerSize',2); end
+  scatter3(Pe(1,:),Pe(2,:),Pe(3,:),14,log10(max(err,1e-17)),'filled');
+  plot3(Y(1,:),Y(2,:),Y(3,:),'p','MarkerSize',10,'MarkerFaceColor',[0.85 0.1 0.1],'MarkerEdgeColor','k');
+  cb=colorbar; cb.Label.String='log_{10}|u_h-u_{exact}|/max|u_{exact}|';
+  axis equal; view(35,18); grid on; colormap('jet');
+  title(sprintf('K=%d field error at check points',K)); drawnow;
+  fprintf('  err by shell:  d~0.05: %.2e   d~0.3: %.2e   d~1.0: %.2e\n', ...
+          max(err(dsurf<0.15)), max(err(dsurf>=0.15 & dsurf<0.6)), max(err(dsurf>=0.6)));
+
+  % 8. the data point (paper-style, two lines: SETUP is the serial single-core mex loop;
+  %    EVAL/SOLVE is dominated by the multithreaded FMM.  dof = 3 x quadrature points
+  %    (Stokes 3-vector); dof/s/core normalizes each phase by the cores it actually uses.
   dof=3*K*Nnod;
-  fprintf(['K=%4d  dof=%8d :  T_setup %6.1fs (T_self %6.1fs %.0f MB + T_cross %6.1fs %.0f MB)', ...
-           '   [%d threads]   %8.0f dof/s/core\n'], ...
-          K, dof, tself+tcross, tself, selfMB, tcross, crossMB, ncores, dof/(tself+tcross)/ncores);
+  fprintf(['K=%4d  dof=%8d :  T_setup %6.1fs (T_self %6.1fs %.0f MB + T_cross %6.1fs %4d srcs %.0f MB)', ...
+           '   [1 core]   %8.0f dof/s/core\n'], ...
+          K, dof, tself+tcross, tself, selfMB, tcross, npair, crossMB, dof/(tself+tcross));
   fprintf(['                        T_eval %6.3f s/iter (fmm eps %.0e, %4.0f us/src)  iters %3d (flag=%d, relres=%.1e)  ', ...
            'T_solve %5.0fs  T_eval_off %5.1fs (%d tgts)  err %.2e   [%d cores]  %8.0f dof/s/core\n'], ...
           Teval, fmmeps, Teval/(K*Nnod)*1e6, iter(2), flag, relres, tsolve, tevaloff, Me, max(err), ...
           ncores, dof/Teval/ncores);
-
 end
 
-function y=applytimed(x, Nh, fmmeps, Xall, Nall, wall, hself, hcross)
-% timed K-particle matrix-free (-1/2 I + S') matvec: global stfmm3d naive traction (self term
-% excluded) + the handle-based near correction (self then cross, each ACCUMULATING; the lab<->
-% local R sandwich happens INSIDE the module) + rank-K pressure-gauge deflation Nh*(Nh'*x).
-% T_eval = accumulated apply time / count (per-iteration average, excludes gmres orthog).
+function y=applytimed(x, Nh, fmmeps, varargin)
+% timed operator apply: accumulates total apply time / count for T_eval (per-iteration
+% average over the whole solve, excluding gmres orthogonalization overhead)
 global APPLY_T APPLY_N
 t0=tic;
-srcinfo.sources=Xall; srcinfo.stoklet=reshape(x,3,[]).*wall;
-U=stfmm3d(fmmeps,srcinfo,3);
-Gs=U.grad+permute(U.grad,[2 1 3]);
-y=squeeze(sum(Gs.*reshape(Nall,1,3,[]),2)) - U.pre.*Nall;
-y=y(:);
-n=numel(x);
-y=axpso_corr_apply_mex(hself,  n, x, n, y);                  % self  correction (accumulate; nu==nx)
-y=axpso_corr_apply_mex(hcross, n, x, n, y);                  % cross correction (accumulate; nu==nx)
-y=y + Nh*(Nh'*x);                                            % rank-K pressure-gauge deflation
+y=mvslpnK(x, fmmeps, varargin{:}) + Nh*(Nh'*x);
 APPLY_T=APPLY_T+toc(t0); APPLY_N=APPLY_N+1;
 end
 function u=stksum(P,Y,Fg,stk)
@@ -181,4 +220,31 @@ for j=1:size(Y,2), u=u+stk(P,Y(:,j),Fg(:,j)); end
 end
 function T=stktrac(X,n,y,F)
 d=X-y; r=vecnorm(d); rF=F.'*d; rn=sum(n.*d,1); T=-(3/(4*pi))*(rF.*rn).*d./r.^5;
+end
+function t=mvslpnK(x, fmmeps, Xall, Nall, wall, R, blk, N, p, np, nphi, Nnod, ...
+                   Ssl, isl, tcxis, ntcxs, Sx, idxc, canonl, nu, tcxix, ntcxx)
+% K-particle matrix-free (-1/2 I + S') matvec: global stfmm3d naive traction (self term
+% excluded) + PER-PARTICLE circulant self corrections + per-neighbor-pair cross
+% corrections, each in the source particle's frame (R sandwich).
+srcinfo.sources=Xall; srcinfo.stoklet=reshape(x,3,[]).*wall;
+U=stfmm3d(fmmeps,srcinfo,3);
+Gs=U.grad+permute(U.grad,[2 1 3]);
+t=squeeze(sum(Gs.*reshape(Nall,1,3,[]),2)) - U.pre.*Nall;
+t=t(:);
+K=numel(blk);
+sigloc=cell(K,1);
+for k=1:K, sigloc{k}=reshape(R{k}.'*reshape(x(blk{k}),3,[]),[],1); end
+for k=1:K                                                     % SELF (per particle)
+  us=zeros(3*Nnod,1);
+  us=axps_closecorrapply_mex(3, N, p, np, nphi, ntcxs(k), tcxis{k}, isl{k}, Ssl{k}, sigloc{k}, 1, us);
+  t(blk{k})=t(blk{k})+reshape(R{k}*reshape(us,3,[]),[],1);
+end
+for k=1:K                                                     % CROSS (canonical targets, compact)
+  if ntcxx(k)==0, continue, end
+  uc=zeros(3*nu(k),1);
+  uc=axps_closecorrapply_mex(3, nu(k), p, np, nphi, ntcxx(k), tcxix{k}, idxc{k}, Sx{k}, sigloc{k}, 0, uc);
+  uc=R{k}*reshape(uc,3,[]);                                   % k frame -> lab, per near target
+  rows=3*(canonl{k}.'-1);
+  t(rows+1)=t(rows+1)+uc(1,:).'; t(rows+2)=t(rows+2)+uc(2,:).'; t(rows+3)=t(rows+3)+uc(3,:).';
+end
 end

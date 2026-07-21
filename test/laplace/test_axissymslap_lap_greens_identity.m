@@ -12,12 +12,12 @@ np   = 16; % 1.02e-13
 M    = 4*np;
 nphi = 2*M+1;
 type = 'torus';
-type = 'sphere';
+%type = 'sphere';
 side = 'e';
 N    = np*p;
 k    = 5; isclosed = 0;
 iside = double(side=='e');
-k    = 1; isclosed = -1;
+%k    = 1; isclosed = -1;
 if strcmp(type,'sphere'), vel = -45; else, vel = 55; end   % sphere targets sit under the south cap
 
 % generate torus/sphere geometry (full 3d + axisymmetric)
@@ -139,9 +139,12 @@ colorbar off; ax=gca; cb=colorbar; drawnow; ax.Position=ax.Position; p=cb.Positi
 
 % use close k-th panel contribution instead
 skx = s.x((k-1)*s.p + (1:s.p));
-[As3d, Ad3d] = axps_closelapsdlp_panel_mex(nk, tk_inout.x, tk3d_inout.x, [], s.p, nphi, skx, [], [], [], ...
+[As3d, Ad3d] = axps_closelapsdlp_panel(nk, tk_inout.x, tk3d_inout.x, [], s.p, nphi, skx, [], [], [], ...
                                           s.xlo(k), s.xhi(k), [], [], [], [], [], M, iside, isclosed, ...
                                           [], [], [], [], [], []);
+% [As3d, Ad3d] = axps_closelapsdlp_panel(nk, tk_inout.x, tk3d_inout.x, [], s.p, nphi, skx, [], [], [], ...
+%                                           s.xlo(k), s.xhi(k), [], [], [], [], [], M, iside, isclosed, ...
+%                                           [], [], [], [], [], []);
 cols = (k-1)*s.p;
 ring = reshape((cols+(1:s.p)).' + (0:nphi-1)*N, [], 1);
 uk_only_k_close = As3d*sigma(ring) + Ad3d*tau(ring);
@@ -160,6 +163,30 @@ colorbar off; ax=gca; cb=colorbar; drawnow; ax.Position=ax.Position; p=cb.Positi
 % keyboard
 % exportgraphics(figure(1),'axissymslap_lap_greens_identity.png','Resolution',200)
 % exportgraphics(figure(1),'axissymslap_lap_greens_identity_pole.png','Resolution',200)
+
+p = s.p;                                 % plotting code overwrote p with cb.Position
+nk = numel(sqn_idx);
+Pk = tk3d_inout.x;
+nblk = N*nphi;
+AevS = axp_physmat_setup_mex(1,1,0.0,3,1,p,np,M,iside,0,[1;N+1],[1;np+2],N,np+1, ...
+    s.x(:),s.nx(:),s.ws(:),s.wxp(:),s.tpan(:),nk,[1;nk+1],Pk,zeros(3,nk),eye(3),zeros(3,1),nk,nblk);
+AevD = axp_physmat_setup_mex(1,3,0.0,3,1,p,np,M,iside,0,[1;N+1],[1;np+2],N,np+1, ...
+    s.x(:),s.nx(:),s.ws(:),s.wxp(:),s.tpan(:),nk,[1;nk+1],Pk,zeros(3,nk),eye(3),zeros(3,1),nk,nblk);
+u4 = AevS*sigma + AevD*tau;
+fillm = any(AevS~=0,2) | any(AevD~=0,2);
+u4(~fillm) = u3d_inout(sqn_idx(~fillm));
+err4 = abs(u4 + fhom(sqn_idx));
+fprintf('level-2 master at %d close targets: max err = %.3g (%d rows filled)\n', nk, max(err4), nnz(fillm));
+
+nk = numel(sqn_idx(170));
+Pk = tk3d_inout.x(:,170);
+nblk = N*nphi;
+AevS = axp_physmat_setup_mex(1,1,0.0,3,1,p,np,M,iside,0,[1;N+1],[1;np+2],N,np+1, ...
+    s.x(:),s.nx(:),s.ws(:),s.wxp(:),s.tpan(:),nk,[1;nk+1],Pk,zeros(3,nk),eye(3),zeros(3,1),nk,nblk);
+AevD = axp_physmat_setup_mex(1,3,0.0,3,1,p,np,M,iside,0,[1;N+1],[1;np+2],N,np+1, ...
+    s.x(:),s.nx(:),s.ws(:),s.wxp(:),s.tpan(:),nk,[1;nk+1],Pk,zeros(3,nk),eye(3),zeros(3,1),nk,nblk);
+u5 = AevS*sigma + AevD*tau;
+err5 = abs(u5 + fhom(sqn_idx(170)))
 
 function G = LapSLPAxiMattmp(t,s,n)
 n = abs(n);                                        % kernel is even in the mode index

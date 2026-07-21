@@ -1,7 +1,27 @@
 clearvars; format short e;
+addpath('../../../axibie/utils');
 addpath('../../utils');
 addpath('../../matlab');
 addpath('../../external/fmm3d/matlab');                       % stfmm3d
+
+% K-particle Stokes DLP combined-field (D+S) exterior-Dirichlet BVP -- the Dirichlet sibling of
+% test_axissymsstok_stok_slpn_bvp_max_physmat5.m (same lattice / timing / grid-eval conventions),
+% generalizing test_axissymsstok_stok_dlp_bvp_multi_physmat.m from 2 to K particles.
+% COMBINED-FIELD (D+S)[sigma] = u_ex: the +1/2 I jump rides in the DLP self correction, the SLP
+% regularizes the DLP rigid-body null space -> SECOND-KIND full-rank; gmres needs NO deflation and
+% NO preconditioner (iteration count ~flat in K -- the ideal scaling operator).
+%   SETUP: FOUR corr_setup handles {D,S} x {self,cross}; the D and S corrections share the SAME
+%     topology (same gate/targets), so they are COMBINED per particle -- corr_get(D) + corr_get(S)
+%     -> corr_set into the D handle -- and the matvec applies ONE combined handle per pass (halves
+%     the apply cost; the donated S handles remain allocated -- the framework has no release verb).
+%     ntcx per particle is recovered by axps_closesize over a candidate SUPERSET (exact count: far
+%     candidates fail the per-panel gate).
+%   SYSTEM (velocity): ONE stfmm3d call (stoklet + strslet/strsvec, pot at sources, self i~=j
+%     excluded) = naive (D+S) + the two combined corr applies (R sandwich INSIDE the module).
+%   EVAL: stfmm3d (D+S) pottarg at the grid + ONE combined {D,S} eval handle apply.
+% Near-zone: gate=2.0 (the max-family convention): at the fixed np=4 the discretization floor
+% (~1e-6) sits far above the stresslet far-Nv annulus, so the multi test's rfac/chi_crit deep-
+% refinement knob is not needed here.
 
 global APPLY_T APPLY_N                                        % T_eval accumulator (set in applytimed)
 
@@ -84,39 +104,43 @@ for Kside=Ksides
   %    +1/2 jump, ilayer=1 SLP Stokeslet), then per particle corr_get(D)+corr_get(S) ->
   %    corr_set into the D handle; the matvec applies ONE combined handle.
   tself=tic;
-  [hDself, nbDs] = axpso_corr_setup_mex(2, 3, mu, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
+  [hDself, nbDs] = axpso_corr_setup_mex(2, 3, 1, 0, mu, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
             Rbound+rnear, K*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
-  [hSself, nbSs] = axpso_corr_setup_mex(2, 1, mu, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
+  [hSself, nbSs] = axpso_corr_setup_mex(2, 1, 1, 0, mu, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
             Rbound+rnear, K*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
+  valsDS=[]; iksDS=[];
   for k=1:K
     nt=ntS(ty(k));
-    [bD,~,~]=axpso_corr_get_mex(hDself,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
+    [bD,ikk,~]=axpso_corr_get_mex(hDself,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
     [bS,~,~]=axpso_corr_get_mex(hSself,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
-    axpso_corr_set_mex(hDself, k, nt, 3, p, np, M, bD+bS);    % hDself now holds the (D+S) correction
+    valsDS=[valsDS; bD+bS]; iksDS=[iksDS; ikk];
   end
+  axpso_corr_set_mex(hDself, valsDS, iksDS);    % hDself now holds the (D+S) correction
   tself=toc(tself); selfMB=(nbDs+nbSs)/1e6;
 
   % 4. CROSS corrections {D,S} + COMBINE: same recipe (iinter=2); cross ntcx per particle is
   %    recovered by closesize over ALL non-own nodes rotated into the source frame (superset-exact).
   tcross=tic;
-  [hDcross, nbDx] = axpso_corr_setup_mex(2, 3, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
+  [hDcross, nbDx] = axpso_corr_setup_mex(2, 3, 1, 0, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              Rbound+rnear, K*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
-  [hScross, nbSx] = axpso_corr_setup_mex(2, 1, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
+  [hScross, nbSx] = axpso_corr_setup_mex(2, 1, 1, 0, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              Rbound+rnear, K*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
+  valsDS=[]; iksDS=[];
   for k=1:K
     gs=geo{ty(k)};
     other=setdiff(1:K*Nnod,(k-1)*Nnod+(1:Nnod)); loc=R{k}.'*(Xall(:,other)-C{k});
     ttx=complex(hypot(loc(1,:),loc(2,:)).',loc(3,:).'); tc2=zeros(np+1,1); nt=0;
     [~,nt]=axps_closesize_mex(numel(other), ttx, loc, p, np, gs.sx, gs.sws, gate, tc2, nt);
     if nt==0, continue; end
-    [bD,~,~]=axpso_corr_get_mex(hDcross,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
+    [bD,ikk,~]=axpso_corr_get_mex(hDcross,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
     [bS,~,~]=axpso_corr_get_mex(hScross,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
-    axpso_corr_set_mex(hDcross, k, nt, 3, p, np, M, bD+bS);   % hDcross now holds the (D+S) correction
+    valsDS=[valsDS; bD+bS]; iksDS=[iksDS; ikk];
   end
+  axpso_corr_set_mex(hDcross, valsDS, iksDS);   % hDcross now holds the (D+S) correction
   tcross=toc(tcross); crossMB=(nbDx+nbSx)/1e6;
 
   % 5. matrix-free operator (timed per apply): ONE stfmm3d (D+S) + TWO combined corr applies.
@@ -150,22 +174,24 @@ for Kside=Ksides
   srcinfo=[]; srcinfo.sources=Xall; srcinfo.stoklet=sig3; srcinfo.strslet=sig3; srcinfo.strsvec=Nall;
   U=stfmm3d(fmmeps,srcinfo,0,Pe,1);
   uc=U.pottarg(:);                                            % naive (D+S) velocity, node-interleaved
-  hDeval = axpso_corr_setup_mex(2, 3, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
+  hDeval = axpso_corr_setup_mex(2, 3, 1, 0, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
             Rbound+rnear, Me, ones(K+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);
-  hSeval = axpso_corr_setup_mex(2, 1, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
+  hSeval = axpso_corr_setup_mex(2, 1, 1, 0, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
             Rbound+rnear, Me, ones(K+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);
+  valsDS=[]; iksDS=[];
   for k=1:K                                                   % combine {D,S} eval (targets = ALL Pe, superset-exact)
     gs=geo{ty(k)};
     loc=R{k}.'*(Pe-C{k});
     ttx=complex(hypot(loc(1,:),loc(2,:)).',loc(3,:).'); tc2=zeros(np+1,1); nt=0;
     [~,nt]=axps_closesize_mex(Me, ttx, loc, p, np, gs.sx, gs.sws, gate, tc2, nt);
     if nt==0, continue; end
-    [bD,~,~]=axpso_corr_get_mex(hDeval,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
+    [bD,ikk,~]=axpso_corr_get_mex(hDeval,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
     [bS,~,~]=axpso_corr_get_mex(hSeval,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
-    axpso_corr_set_mex(hDeval, k, nt, 3, p, np, M, bD+bS);
+    valsDS=[valsDS; bD+bS]; iksDS=[iksDS; ikk];
   end
+  axpso_corr_set_mex(hDeval, valsDS, iksDS);    % (D+S) via ONE-call whole-record set
   uc=axpso_corr_apply_mex(hDeval, 3*K*Nnod, sigma, 3*Me, uc);
   Uh=zeros(3,size(Pg,2)); Uh(:,~inside)=reshape(uc,3,[]);
   tevaloff=toc(teo);

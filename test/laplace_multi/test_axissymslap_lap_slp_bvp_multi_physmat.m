@@ -1,7 +1,22 @@
 clearvars; format short e;
+addpath('../../../axibie/utils');
 addpath('../../utils');
 addpath('../../matlab');
-addpath('../../external/fmm3d/matlab');                      % lfmm3d / Lap3dSLPfmm
+addpath('../../external/fmm3d/matlab');                       % lfmm3d / Lap3dSLPfmm
+
+% MULTI-particle Laplace SLP exterior-Dirichlet BVP -- PHYSICAL-SPACE SPARSE-CORRECTION version of
+% test_axissymslap_lap_slp_bvp_multi.m, in the framework style of the SLPn/DLP/DLPn physmat twins.
+% Single-layer representation u = S[sigma]; match the surface potential S[sigma] = u_ex.  Fully
+% MATRIX-FREE mex; each near correction is FULL close-eval minus naive, in Fortran:
+%   SETUP (per pass): axpso_close_setup_mex returns the FULL close-eval matrix (iform=0);
+%     axpso_close2corr_set_mex subtracts the naive Lap3d SLP IN FORTRAN (compact layout, self node
+%     auto-zero; the weakly singular on-surface diagonal rides in the close-eval) -> correction.
+%   SYSTEM (potential): lfmm3d naive S at the sources (self i~=j excluded) + {self,cross} corr applies.
+%   SOLVE: unrestarted gmres, LARGE maxit -- S is FIRST-KIND (no identity jump), kappa ~ 1/h, so the
+%     iteration count grows mildly with np (the dense reference uses backslash); NOTE a Calderon
+%     D'-preconditioner is NOT usable here (D'[1]=0 kills the monopole component sigma must carry).
+%   EVAL (potential): Lap3dSLPfmm naive + SLP eval correction, same recipe.
+% SCALAR (nc=1): one dof/node, no lab<->local R sandwich.
 
 p=16; np_vals=2:10; errmax=nan(1,numel(np_vals)); gate=2.0; fmmeps=1e-12;
 rot=@(u,th) cos(th)*eye(3)+sin(th)*[0 -u(3) u(2); u(3) 0 -u(1); -u(2) u(1) 0]+(1-cos(th))*(u*u');
@@ -43,11 +58,11 @@ for kk=1:numel(np_vals)
 
   % 3. SYSTEM corrections: FULL close-eval (close_setup ikernel=1 ilayer=1) minus the naive Lap3d SLP
   %    (close2corr_set, in Fortran) -- self and cross.
-  hSself = axpso_close_setup_mex(1, 1, 0.0, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hSself = axpso_close_setup_mex(1, 1, 1, 0, 0.0, 1, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);         % SLP self
   axpso_close2corr_set_mex(hSself, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
-  hScross = axpso_close_setup_mex(1, 1, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hScross = axpso_close_setup_mex(1, 1, 1, 0, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
               geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
               1.0+rnear, K2*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);        % SLP cross
   axpso_close2corr_set_mex(hScross, K2, geomoff, nsx, sxf, snxf, swsf, targoff, K2*Nnod, Xall, Nall, [C{:}]);
@@ -68,7 +83,7 @@ for kk=1:numel(np_vals)
   % 7. field eval u = S[sigma]: Lap3dSLPfmm naive potential + SLP eval correction (targoff=ones ->
   %    every source sees ALL Me grid targets), same full-minus-naive recipe applied source K*Nnod -> Me.
   u=Lap3dSLPfmm(struct('x',Pe), struct('x',Xall,'w',wall), sigma, fmmeps);
-  hSeval = axpso_close_setup_mex(1, 1, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
+  hSeval = axpso_close_setup_mex(1, 1, 1, 0, 0.0, 2, K2, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              1.0+rnear, Me, ones(K2+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);
   axpso_close2corr_set_mex(hSeval, K2, geomoff, nsx, sxf, snxf, swsf, ones(K2+1,1), Me, Pe, Pe, [C{:}]);
