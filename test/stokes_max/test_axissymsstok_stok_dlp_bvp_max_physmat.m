@@ -11,14 +11,13 @@ addpath('../../external/fmm3d/matlab');                       % stfmm3d
 % regularizes the DLP rigid-body null space -> SECOND-KIND full-rank; gmres needs NO deflation and
 % NO preconditioner (iteration count ~flat in K -- the ideal scaling operator).
 %   SETUP: FOUR corr_setup handles {D,S} x {self,cross}; the D and S corrections share the SAME
-%     topology (same gate/targets), so they are COMBINED per particle -- corr_get(D) + corr_get(S)
-%     -> corr_set into the D handle -- and the matvec applies ONE combined handle per pass (halves
+%     topology (same gate/targets); the handles are kept SEPARATE and the matvec applies all four
+%     -- the four handles stay SEPARATE and the matvec applies each in turn (no combine
 %     the apply cost; the donated S handles remain allocated -- the framework has no release verb).
-%     ntcx per particle is recovered by axps_closesize over a candidate SUPERSET (exact count: far
 %     candidates fail the per-panel gate).
 %   SYSTEM (velocity): ONE stfmm3d call (stoklet + strslet/strsvec, pot at sources, self i~=j
-%     excluded) = naive (D+S) + the two combined corr applies (R sandwich INSIDE the module).
-%   EVAL: stfmm3d (D+S) pottarg at the grid + ONE combined {D,S} eval handle apply.
+%     excluded) = naive (D+S) + the four corr applies (R sandwich INSIDE the module).
+%   EVAL: stfmm3d (D+S) pottarg at the grid + the two {D,S} eval handle applies.
 % Near-zone: gate=2.0 (the max-family convention): at the fixed np=4 the discretization floor
 % (~1e-6) sits far above the stresslet far-Nv annulus, so the multi test's rfac/chi_crit deep-
 % refinement knob is not needed here.
@@ -51,16 +50,6 @@ fmmeps=1e-12;                                                 % FMM tolerance (m
 ncores=feature('numcores');
 fprintf('p=%d np=%d nphi=%d (Nnod=%d/particle)  gate=%.1f  rnear=%.2f  lattice spacing %.2f  ncores=%d\n', ...
         p, np, nphi, Nnod, gate, rnear, Lsp, ncores);
-
-% self ntcx per SHAPE (targets = azimuth-0 meridian reps; superset-exact, shared by all particles
-% of that shape) -- needed to corr_get/corr_set the combine below
-ntS=zeros(2,1);
-for sh=1:2
-  gs=geo{sh}; t3d0=[real(gs.sx).'; zeros(1,N); imag(gs.sx).'];
-  tcxi0=zeros(np+1,1); nt=0;
-  [~,nt]=axps_closesize_mex(N, gs.sx, t3d0, p, np, gs.sx, gs.sws, gate, tcxi0, nt);
-  ntS(sh)=nt;
-end
 
 for Kside=Ksides
   K=Kside^3;
@@ -100,9 +89,8 @@ for Kside=Ksides
   nsx=K*N; ntpan=K*(np+1);
   sxf=sxs(:); snxf=snxs(:); swsf=swss(:); swxpf=swxps(:); tpanf=tpans(:);
 
-  % 3. SELF corrections {D,S} + COMBINE: two corr_setup calls (ilayer=3 DLP stresslet with the
-  %    +1/2 jump, ilayer=1 SLP Stokeslet), then per particle corr_get(D)+corr_get(S) ->
-  %    corr_set into the D handle; the matvec applies ONE combined handle.
+  % 3. SELF corrections {D,S}: two corr_setup calls (ilayer=3 DLP stresslet with the
+  %    +1/2 jump, ilayer=1 SLP Stokeslet); handles stay separate (matvec applies both).
   tself=tic;
   [hDself, nbDs] = axpso_corr_setup_mex(2, 3, 1, 0, mu, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
@@ -110,17 +98,9 @@ for Kside=Ksides
   [hSself, nbSs] = axpso_corr_setup_mex(2, 1, 1, 0, mu, 1, K, pv, npv, pmv, iside, iclosed, gate, ...
             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
             Rbound+rnear, K*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
-  valsDS=[]; iksDS=[];
-  for k=1:K
-    nt=ntS(ty(k));
-    [bD,ikk,~]=axpso_corr_get_mex(hDself,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
-    [bS,~,~]=axpso_corr_get_mex(hSself,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
-    valsDS=[valsDS; bD+bS]; iksDS=[iksDS; ikk];
-  end
-  axpso_corr_set_mex(hDself, valsDS, iksDS);    % hDself now holds the (D+S) correction
   tself=toc(tself); selfMB=(nbDs+nbSs)/1e6;
 
-  % 4. CROSS corrections {D,S} + COMBINE: same recipe (iinter=2); cross ntcx per particle is
+  % 4. CROSS corrections {D,S}: same recipe (iinter=2); cross ntcx per particle is
   %    recovered by closesize over ALL non-own nodes rotated into the source frame (superset-exact).
   tcross=tic;
   [hDcross, nbDx] = axpso_corr_setup_mex(2, 3, 1, 0, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
@@ -129,24 +109,12 @@ for Kside=Ksides
   [hScross, nbSx] = axpso_corr_setup_mex(2, 1, 1, 0, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
              geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
              Rbound+rnear, K*Nnod, targoff, Xall, Nall, cat(3,R{:}), [C{:}], 0);
-  valsDS=[]; iksDS=[];
-  for k=1:K
-    gs=geo{ty(k)};
-    other=setdiff(1:K*Nnod,(k-1)*Nnod+(1:Nnod)); loc=R{k}.'*(Xall(:,other)-C{k});
-    ttx=complex(hypot(loc(1,:),loc(2,:)).',loc(3,:).'); tc2=zeros(np+1,1); nt=0;
-    [~,nt]=axps_closesize_mex(numel(other), ttx, loc, p, np, gs.sx, gs.sws, gate, tc2, nt);
-    if nt==0, continue; end
-    [bD,ikk,~]=axpso_corr_get_mex(hDcross,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
-    [bS,~,~]=axpso_corr_get_mex(hScross,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
-    valsDS=[valsDS; bD+bS]; iksDS=[iksDS; ikk];
-  end
-  axpso_corr_set_mex(hDcross, valsDS, iksDS);   % hDcross now holds the (D+S) correction
   tcross=toc(tcross); crossMB=(nbDx+nbSx)/1e6;
 
   % 5. matrix-free operator (timed per apply): ONE stfmm3d (D+S) + TWO combined corr applies.
   %    SECOND-KIND full-rank -> no deflation, no preconditioner.
   APPLY_T=0; APPLY_N=0;
-  applyA=@(x) applytimed(x, fmmeps, Xall, Nall, wall, hDself, hDcross);
+  applyA=@(x) applytimed(x, fmmeps, Xall, Nall, wall, hDself, hSself, hDcross, hScross);
 
   % 6. solve;  T_eval = mean apply time over ALL applies inside the solve
   tso=tic;
@@ -180,19 +148,8 @@ for Kside=Ksides
   hSeval = axpso_corr_setup_mex(2, 1, 1, 0, mu, 2, K, pv, npv, pmv, iside, iclosed, gate, ...
             geomoff, tpanoff, nsx, ntpan, sxf, snxf, swsf, swxpf, tpanf, ...
             Rbound+rnear, Me, ones(K+1,1), Pe, Pe, cat(3,R{:}), [C{:}], 0);
-  valsDS=[]; iksDS=[];
-  for k=1:K                                                   % combine {D,S} eval (targets = ALL Pe, superset-exact)
-    gs=geo{ty(k)};
-    loc=R{k}.'*(Pe-C{k});
-    ttx=complex(hypot(loc(1,:),loc(2,:)).',loc(3,:).'); tc2=zeros(np+1,1); nt=0;
-    [~,nt]=axps_closesize_mex(Me, ttx, loc, p, np, gs.sx, gs.sws, gate, tc2, nt);
-    if nt==0, continue; end
-    [bD,ikk,~]=axpso_corr_get_mex(hDeval,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
-    [bS,~,~]=axpso_corr_get_mex(hSeval,k,nt,3,p,np,M,zeros(9*nt*nphi*p,1),zeros(nt,1),zeros(np+1,1));
-    valsDS=[valsDS; bD+bS]; iksDS=[iksDS; ikk];
-  end
-  axpso_corr_set_mex(hDeval, valsDS, iksDS);    % (D+S) via ONE-call whole-record set
   uc=axpso_corr_apply_mex(hDeval, 3*K*Nnod, sigma, 3*Me, uc);
+  uc=axpso_corr_apply_mex(hSeval, 3*K*Nnod, sigma, 3*Me, uc);
   Uh=zeros(3,size(Pg,2)); Uh(:,~inside)=reshape(uc,3,[]);
   tevaloff=toc(teo);
   Ue=uexf(Pe);
@@ -227,10 +184,10 @@ for Kside=Ksides
 
 end
 
-function y=applytimed(x, fmmeps, Xall, Nall, wall, hDSself, hDScross)
+function y=applytimed(x, fmmeps, Xall, Nall, wall, hDself, hSself, hDcross, hScross)
 % timed K-particle matrix-free (+1/2 I + D + S) matvec: ONE stfmm3d call (stoklet + strslet) =
-% naive (D+S) velocity at the sources (self i~=j excluded; the +1/2 jump rides in the combined
-% self correction) + the two COMBINED {D,S} handle applies (R sandwich INSIDE the module).
+% naive (D+S) velocity at the sources (self i~=j excluded; the +1/2 jump rides in the D self
+% correction) + the four {D,S} x {self,cross} handle applies (R sandwich INSIDE the module).
 global APPLY_T APPLY_N
 t0=tic;
 sig3=reshape(x,3,[]).*wall;
@@ -238,8 +195,10 @@ srcinfo.sources=Xall; srcinfo.stoklet=sig3; srcinfo.strslet=sig3; srcinfo.strsve
 U=stfmm3d(fmmeps,srcinfo,1);
 y=U.pot(:);
 n=numel(x);
-y=axpso_corr_apply_mex(hDSself,  n, x, n, y);                 % combined (D+S) self  correction
-y=axpso_corr_apply_mex(hDScross, n, x, n, y);                 % combined (D+S) cross correction
+y=axpso_corr_apply_mex(hDself,  n, x, n, y);                  % D self  correction
+y=axpso_corr_apply_mex(hSself,  n, x, n, y);                  % S self  correction
+y=axpso_corr_apply_mex(hDcross, n, x, n, y);                  % D cross correction
+y=axpso_corr_apply_mex(hScross, n, x, n, y);                  % S cross correction
 APPLY_T=APPLY_T+toc(t0); APPLY_N=APPLY_N+1;
 end
 function u=stksum(P,Y,Fg,stk)
